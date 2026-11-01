@@ -154,8 +154,8 @@ type SpawnCrewRequest struct {
 	Size string
 	// Lane is the lane this crew holds (`--lane`): empty takes the repo's
 	// (store.RepoConfig.Lane), `none` holds nothing, any other word is
-	// the lane. The Mate passes `none` for a task in an iOS repo that
-	// never builds the app, and `xcode` for the reverse.
+	// the lane. The Mate passes `none` for a task that will never use the
+	// lane's resource.
 	Lane string
 }
 
@@ -888,7 +888,6 @@ func renderCrewBrief(w *store.Workspace, deps Deps, plan crewPlan) ([]byte, erro
 		HandbackPath:       w.CrewHandback(plan.project, plan.crew),
 		WorkspaceCrewRules: plan.crewRulesWS,
 		ProjectCrewRules:   plan.crewRulesProject,
-		Lane:               plan.lane,
 	})
 }
 

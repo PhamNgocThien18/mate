@@ -12,12 +12,11 @@ import (
 )
 
 // A lane (store.RepoConfig.Lane, CON-118) is a machine resource the crews
-// of a repo contend for: `xcode` for the simulators and the build service
-// one Mac has. The app only reports how full each lane is; the Mate
-// decides what to queue (skill new-task). A crew holds its repo's lane
-// while it is spawned or working - the states in which it builds. One
-// waiting on the Mate, the captain or a blocker holds nothing: its
-// simulator may still be booted, which is `mate gc`'s business.
+// of a repo contend for, named by the captain; mate knows nothing of what
+// the name stands for (CON-146). The app only reports how full each lane
+// is; the Mate decides what to queue (skill new-task). A crew holds its
+// repo's lane while it is spawned or working - the states in which it
+// builds. One waiting on the Mate, the captain or a blocker holds nothing.
 
 // laneRow is one lane's occupancy.
 type laneRow struct {
@@ -126,7 +125,7 @@ func writeLanes(out io.Writer, rows []laneRow) {
 // dispatches work outside the lane (skill new-task). It reports and the
 // Mate still decides, but twice in one evening a Mate dispatched into a
 // lane that `crew dispatch` had just called full, so the report alone was
-// not enough. `--lane none` passes, for a crew whose gate never runs the
+// not enough. `--lane none` passes, for a crew that will never use the
 // lane's resource.
 func laneGuard(w *store.Workspace, req spawn.SpawnCrewRequest) error {
 	cfg, err := w.LoadProject(req.Project)
@@ -147,7 +146,7 @@ func laneGuard(w *store.Workspace, req spawn.SpawnCrewRequest) error {
 		if r.Name != lane || !r.Full() {
 			continue
 		}
-		return newUsageErrorf("mate crew spawn: lane %s is full (%d/%d: %s); queue the task with `blocked-by: lane %s` and dispatch work outside the lane, or pass --lane none only when this crew's gate never runs xcodebuild",
+		return newUsageErrorf("mate crew spawn: lane %s is full (%d/%d: %s); queue the task with `blocked-by: lane %s` and dispatch work outside the lane, or pass --lane none only when this crew will never use the lane's resource",
 			lane, len(r.Holders), r.Cap, strings.Join(r.Holders, ", "), lane)
 	}
 	return nil

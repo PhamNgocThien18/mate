@@ -276,8 +276,8 @@ func StopCrew(ctx context.Context, w *store.Workspace, deps Deps, project, crew 
 
 	// 4a. What the worktree started goes before the worktree does
 	// (CON-111): the repo's teardown command, which needs the worktree's
-	// files, then mate's sweeps for the stack, simulators, DerivedData and
-	// processes it can prove the worktree owns. Nothing here refuses the
+	// files and removes what the repo's toolchain started (CON-146), then
+	// the processes mate can prove run in the worktree. Nothing here refuses the
 	// stop; what could not go is written to `cleanup=` and reported.
 	if worktree != "" {
 		env := []string{"MATE_PROJECT=" + project, "MATE_CREW=" + crew, "MATE_WORKTREE=" + worktree, "MATE_WORKTREE_NAME=" + filepath.Base(worktree)}

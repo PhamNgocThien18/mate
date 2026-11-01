@@ -1,14 +1,11 @@
 // Package teardown removes what a crew's worktree started outside the
 // worktree itself before mate gives the worktree back (CON-111): the repo's
-// own teardown command, then processes still running in it, the docker
-// compose stack started from it, the Xcode DerivedData built from it and the
-// simulators named after it.
+// own teardown command, then the processes still running in it.
 //
-// Ownership is proven, never guessed. A resource belongs to a worktree when
-// docker or Xcode recorded the worktree's path for it, or when its name
-// carries the worktree's directory name whole; anything else - the
-// captain's primary checkouts, a base simulator, a hand-made one - is never
-// touched.
+// What a repo's toolchain starts per worktree - a compose stack, a
+// simulator, a build folder - is the repo's to remove, with the command it
+// records as `teardown:` (CON-146). mate knows no toolchain; it only runs
+// that command and stops processes it can prove run inside the worktree.
 //
 // Nothing here blocks a stop. A sweep that fails is reported as pending, so
 // the task still closes and what was left behind is named.
@@ -18,26 +15,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/process"
 )
 
-// DefaultHookTimeout bounds the repo's teardown command. A compose stack or
-// a simulator delete takes seconds; five minutes is room for a slow docker
-// without letting a hung command hold the stop lock forever.
+// DefaultHookTimeout bounds the repo's teardown command. Stopping a stack
+// or deleting a simulator takes seconds; five minutes is room for a slow
+// one without letting a hung command hold the stop lock forever.
 const DefaultHookTimeout = 5 * time.Minute
 
 // Target is one worktree being given back.
 type Target struct {
 	// Worktree is the worktree's absolute path. It need not exist any more:
-	// the sweeps match on the path docker and Xcode recorded.
+	// the sweeps match on the path a process reports as its directory.
 	Worktree string
 	// Hook is the repo's `teardown:` command, run with `sh -c` in the
 	// worktree. Empty, or a worktree that is already gone, runs nothing.
@@ -55,8 +50,7 @@ func (t Target) Name() string {
 }
 
 // roots are the worktree's path as given and, when it still exists, with
-// symlinks resolved: docker and Xcode record whichever form they were
-// started with.
+// symlinks resolved: a process reports whichever form it was started with.
 func (t Target) roots() []string {
 	root := filepath.Clean(t.Worktree)
 	out := []string{root}
@@ -78,34 +72,6 @@ func (t Target) Owns(path string) bool {
 		}
 	}
 	return false
-}
-
-// NamedAfter reports whether name carries the worktree's directory name as a
-// whole token: `PlanTrip-plantrip-pla-6` belongs to worktree
-// `plantrip-pla-6`, `PlanTrip-plantrip-pla-6-be-r2` does not.
-func (t Target) NamedAfter(name string) bool {
-	base := t.Name()
-	if base == "" || base == "." || base == string(filepath.Separator) {
-		return false
-	}
-	for from := 0; ; {
-		i := strings.Index(name[from:], base)
-		if i < 0 {
-			return false
-		}
-		i += from
-		end := i + len(base)
-		// Before it anything but a letter or digit; after it nothing that
-		// could continue a crew id, so `pla-6` never claims `pla-6-be-r2`.
-		if (i == 0 || !alnum(name[i-1])) && (end == len(name) || !alnum(name[end]) && !strings.ContainsRune("-_.", rune(name[end]))) {
-			return true
-		}
-		from = i + 1
-	}
-}
-
-func alnum(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // Report is what one teardown did.
@@ -180,16 +146,6 @@ func owns(targets []Target, path string) bool {
 	return false
 }
 
-// namedAfter reports whether name carries some target's directory name.
-func namedAfter(targets []Target, name string) bool {
-	for _, t := range targets {
-		if t.NamedAfter(name) {
-			return true
-		}
-	}
-	return false
-}
-
 // Cleaner runs a target's hook, then its sweeps in order.
 type Cleaner struct {
 	// Runner runs the hook and the sweeps' commands. Nil is the real one.
@@ -200,28 +156,13 @@ type Cleaner struct {
 	Sweeps []Sweep
 }
 
-// Live is the cleaner the CLI uses: the hook, then every sweep this machine
-// has the tools for.
+// Live is the cleaner the CLI uses: the hook, then the processes sweep.
 func Live() Cleaner {
 	run := process.ExecRunner{}
 	return Cleaner{
 		Runner: run,
-		Sweeps: []Sweep{
-			Processes{Runner: run},
-			Docker{Runner: run},
-			DerivedData{Root: XcodeDerivedData()},
-			Simulators{Runner: run},
-		},
+		Sweeps: []Sweep{Processes{Runner: run}},
 	}
-}
-
-// XcodeDerivedData is Xcode's default DerivedData directory.
-func XcodeDerivedData() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, "Library", "Developer", "Xcode", "DerivedData")
 }
 
 // Clean tears the target down and reports what happened. It never fails:
@@ -328,23 +269,4 @@ func lastLine(out []byte) string {
 // missing reports whether err is a tool that is not installed.
 func missing(err error) bool {
 	return errors.Is(err, exec.ErrNotFound)
-}
-
-func sortedKeys(m map[string]bool) []string {
-	return slices.Sorted(maps.Keys(m))
-}
-
-// sizeNote is " (1.4 GB)" for a size worth naming, "" for none.
-func sizeNote(bytes int64) string {
-	if bytes <= 0 {
-		return ""
-	}
-	const unit = 1024
-	if bytes < unit*unit {
-		return fmt.Sprintf(" (%d KB)", (bytes+unit-1)/unit)
-	}
-	if bytes < unit*unit*unit {
-		return fmt.Sprintf(" (%.0f MB)", float64(bytes)/(unit*unit))
-	}
-	return fmt.Sprintf(" (%.1f GB)", float64(bytes)/(unit*unit*unit))
 }

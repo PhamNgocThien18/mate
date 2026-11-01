@@ -45,7 +45,7 @@ Verify isolation before anything else: `pwd -P` and `git rev-parse --show-toplev
 # Rules
 1. Never push to any remote and never open a pull request.
 2. Modify nothing outside this worktree except the status file, `/ws/.mate/projects/shop/crews/k3/report.md` and scratch logs under `/tmp`.
-   What you start for this checkout - a docker compose stack, a simulator, a server - may stay up for review when it is named after this worktree's directory, as the repository's own scripts do; it is removed when the task closes.
+   What you start for this checkout - a docker compose stack, a simulator, a server - may stay up for review when it is named after this worktree's directory, as the repository's own scripts do; the repository's teardown command removes it when the task closes.
 3. Report status by appending one line: `echo "{state}: {one short line}" >> $MATE_STATUS`.
    - `working: {phase}` - you are making progress. Append it once as your very first action, before you read or change anything, so the Mate can tell your harness came up; after that only for phase changes a supervisor would act on, because each append wakes the Mate.
    - `needs-decision: {summary of the options}` - you cannot decide this yourself. Stop your turn; an answer will be typed into this pane and you carry on.

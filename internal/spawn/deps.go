@@ -154,8 +154,8 @@ type Deps struct {
 	Worktrees Worktrees
 	// Cleaner tears down what a crew's worktree started before a stop
 	// gives the worktree back (CON-111). Nil runs only the repo's
-	// teardown command; LiveDeps adds the docker, simulator, DerivedData
-	// and process sweeps.
+	// teardown command; LiveDeps adds the process sweep. What a toolchain
+	// starts is the teardown command's job (CON-146).
 	Cleaner Cleaner
 	// Sleep is the pause between pane polls; tests shorten it.
 	Sleep func(ctx context.Context, d time.Duration) error

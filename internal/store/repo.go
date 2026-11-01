@@ -56,15 +56,14 @@ type RepoConfig struct {
 	// Teardown is the command a crew stop runs in the crew's worktree
 	// before giving it back, with `sh -c` (CON-111): what the repo starts
 	// per worktree and knows how to stop - a compose stack, a simulator
-	// clone, a DerivedData root of its own. Empty runs nothing; mate's own
-	// sweeps run either way.
+	// clone, a build folder. mate removes none of those itself (CON-146):
+	// empty leaves them, and only the process sweep runs.
 	Teardown string `yaml:"teardown,omitempty"`
 	// Lane names the machine resource the repo's crews contend for
-	// (CON-118): `xcode` for a repo whose gate builds on this machine's
-	// simulators. Repos of different projects that name the same lane
-	// share its cap; `mate crew dispatch` reports how full each lane is
-	// and the brief of a crew in the `xcode` lane carries the Xcode loop.
-	// Empty is no lane.
+	// (CON-118), named by the captain. Repos of different projects that
+	// name the same lane share its cap; `mate crew dispatch` reports how
+	// full each lane is. How a crew spends the resource is the repo's
+	// business (its gate and skills), not the brief's. Empty is no lane.
 	Lane string `yaml:"lane,omitempty"`
 }
 

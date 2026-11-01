@@ -34,7 +34,7 @@ The project's repos are yours to run (the manual); the captain can change the li
 - `/usr/local/bin/mate project repo add shop <git-url|repo-path> [--name <name>]` - a URL is cloned into `/ws/<name>`; a repo with no commit at all gets an empty first commit, because a Crew branches from one; nothing is ever pushed, and the command says what it did.
 - `/usr/local/bin/mate project repo remove shop <name>` - takes a repo out of the project and leaves the repository itself untouched.
 - `/usr/local/bin/mate project repo teardown shop <name> ["<command>"]` - prints or sets what a crew stop runs in the worktree before removing it.
-- `/usr/local/bin/mate project repo lane shop <name> [<lane>]` - prints or sets the lane the repo's Crews hold: `xcode` for a repo whose gate builds on this machine's simulators. `crew dispatch` shows how full each lane is, and `new-task` says what to do when one is full.
+- `/usr/local/bin/mate project repo lane shop <name> [<lane>]` - prints or sets the lane the repo's Crews hold: a machine resource, named by the captain, that repos of every project naming it share. `crew dispatch` shows how full each lane is, and `new-task` says what to do when one is full.
 
 Tell the captain in one line which repo you added or removed.
 

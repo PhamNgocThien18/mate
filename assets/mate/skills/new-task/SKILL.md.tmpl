@@ -44,9 +44,9 @@ A scout's deliverable is knowledge: an investigation, a plan, a reproduction, an
 Queue it with `{{.MatevBin}} backlog add {{.ProjectName}} <id> --section Queued --text "<one line>; blocked-by: <id>"` and tell the captain what waits and why.
 A scout changes nothing, so it never overlaps: dispatch it beside anything, and say in its brief when an unmerged branch could change its answer. There is no concurrency cap, only lanes.
 
-**Lanes.** A repo may name a lane (`{{.MatevBin}} project repo lane {{.ProjectName}} <repo> xcode`): the machine resource its Crews contend for, two iOS repos of different projects sharing one `xcode` lane. A Crew holds its repo's lane while it is spawned or working, scouts and reviews included; `crew dispatch` prints every lane with its holders and its cap.
-`--lane none` is for a Crew whose gate never runs xcodebuild: a docs-only change, or a backend directory with its own check. What the task touches does not decide it; what the Crew will run does. A data model, a Swift package, a "small" change in an iOS repo all run the gate, and the gate builds the app, so they hold the lane. When in doubt, hold it.
-When the task's repo is in a lane the output calls full, do not spawn: queue it with `blocked-by: lane <name>`, tell the captain in one line, and dispatch the next ready task outside the lane, so a backend task runs while the UI tasks wait their turn. When a digest says a Crew in that lane closed, run `crew dispatch` again: the slot it freed may already be held by another project's Crew, and the app refuses a spawn into a full lane. Dispatch the first task queued on the lane only when the output shows a free slot.
+**Lanes.** A repo may name a lane (`{{.MatevBin}} project repo lane {{.ProjectName}} <repo> <lane>`): a machine resource its Crews contend for, shared by every repo, in any project, that names the same lane. A Crew holds its repo's lane while it is spawned or working, scouts and reviews included; `crew dispatch` prints every lane with its holders and its cap.
+`--lane none` is for a Crew that will never use the lane's resource: a docs-only change, or a directory whose own check never touches it. What the task touches does not decide it; what the Crew will run does, the repo's gate included: a "small" change still runs the gate, so it holds the lane. When in doubt, hold it.
+When the task's repo is in a lane the output calls full, do not spawn: queue it with `blocked-by: lane <name>`, tell the captain in one line, and dispatch the next ready task outside the lane, so work outside the lane runs while the lane's tasks wait their turn. When a digest says a Crew in that lane closed, run `crew dispatch` again: the slot it freed may already be held by another project's Crew, and the app refuses a spawn into a full lane. Dispatch the first task queued on the lane only when the output shows a free slot.
 New work, or a large change of spec mid-task, goes to a new Crew, never into the running one.
 A UI task whose design the captain has not settled waits for the design.
 
@@ -125,7 +125,7 @@ A lesson from memory that applies to Crews goes into `## Build` until the captai
 
 - Check that the proposed verification can observe the requested behaviour, using earlier evidence or a bounded read-only check. A new feature need not pass before implementation. An unreachable state or contradictory expectation is a scope question to settle before ship.
 - A diagnosis in the captain's words goes under `## What we already know` labelled `verified (<source>)` or `unverified`; unverified, it is never a criterion.
-- "Try both ways" carries a cap and a stop condition: "B failed before (ios-gotchas:25); one build each, stop and record it if the trap repeats".
+- "Try both ways" carries a cap and a stop condition: "B failed before (<memory file>:<line>); one build each, stop and record it if the trap repeats".
 - Resolve a foreseeable design conflict before ship when it changes behaviour or acceptance. Record an authorised resolution and its source in the facts and reflect it in Build and Acceptance; a conditional fallback names its trigger and decision owner.
 
 Then `{{.MatevBin}} brief check {{.MateDir}}/briefs/<id>.md` (`--scout` for a scout), and fix every line it prints. Passing means the shape is right, not that the brief is good.
