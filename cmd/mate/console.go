@@ -134,6 +134,18 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if rt, ok := deps.Runtime.(*runtime.Herdr); ok {
 		rt.Binary = findTool(os.Getenv, "herdr")
 	}
+	h := host.Open(host.Detect(os.Getenv), host.Options{Env: os.Getenv, SelfCols: func() int {
+		cols, _, err := term.GetSize(stdoutFile.Fd())
+		if err != nil {
+			return 0
+		}
+		return cols
+	}})
+	// A terminal the console cannot split (neither WezTerm nor Ghostty) has
+	// no column to show a pane Mate in, so every Mate this console starts,
+	// restarts, refreshes or recovers runs headless and is talked to in the
+	// box or on the dashboard.
+	deps.HeadlessOnly = h == nil
 	// One observer for the whole run too, so the observer chain's one
 	// minute memory of what Jev said is shared by the health column, the
 	// sends and the settles of this console. Nil is the fixture observer.
@@ -209,13 +221,6 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 		return loadFrom(fresh)(loadCtx)
 	}
-	h := host.Open(host.Detect(os.Getenv), host.Options{Env: os.Getenv, SelfCols: func() int {
-		cols, _, err := term.GetSize(stdoutFile.Fd())
-		if err != nil {
-			return 0
-		}
-		return cols
-	}})
 	notice := ""
 	dashboardURL := ""
 	// The dashboard comes up with the console, after the observer has made
@@ -262,6 +267,9 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// console runs on without plugin links.
 	if pluginNotice != "" {
 		addNotice(pluginNotice)
+	}
+	if h == nil {
+		addNotice("no split terminal: Mates start headless")
 	}
 	var columns *consoleColumns
 	if h != nil {

@@ -160,7 +160,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	decision := decideResume(priorMeta, kind, req)
 	decision = checkResume(profile, decision)
 	_, canHeadless := profile.(harness.HeadlessTurns)
-	headless, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, canHeadless)
+	headless, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, deps.HeadlessOnly, canHeadless)
 	if err != nil {
 		return StartResult{}, err
 	}

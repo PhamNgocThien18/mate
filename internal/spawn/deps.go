@@ -117,6 +117,12 @@ type Deps struct {
 	// nor project.yaml names one. LiveDeps sets ModeHeadless (2026-10-15);
 	// empty is ModePane.
 	DefaultMode string
+	// HeadlessOnly starts headless every Mate whose start names no mode,
+	// whatever its last run or project.yaml chose, when its harness can
+	// run one. The console sets it in a terminal it cannot split (neither
+	// WezTerm nor Ghostty): there is no column to show a pane Mate in,
+	// and the console's box talks only to a headless one.
+	HeadlessOnly bool
 	// HostStopWait bounds how long a stop lets a headless Mate finish its
 	// turn; zero means HostStopWait.
 	HostStopWait time.Duration
