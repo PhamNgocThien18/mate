@@ -19,7 +19,6 @@ func TestManualBootstrapIsRecall(t *testing.T) {
 		"`# mate recall shop`",
 		"`recall cut to fit`",
 		"`ABSENT`",
-		"Dispatch a short onboarding scout",
 		"If you cannot name every In flight crew and every open news from your context, run `" + p.MatevBin + " recall shop` before you act on anything.",
 		"`⟦mate⟧ stow:`",
 	} {
@@ -29,6 +28,15 @@ func TestManualBootstrapIsRecall(t *testing.T) {
 	}
 	if regexp.MustCompile("(?m)^\\d+\\. Read `").MatchString(sec) {
 		t.Error("the session start still lists files to read one by one; the digest frames them")
+	}
+	// The onboarding scout is asked for only while PROJECT.md is a seed
+	// (CON-144): the manual is rendered at every start and knows.
+	if strings.Contains(sec, "Dispatch a short onboarding scout") {
+		t.Error("the session start asks for an onboarding scout although PROJECT.md has content")
+	}
+	p.ProjectDocSeeded = true
+	if sec := part(t, manualWith(t, p), "## Session start"); !strings.Contains(sec, "Dispatch a short onboarding scout") {
+		t.Error("the session start does not ask for an onboarding scout while PROJECT.md holds only its headings")
 	}
 }
 

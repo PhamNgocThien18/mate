@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/memory"
 )
@@ -122,4 +123,23 @@ func writeAtomic(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// ProjectDocSeeded reports whether the PROJECT.md at path says nothing
+// yet: it is missing, empty, or every non-blank line is a heading or an
+// HTML comment, the seed nobody has written into. The manual then asks
+// for the onboarding scout (CON-144).
+func ProjectDocSeeded(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	for _, l := range strings.Split(string(data), "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") || (strings.HasPrefix(t, "<!--") && strings.HasSuffix(t, "-->")) {
+			continue
+		}
+		return false
+	}
+	return true
 }

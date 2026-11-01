@@ -5,8 +5,10 @@ description: What to do when an app event wakes you - `mate wake` first, then bl
 
 # wake
 
-A line that begins with the sentinel `⟦mate⟧ ` is the app, not the captain.
-Whatever it says, run `/usr/local/bin/mate wake shop` once, before anything else.
+A line that begins with the sentinel `⟦mate⟧ ` is the app, not the captain; a prompt without it is the captain.
+In auto mode, the default, the app hands you Crew events in batched digests, and digests keep arriving after your turn ends, so a Crew that reports while you talk to the captain still reaches you.
+Manual mode is the captain's choice, made with a key in the console, and it lapses after five minutes without a prompt from them. Never change the mode yourself, and never echo the sentinel or put it in anything you send.
+Whatever the line says, run `/usr/local/bin/mate wake shop` once, before anything else.
 It prints every open item in the order you act on it, each with what deciding it needs and a `next:` line; then the status lines new since your last wake; then every open Crew.
 Decide from what it prints, never from the event's excerpt.
 Do not tail status files, cat hand-backs, peek, or run `crew list` to find out again what it printed. Open a file it names only for what its excerpt does not answer.
