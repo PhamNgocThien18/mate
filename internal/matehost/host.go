@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +46,10 @@ type Item struct {
 	// answers, or the one an app line's turn opened. Such an item shows in
 	// its news, not in the chat.
 	News int `json:"news,omitempty"`
+	// Lead is where the running turn's message in progress starts in
+	// Reply: what came before it was written before a tool, and is not
+	// shown.
+	Lead int `json:"-"`
 }
 
 // ToolRecord is one tool a turn called.
@@ -315,7 +318,7 @@ func (h *Host) wait(run *Run, item *Item) {
 	h.mu.Lock()
 	result := strings.TrimSpace(reply.Text)
 	silent := item.Source == SourceApp && Silent(result) && reply.Err == nil
-	item.Reply = finalReply(strings.TrimSpace(item.Reply), result, silent || reply.IsError)
+	item.Reply = finalReply(strings.TrimSpace(item.Reply), result)
 	if reply.DurationMS > 0 {
 		item.MS = reply.DurationMS
 	} else {
@@ -551,47 +554,17 @@ func (h *Host) Stop(wait time.Duration, force bool) (killed bool) {
 	return true
 }
 
-// finalReply is what a finished turn keeps as its reply (CON-79). The
-// result is only the turn's last message, so replacing what streamed with
-// it would lose the text written before the turn's tools. What streamed
-// is kept, with the result added when the stream missed it. The result
-// alone is kept when nothing streamed, and when it decides the turn by
-// itself (resultOnly: a silent digest, an error), so an app turn that
-// wrote something before its tools and then answered "—" stays silent. A
-// run with no result (interrupted, or failed: Runner sets Reply.Err only
-// when no result came) keeps how far it got.
-func finalReply(streamed, result string, resultOnly bool) string {
-	switch {
-	case resultOnly && result != "", streamed == "":
+// finalReply is what a finished turn keeps as its reply: the result, the
+// turn's last message, which is what the Mate says to the captain. The
+// text it wrote before and between its tools is its own narration and
+// stays out of the chat (CON-151, which reverses CON-79). A run with no
+// result (interrupted, or failed: Runner sets Reply.Err only when no
+// result came) keeps how far it got.
+func finalReply(streamed, result string) string {
+	if result != "" {
 		return result
-	case result == "" || endsWithMessage(streamed, result):
-		return streamed
 	}
-	return paragraph(streamed) + result
-}
-
-// endsWithMessage reports whether streamed ends with msg as whole lines:
-// msg must start where a line starts, so a short result such as "OK." is
-// not taken for the end of "…is OK.". Spaces inside a line and blank lines
-// are not compared.
-func endsWithMessage(streamed, msg string) bool {
-	s, m := messageLines(streamed), messageLines(msg)
-	if len(m) == 0 || len(m) > len(s) {
-		return false
-	}
-	return slices.Equal(s[len(s)-len(m):], m)
-}
-
-// messageLines is s's non-blank lines, each with its runs of white space made one
-// space.
-func messageLines(s string) []string {
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		if l = strings.Join(strings.Fields(l), " "); l != "" {
-			out = append(out, l)
-		}
-	}
-	return out
+	return streamed
 }
 
 // streamState is what progressLocked remembers between a turn's events.
@@ -634,6 +607,7 @@ func (h *Host) progressLocked(item *Item, ev harness.TurnEvent, st *streamState)
 			item.Reply = strings.TrimRight(item.Reply, "\n") + "\n\n"
 		}
 		item.Tools = append(item.Tools, ToolRecord{ID: c.ID, Name: c.Name, Detail: c.Detail, Started: h.now()})
+		item.Lead = len(item.Reply)
 		changed = true
 	}
 	for _, r := range ev.Results {

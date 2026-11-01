@@ -435,15 +435,16 @@ func (m Model) itemLines(it Item, w int, last bool) []string {
 	return append(out, metaLine(it, w))
 }
 
-// liveLines are a running turn: what it has said so far, with the cursor
-// at its end. The tools it calls are its own work, named only on the
-// composer's border.
+// liveLines are a running turn: the message it is writing, with the
+// cursor at its end. What it wrote before its last tool, and the tools,
+// are its own work; the composer's border names the tool.
 func (m Model) liveLines(it Item, w int) []string {
-	if strings.TrimSpace(it.Reply) == "" {
+	said := strings.TrimSpace(it.Reply[min(it.Lead, len(it.Reply)):])
+	if said == "" {
 		spin := spinnerFrames[m.frame%len(spinnerFrames)]
 		return []string{styleWorking.Render(" "+spin) + styleMuted.Render(" đang nghĩ…")}
 	}
-	out := replyLines(it.Reply, w)
+	out := replyLines(said, w)
 	out[len(out)-1] += styleAccent.Render("▌")
 	return out
 }

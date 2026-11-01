@@ -445,14 +445,15 @@ func TestHostRecordsTools(t *testing.T) {
 	}
 }
 
-// A turn that writes text, calls a tool, then writes more keeps all of it,
-// one paragraph per message, not only the result's last message (CON-79).
-func TestHostKeepsTheWholeReply(t *testing.T) {
+// A turn that writes text, calls a tool, then writes more keeps only its
+// last message: the text before the tool is the Mate's narration, not what
+// it says to the captain (CON-151, reversing CON-79).
+func TestHostKeepsTheLastMessage(t *testing.T) {
 	for _, prompt := range []string{"chatty", "chatty stream"} {
 		t.Run(prompt, func(t *testing.T) {
 			f := newFixture(t)
 			f.host.Submit(prompt)
-			want := "Epic 1 has 3 tasks left.\n\nNoted in the backlog.\n\nre: " + prompt
+			want := "re: " + prompt
 			if got := f.done(t, 1)[0].Reply; got != want {
 				t.Fatalf("reply = %q, want %q", got, want)
 			}
@@ -480,26 +481,20 @@ func TestHostAppTurnSilentAfterChatter(t *testing.T) {
 	}
 }
 
+// TestFinalReply: a finished turn keeps its last message, what the Mate
+// says to the captain; what it wrote before its tools is narration
+// (CON-151). A turn with no result keeps how far it got.
 func TestFinalReply(t *testing.T) {
-	for _, c := range []struct {
-		streamed, result string
-		resultOnly       bool
-		want             string
-	}{
-		{"", "only", false, "only"},
-		{"a\n\nb", "b", false, "a\n\nb"},
-		{"a\n\nb  c", "b c", false, "a\n\nb  c"},
-		{"a\n\nx\n\ny", "x\n\ny", false, "a\n\nx\n\ny"},
-		{"a\n\nOK.", "OK.", false, "a\n\nOK."},
-		{"It is OK.", "OK.", false, "It is OK.\n\nOK."}, // not a whole line: missed
-		{"It is\nOK.", "is\nOK.", false, "It is\nOK.\n\nis\nOK."},
-		{"a", "b", false, "a\n\nb"},      // the stream missed the last message
-		{"so far", "", false, "so far"},  // interrupted: how far it got
-		{"chatter\n\n—", "—", true, "—"}, // silent digest
-		{"partial", "API error", true, "API error"},
+	for _, c := range []struct{ streamed, result, want string }{
+		{"", "only", "only"},
+		{"Checking the plan.\n\nDone: two tasks started.", "Done: two tasks started.", "Done: two tasks started."},
+		{"a", "b", "b"},          // the stream missed the last message
+		{"so far", "", "so far"}, // interrupted: how far it got
+		{"chatter\n\n—", "—", "—"},
+		{"partial", "API error", "API error"},
 	} {
-		if got := finalReply(c.streamed, c.result, c.resultOnly); got != c.want {
-			t.Errorf("finalReply(%q, %q, %v) = %q, want %q", c.streamed, c.result, c.resultOnly, got, c.want)
+		if got := finalReply(c.streamed, c.result); got != c.want {
+			t.Errorf("finalReply(%q, %q) = %q, want %q", c.streamed, c.result, got, c.want)
 		}
 	}
 }
@@ -511,7 +506,7 @@ func TestHostRunFailingAfterItsResult(t *testing.T) {
 	f := newFixture(t)
 	f.host.Submit("chatty exitlate")
 	it := f.done(t, 1)[0]
-	want := "Epic 1 has 3 tasks left.\n\nNoted in the backlog.\n\nre: chatty exitlate"
+	want := "re: chatty exitlate"
 	if it.Error != "" || it.Reply != want {
 		t.Fatalf("item = %+v, want reply %q and no error", it, want)
 	}

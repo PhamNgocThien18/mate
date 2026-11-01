@@ -225,6 +225,22 @@ func TestREPLChatIsTheConversation(t *testing.T) {
 	}
 }
 
+// TestREPLLiveShowsTheMessageInProgress: a running turn shows what it
+// writes after its last tool, not what it wrote before it.
+func TestREPLLiveShowsTheMessageInProgress(t *testing.T) {
+	m := busyModel(100, 40)
+	m.running.Reply = "Em đang xem lại kế hoạch.\n\nĐã tạo task e1-profile"
+	m.running.Lead = len("Em đang xem lại kế hoạch.\n\n")
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "xem lại kế hoạch") || !strings.Contains(view, "Đã tạo task e1-profile▌") {
+		t.Fatalf("the live turn shows its narration:\n%s", view)
+	}
+	m.running.Reply = m.running.Reply[:m.running.Lead]
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "đang nghĩ…") {
+		t.Fatalf("a turn between messages does not say it is thinking:\n%s", view)
+	}
+}
+
 // TestREPLHoldsTheReadPlace: while the captain reads up the chat, a turn
 // that ends or grows below does not move what they read.
 func TestREPLHoldsTheReadPlace(t *testing.T) {
