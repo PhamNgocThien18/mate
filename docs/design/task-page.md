@@ -93,15 +93,15 @@ Không đổi projector, không đổi `performance`.
 
 ## Tab Dấu vết
 
-Trang usage hiện nay rút lại. Giữ một bảng theo loại việc, một timeline, findings; phần còn lại là drill-down.
+Trang usage cũ rút lại (`ui/trace.js`). Giữ một dải stage, findings, một bảng theo loại việc; phần còn lại là drill-down hoặc gập.
 
-1. **Timeline stage** là xương sống: trục thời gian theo prompt, mỗi stage một khối rộng theo token, màu theo loại việc, pin skill, dấu lệnh fail. Thay cho cả ba khối Stages, Work over time, Work segments.
-2. **Findings** ngay dưới timeline, tối đa 3 mở sẵn, còn lại gập. Repeats và Most expensive step thành hai finding, không còn là hai thẻ.
-3. **Bảng theo loại việc** một cái, ẩn hàng 0, hàng Mixed gộp một dòng kèm cột "gồm những gì". Hàng là link lọc timeline.
-4. **Drill-down**: bấm stage mở segment của nó và evidence (execution, call) bên dưới timeline; không còn danh sách 29 segment.
-5. **Chi tiết** (gập): Tool mix by prompt, recording details, execution không gắn prompt, raw model calls.
+1. **Dải stage** là xương sống: mỗi prompt một băng (mốc giờ, số call, token, thời gian, trích prompt), trong băng mỗi stage một khối **rộng theo token**, màu theo loại việc, pin skill ở trên, lệnh fail là mép đỏ, stage đang chạy viền đứt; giữa hai băng là khoảng idle. Thứ tự là thứ tự prompt rồi thứ tự stage, trùng với trục của Hành trình, nên bấm một thanh crew ở Hành trình sang Dấu vết đúng băng prompt (băng được đánh dấu và cuộn tới). Khối không vẽ theo thời gian thật: một stage build 4 phút và một stage đọc 1 giây cùng rộng theo token của chúng. Bản ghi cũ chưa có stage thì vẽ segment theo cùng cách và nói rõ "stages not recorded". Thay cho cả ba khối Stages, Work over time, Work segments.
+2. **Drill-down**: bấm khối mở ngay dưới dải: số của khối (call, tool call, token, cache read, work, output, thinking, thời gian), rồi các segment của nó mở sẵn với lệnh, output, model call; nút Close. Không còn danh sách 29 segment.
+3. **Findings** (Worth a look) ngay dưới dải: tối đa 3 mở sẵn, còn lại gập. Most expensive step và Repeats là hai finding dẫn xuất từ bản ghi (không còn là hai thẻ); Most expensive step luôn mở, rồi tới các finding đầu bảng của projector.
+4. **Bảng theo loại việc** (Where the effort went) một cái, tính từ chính các khối của dải nên khớp dải theo cấu trúc; ẩn hàng không có call; Mixed một hàng kèm những tổ hợp đã trộn. Bấm hàng lọc dải về loại đó (khối khác mờ đi).
+5. **Gập** (`<details>` đóng): Tool mix by prompt, executions không gắn prompt, Recording details and coverage, Crew totals and branch, Status lines, Questions, Raw model calls. Diff vẫn là một section.
 
-Chữ giải thích cách đo vào tooltip ⓘ ở tiêu đề khối. Task đã đóng không hiện Observer/Ingest/Usage age.
+Chữ giải thích cách đo vào tooltip ⓘ ở tiêu đề khối. Task đã đóng không hiện Observer/Ingest/Usage age; header (7 số) là nơi `/usage` cuộn tới, tab không lặp số nào của header.
 
 ## Quy tắc chung
 
@@ -117,6 +117,6 @@ Chữ giải thích cách đo vào tooltip ⓘ ở tiêu đề khối. Task đã
 | --- | --- | --- |
 | 1 (CON-148) | header chung + tab bar; tab Hành trình với dữ liệu đã có (prompt turn, status line, question, skill, execution, PR từ status line); route `/usage` mở Dấu vết. Làn Observer chờ PR2 vì incident chưa có trong API | `ui/task.js` tách khỏi `app.js`, view-model tính một lần từ body |
 | 2 (CON-148) | API `journey` (brief, handback, meta, reviews, mate_turns, incidents, workflow, changed_files, missing) và trên tab Hành trình: làn Mate (thanh = lượt), làn Observer (incident), brief và handback nở ra ở dòng spawn và dòng PR, khối Quy trình repo, thẻ Đọc nhanh đọc PR/merge từ `.meta`; khai `workflow` cho mihuv2 trong `~/workspace/.mate/projects/mihuv2/project.yaml` | `internal/dashboard/journey.go`, `store.WorkflowStep`, seam `Deps.ChangedFiles` |
-| 3 | Dấu vết rút gọn: timeline xương sống, findings, một bảng loại việc, drill-down, Chi tiết gập | `ui/trace.js` |
+| 3 (CON-148) | Dấu vết rút gọn: dải stage xương sống, drill-down, findings (Most expensive step và Repeats thành finding), một bảng loại việc lọc dải, phần còn lại gập; app.js chỉ còn routing, Mate và các helper dùng chung | `ui/trace.js` tách khỏi `app.js` (−1.100 dòng) |
 
 Test: `ui_observability_test.cjs` theo tab Dấu vết, `ui_journey_test.cjs` cho tab Hành trình với fixture hình hu-246; cả hai chạy trong `go test` qua `ui_admin_test.go`, DOM giả dùng chung ở `ui_testdom.cjs`.

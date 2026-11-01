@@ -164,7 +164,7 @@ async function boot(body = fixture(), hash = "#/p/shop/t/test-build", opts = {})
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(current) });
     }
   });
-  for (const file of ["humanize.js", "task.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "ui", file), "utf8"), context);
+  for (const file of ["humanize.js", "trace.js", "task.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "ui", file), "utf8"), context);
   const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   if (opts.tab) {
