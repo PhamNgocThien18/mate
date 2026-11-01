@@ -979,13 +979,31 @@ test("the Mate drawer's Talk tab shows the recorded turns, the last one open, an
   const talk = app.drawer().querySelector('section[aria-label="Talk"]');
   assert.equal(talk.querySelectorAll(".tc").length, 1, "the older turn folds to one line");
   assert.match(talk.querySelector(".tc").textContent, /crew.*api-fix is ready/);
-  assert.equal(talk.querySelector(".msg.mate").textContent, "<b>Merged</b> → main.", "a reply stays text");
+  assert.equal(talk.querySelector(".msg.reply").textContent, "<b>Merged</b> → main.", "a reply stays text");
   await app.click(talk.querySelector(".tc"));
   assert.equal(app.drawer().querySelectorAll(".tx").length, 2, "a folded turn opens");
   const send = app.drawer().querySelector(".dfoot .btn.primary");
   assert.ok("disabled" in send.attrs);
   assert.match(app.drawer().querySelector(".dfoot").textContent, /not wired yet/);
   assert.equal(posts(app).length, 0);
+});
+
+test("the Mate drawer goes full screen and back; other drawers have no such button", async () => {
+  const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS });
+  const full = () => app.drawer().querySelector('[data-focus="drawer-full"]');
+  assert.ok(!app.drawer().classes.includes("drawer-full"));
+  assert.equal(full().getAttribute("aria-label"), "Full screen");
+  assert.equal(full().parentNode.parentNode, app.drawer(), "the buttons sit on the drawer itself, so they stay put as it scrolls");
+  await app.click(full());
+  assert.ok(app.drawer().classes.includes("drawer-full"));
+  assert.equal(full().getAttribute("aria-pressed"), "true");
+  await app.click(app.drawer().querySelector('[data-focus="tab:talk"]'));
+  assert.ok(app.drawer().classes.includes("drawer-full"), "the Talk tab stays full screen");
+  await app.click(full());
+  assert.ok(!app.drawer().classes.includes("drawer-full"));
+  await app.click(deskOf(app.root, "rd1"));
+  assert.equal(app.drawer().querySelector("h2").text, "rd1");
+  assert.equal(full(), null, "a crew drawer stays at the side");
 });
 
 test("each room has an inbox on its wall; it lists what waits and the full log", async () => {

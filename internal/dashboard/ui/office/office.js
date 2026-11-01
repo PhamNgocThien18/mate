@@ -51,6 +51,8 @@
     edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
     failed: "M18 6L6 18M6 6l12 12",
     close: "M18 6L6 18M6 6l12 12",
+    maximize: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
+    minimize: "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7",
     sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
     moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
     arrowR: "M5 12h14M13 6l6 6-6 6",
@@ -414,6 +416,7 @@
   var wsReadOnly = null;      // why this dashboard cannot act ("" when it can, null until known)
   var mateTab = "details";    // the Mate drawer's tab: "details" or "talk"
   var talkOpen = {};          // exchange id -> true when an older turn is opened up
+  var mateFull = storedFlag("mate-office-mate-full"); // the Mate drawer fills the page, replies unclipped
   var matesOnly = storedFlag("mate-office-mates-only"); // the console's `v`: rooms show only their Mate
   var inboxMode = {};         // project -> "inbox" | "log"
   var inboxLog = null;        // the open inbox's full log: {key, body} | {key, error}
@@ -1292,7 +1295,8 @@
 
   // ------------------------------------------------------------ the drawer
 
-  function drawerHead(avatar, role, title, stateChip, since) {
+  // full, when given, adds the button that lets the drawer fill the page.
+  function drawerHead(avatar, role, title, stateChip, since, full) {
     var close = el("button", { class: "ib", type: "button", "aria-label": "Close details", "data-focus": "drawer-close" }, icon("close"));
     close.addEventListener("click", function () { select(""); });
     return el("div", { class: "dh" }, [
@@ -1302,8 +1306,20 @@
         el("h2", { text: title }),
         el("div", { class: "dstate" }, [stateChip, since ? el("span", { class: "since", text: since }) : null])
       ]),
-      close
+      el("div", { class: "dbtns" + (full ? " two" : "") }, [full || null, close])
     ]);
+  }
+
+  function fullToggle() {
+    var label = mateFull ? "Back to the side" : "Full screen";
+    var b = el("button", { class: "ib", type: "button", "aria-label": label, title: label, "aria-pressed": mateFull ? "true" : "false",
+      "data-focus": "drawer-full" }, icon(mateFull ? "minimize" : "maximize"));
+    b.addEventListener("click", function () {
+      mateFull = !mateFull;
+      try { window.localStorage.setItem("mate-office-mate-full", mateFull ? "1" : "0"); } catch (e) { /* this page only */ }
+      draw();
+    });
+    return b;
   }
 
   function personAvatar(h, colour, present) {
@@ -1434,7 +1450,7 @@
     var h = harnessInfo(m.harness);
     var present = running && m.state !== "gone";
     var head = drawerHead(personAvatar(h, shirt("mate:" + name), present),
-      ["Mate · team lead", htag(h)], name, chip(s), m.since ? "since " + age(m.since) : null);
+      ["Mate · team lead", htag(h)], name, chip(s), m.since ? "since " + age(m.since) : null, fullToggle());
     var ex = exchangesOf(name);
     var top = [head, actionsSection(name, ""), mateTabs(name, ex.list ? ex.list.length : null)];
     if (mateTab === "talk") return top.concat([talkSection(name), composer(name)]);
@@ -1844,7 +1860,7 @@
           el("div", { class: "tx-h" }, head),
           el("div", { class: "msg me" + (who === "captain" ? "" : " other"), text: ex.prompt || "(no prompt recorded)" }),
           steps.length ? el("p", { class: "steps" }, [icon("tool"), steps.join(" · ")]) : null,
-          ex.response ? el("div", { class: "msg mate", text: ex.response }) : null,
+          ex.response ? el("div", { class: "msg reply", text: ex.response }) : null,
           el("span", { class: "phase" }, ended ? chip({ word: "done", tone: "t-gone", icon: "done" }) :
             el("span", { class: "chip t-ok" }, [el("span", { class: "dots", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]), "working"]))
         ]));
@@ -2289,7 +2305,7 @@
   function drawer() {
     var wide = sel && (sel.kind === "cab" || sel.kind === "board");
     var talky = sel && (sel.kind === "mate" || sel.kind === "inbox");
-    var aside = el("aside", { class: "drawer" + (wide ? " drawer-cabinet" : "") + (talky ? " drawer-wide" : "") + (sel && sel.kind === "board" && sel.date ? " drawer-day" : ""),
+    var aside = el("aside", { class: "drawer" + (wide ? " drawer-cabinet" : "") + (talky ? " drawer-wide" : "") + (sel && sel.kind === "board" && sel.date ? " drawer-day" : "") + (sel && sel.kind === "mate" && mateFull ? " drawer-full" : ""),
       "aria-label": "Details", id: "drawer" });
     if (!sel) { aside.setAttribute("hidden", ""); return aside; }
     aside.appendChild(el("span", { class: "grab", "aria-hidden": "true" }));
@@ -2297,6 +2313,10 @@
       : sel.kind === "board" ? boardDrawer() : sel.kind === "captain" ? captainDrawer()
         : sel.kind === "inbox" ? inboxDrawer(sel.project) : sel.kind === "add" ? addDrawer() : cabinetDrawer(sel.project);
     append(aside, nodes);
+    // The head's buttons hang over the drawer as it scrolls; to stick they
+    // must be a child of the drawer, not of the head.
+    var btns = aside.querySelector(".dbtns");
+    if (btns) aside.insertBefore(btns, btns.parentNode);
     return aside;
   }
 

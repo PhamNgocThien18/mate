@@ -675,7 +675,6 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
   .d-head { left: 14px; top: 7px; width: 20px; height: 20px; }
   .d-body { left: 8px; top: 24px; width: 32px; height: 28px; border-radius: 14px 14px 0 0; }
   .dh h2 { margin: 3px 0 6px; font-size: 22px; }
-  .dh .ib { width: 44px; height: 44px; border-radius: 12px; }
   .since { font-size: 12px; }
   .ds { padding: 14px 16px 16px; }
   .sh { margin-bottom: 8px; }
@@ -784,7 +783,19 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
 .msg { max-width: 90%; padding: 9px 12px; border-radius: 14px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.me { align-self: flex-end; background: var(--ink); color: var(--surface); border-bottom-right-radius: 5px; }
 .msg.me.other { background: var(--infoB); color: var(--infoT); }
-.msg.mate { align-self: flex-start; max-height: 320px; overflow: auto; background: var(--surface2); box-shadow: inset 0 0 0 1px var(--line); border-bottom-left-radius: 5px; }
+/* Not .mate: that is the Mate at the big desk, 248px wide and clickable. */
+.msg.reply { align-self: flex-start; max-height: 320px; overflow: auto; background: var(--surface2); box-shadow: inset 0 0 0 1px var(--line); border-bottom-left-radius: 5px; }
+/* Close (and full screen) stay at the drawer's top corner as it scrolls:
+   a row of no height, sticky, the buttons hanging out of it. */
+.dbtns { position: sticky; top: 0; z-index: 3; height: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 18px 16px 0; pointer-events: none; }
+.dbtns .ib { pointer-events: auto; box-shadow: var(--shadow); }
+.dh { padding-right: 70px; }
+.dbtns.two + .dh { padding-right: 118px; }
+/* The Mate drawer at full screen: the page is the conversation, so a
+   reply is shown whole and the column keeps a readable width. */
+.drawer.drawer-full { left: 0; width: auto; box-shadow: none; }
+.drawer-full .tabs, .drawer-full .chat, .drawer-full .ds, .drawer-full .dfoot > * { max-width: 980px; margin-left: auto; margin-right: auto; }
+.drawer-full .msg.reply { max-height: none; overflow: visible; }
 .steps { display: flex; gap: 6px; align-items: center; margin: 0; padding-left: 4px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--ink2); }
 .steps svg.i { width: 13px; height: 13px; }
 .phase { align-self: flex-start; }
@@ -880,6 +891,11 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
   .tog { width: 44px; height: 44px; padding: 0; justify-content: center; }
   .bn { top: 56px; padding: 8px 14px; font-size: 12px; flex-wrap: wrap; }
   .drawer-wide { width: auto; }
+  .drawer.drawer-full { top: 56px; height: auto; min-height: 0; border-radius: 0; }
+  .dbtns { padding: 10px 12px 0; }
+  .dbtns .ib { width: 44px; height: 44px; border-radius: 12px; }
+  .dh { padding-right: 68px; }
+  .dbtns.two + .dh { padding-right: 120px; }
   .mwrap { align-items: end; padding: 10px; }
   .dlg { padding: 18px 16px 14px; }
   .dlg .hint { display: none; }
