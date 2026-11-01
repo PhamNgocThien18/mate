@@ -10,17 +10,13 @@ import (
 
 // The REPL is what the captain sees in the Mate's pane: a chat with the
 // Mate, laid out as the design of 2026-10-15 (CON-78) has it: a header, the
-// conversation, a faint line for app events the Mate kept to itself, the
-// captain's queued messages, a composer whose border says what the Mate is
-// doing, and the keys that work now. App events never enter the
-// conversation while they run; the Mate's reply to one shows only when it
-// had something for the captain.
+// conversation, the captain's queued messages, a composer whose border
+// says what the Mate is doing, and the keys that work now. The
+// conversation is the captain's messages and the Mate's replies, nothing
+// else: app lines, their turns and the tools any turn called stay out
+// (CON-151).
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
-// activityFor is how long an app event the Mate kept to itself stays on
-// the faint line.
-const activityFor = 60 * time.Second
 
 // crewsEvery is how often the header's crew count is read again.
 const crewsEvery = 15 * time.Second
@@ -65,8 +61,6 @@ type Model struct {
 	unseen int
 	frame  int
 	crews  int
-	// expand shows every tool call of the last turn (^O).
-	expand bool
 	help   bool
 	note   string
 
@@ -235,15 +229,16 @@ func (m *Model) applyEvent(ev Event) {
 	}
 	m.running = nil
 	m.items = append(m.items, *it)
-	m.expand = false
-	if m.scroll > 0 && it.shown() && m.mode == viewChat {
+	if m.scroll > 0 && it.InChat() && m.mode == viewChat {
 		m.unseen++
 	}
 }
 
-// shown reports whether a finished item takes room in the conversation.
-func (it Item) shown() bool {
-	return it.News == 0 && (it.Source == SourceCaptain || !it.Silent && it.Error == "")
+// InChat reports whether a finished item takes room in the chat: a
+// captain message outside any news, with the Mate's reply to it. The
+// dashboard's chats show the same items.
+func (it Item) InChat() bool {
+	return it.News == 0 && it.Source == SourceCaptain
 }
 
 func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -293,9 +288,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyF1:
 		m.help = true
-		return m, nil
-	case tea.KeyCtrlO:
-		m.expand = !m.expand
 		return m, nil
 	case tea.KeyCtrlR:
 		m.retry()

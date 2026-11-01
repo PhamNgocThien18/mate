@@ -32,6 +32,8 @@ const $ = (s) => document.querySelector(s);
 const enc = encodeURIComponent;
 const phone = () => innerWidth <= 760;
 const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?');
+// endOf is when a turn ended: it began at `at` and took `ms`.
+const endOf = (x) => (x.at ? new Date(Date.parse(x.at) + (x.ms ?? 0)).toISOString() : null);
 const ago = (iso) => {
   if (!iso) return '?';
   const m = Math.round((Date.now() - Date.parse(iso)) / 60e3);
@@ -863,8 +865,10 @@ VIEWS.mate = () => {
   };
 };
 
-// The headless Mate's chat (GET /chat), as its REPL shows it. A message
-// waits 5 s for an undo, then goes to the Mate as the captain's.
+// The headless Mate's chat (GET /chat), as its REPL shows it: the
+// captain's messages and the Mate's replies, nothing the crews or the app
+// said and none of the Mate's tools (CON-151). A message waits 5 s for an
+// undo, then goes to the Mate as the captain's.
 const chatBusy = new Set();
 async function loadChat(project) {
   if (chatBusy.has(project)) return;
@@ -884,7 +888,7 @@ async function loadChat(project) {
 
 function chatView(p) {
   const c = S.chats.get(p.name);
-  const items = (c?.items ?? []).filter((x) => !x.news);
+  const items = c?.items ?? [];
   const pend = S.pending.get(`chat:${p.name}`);
   const say = S.acts.get(p.name)?.mate_more?.find((b) => b.action === 'say');
   const blocked = blockedBy(`${p.name}#chat`) || (!hasMate(p) ? 'no Mate yet · Create mate first' : say && !say.available ? say.reason : !say ? '?' : '');
@@ -894,14 +898,16 @@ function chatView(p) {
   const list = [
     from ? h('button', { type: 'button', class: 'fold', onclick: () => (S.folded.set(p.name, true), render()) }, `Show ${from} earlier turn${from === 1 ? '' : 's'}`) : null,
     ...items.slice(from).flatMap((x) => [
-      x.source === 'captain' ? h('div', { class: 'msg captain' }, x.text, h('div', { class: 'meta' }, 'you', clock(x.at))) : h('div', { class: 'msg app' }, h('div', { class: 'meta' }, `app · ${x.label || 'line'}`, clock(x.at))),
-      x.reply && !x.silent ? h('div', { class: 'msg mate' }, x.reply, h('div', { class: 'meta' }, x.interrupted ? '⊘ interrupted' : x.error ? `✕ ${x.error}` : '✓ done', ...(x.tools ?? []).slice(0, 6).map((t) => h('span', { class: 'tool' }, `⚙ ${t}`)))) : null,
-      !x.reply && x.error ? h('div', { class: 'msg mate' }, h('div', { class: 'meta' }, `✕ ${x.error}`)) : null,
-      !x.reply && x.interrupted ? h('div', { class: 'msg mate' }, h('div', { class: 'meta' }, '⊘ interrupted')) : null,
+      h('div', { class: 'msg captain' }, x.text, h('div', { class: 'meta' }, h('span', {}, clock(x.at)))),
+      x.error ? h('div', { class: 'msg mate' }, h('div', { class: 'meta' }, h('span', {}, `✕ This turn failed · ${x.error.split('\n')[0]}`)))
+        : x.reply ? h('div', { class: 'msg mate' }, chatMarkdown(x.reply), h('div', { class: 'meta' },
+          x.interrupted ? h('span', {}, '⊘ interrupted · the reply above is not complete') : h('span', {}, chatMeta(x)),
+          h('span', { class: 'at' }, clock(endOf(x)))))
+          : x.interrupted ? h('div', { class: 'msg mate' }, h('div', { class: 'meta' }, h('span', {}, '⊘ interrupted'))) : null,
     ]),
     !items.length ? h('p', { class: 'note' }, c ? (c.headless ? 'No messages yet.' : 'This Mate is not headless: its chat is in its own pane.') : 'loading…') : null,
     pend ? h('div', { class: 'msg pending' }, pend.text, h('div', { class: 'meta' }, `Sending in ${pend.left}s`, h('button', { type: 'button', id: 'undo-chat', onclick: () => undo(`chat:${p.name}`, `chat-${p.name}`) }, 'Undo'))) : null,
-    busy ? h('div', { class: 'turn', role: 'status' }, h('span', { class: 'g', 'aria-hidden': 'true' }, '◐'), `${c.state.turn_source === 'app' ? 'answering an app line' : 'thinking'}…${c.state.queued ? ` · ${c.state.queued} waiting` : ''}`) : null,
+    busy ? h('div', { class: 'turn', role: 'status' }, h('span', { class: 'g', 'aria-hidden': 'true' }, '◐'), `${c.state.turn_source === 'app' ? 'working' : 'thinking'}…${c.state.queued ? ` · ${c.state.queued} waiting` : ''}`) : null,
     c?.state_error ? h('p', { class: 'note' }, `The Mate's host did not answer: ${c.state_error}`) : null,
   ];
   const ta = textarea(`chat-${p.name}`, { placeholder: blocked ? '' : `Message the Mate of ${p.name}`, disabled: Boolean(blocked), 'aria-label': 'Message to the Mate', onkeydown: (e) => {
