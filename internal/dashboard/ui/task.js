@@ -3,15 +3,16 @@
  *
  * One header, two tabs. "Journey" answers who handed what to whom, when,
  * and at what price: a swimlane of Captain, Mate, Crew, Machine and GitHub,
- * a numbered table of the hand-offs, and three cards that read the task at
- * a glance. "Trace" is the per-step diagnostics app.js already draws
- * (stages, findings, timelines, raw calls); `/usage` opens it.
+ * a numbered table of the hand-offs, the project's workflow checked, and
+ * three cards that read the task at a glance. "Trace" is the per-step
+ * diagnostics trace.js draws (the stages strip, findings, effort by kind,
+ * the fold of raw records); `/usage` opens it.
  *
  * It is a classic script like humanize.js: it declares mateTaskView on the
  * global scope, and app.js calls it once with the helpers the two share
- * (element building, number words, the trace renderers), so the task page
- * can be read and tested on its own while app.js keeps the routing, the
- * polling and the state the trace tab needs.
+ * (element building, number words, the Trace tab's renderer), so the task
+ * page can be read and tested on its own while app.js keeps the routing,
+ * the polling and the saved state.
  *
  * The Journey tab reads the task body: ledger, prompt turns, status lines,
  * questions, executions, and `journey` (brief, hand-back, meta, reviews,
@@ -144,27 +145,7 @@ function mateTaskView(h) {
   // The diagnostics app.js has always drawn for a crew, unchanged; the
   // trace tab's own shape is the third PR of docs/design/task-page.md.
   function tracePanel(body) {
-    var ledger = body.ledger || {};
-    var out = h.el("div", { class: "tab-panel", role: "tabpanel", "data-panel": "trace" });
-    out.appendChild(h.crewPerformance(body));
-    out.appendChild(h.savedDetails("ledger", "Crew totals and branch", [h.ledgerHeader(ledger, body.branch || {})], "section diagnostics"));
-    if ((body.status_lines || []).length) {
-      out.appendChild(h.el("div", { class: "section" }, [
-        h.el("h2", { text: "status lines" }),
-        h.statusList(body.status_lines)
-      ]));
-    }
-    out.appendChild(h.el("div", { class: "section" }, [
-      h.el("h2", { text: "questions" }),
-      h.questionList(body.questions || [])
-    ]));
-    out.appendChild(h.el("div", { class: "section" }, [
-      h.el("h2", { text: "diff" }),
-      h.diffPanel(body)
-    ]));
-    out.appendChild(h.savedDetails("raw-calls", "Raw model calls and events (" + (body.turns || []).length + ")",
-      [h.turnTimeline(body)], "section diagnostics"));
-    return out;
+    return h.el("div", { class: "tab-panel", role: "tabpanel", "data-panel": "trace" }, [h.traceBody(body)]);
   }
 
   // ---------------------------------------------------------- journey tab

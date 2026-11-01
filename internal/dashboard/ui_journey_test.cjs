@@ -124,7 +124,7 @@ test("Journey is the default tab, Trace keeps the diagnostics, and the choice su
   tabs[1].click();
   await app.flush();
   assert.ok(keyed(app.view, "data-panel", "trace"));
-  assert.ok(app.view.querySelector(".steps-card"));
+  assert.ok(app.view.querySelector(".stages-card"));
   assert.equal(keyed(app.view, "data-panel", "journey"), undefined);
   await app.refresh(closedCrew(), true);
   assert.ok(keyed(app.view, "data-panel", "trace"), "a poll does not flip the tab back");
@@ -205,7 +205,8 @@ test("a crew stage opens Trace on its prompt", async () => {
   stage.click();
   await app.flush();
   assert.ok(keyed(app.view, "data-panel", "trace"));
-  assert.equal(app.doc.scrolledTo, keyed(app.view, "data-detail", "prompt:prompt-2"));
+  assert.equal(app.doc.scrolledTo, keyed(app.view, "data-prompt", "prompt-2"), "the prompt's band on the strip");
+  assert.equal(keyed(app.view, "data-prompt", "prompt-2").getAttribute("data-selected"), "true");
 });
 
 test("the repo workflow lists the declared steps with the crew's evidence, and counts only the steps that apply", async () => {
