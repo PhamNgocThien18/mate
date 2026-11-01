@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -281,6 +282,45 @@ func TestMemoryCheckWarnsOnAnchorsOlderThanHead(t *testing.T) {
 	}
 	if !strings.Contains(out, "memory ok: 0 captain entries, 0 lesson(s), 5 anchored PROJECT.md line(s)") {
 		t.Fatalf("stdout = %q", out)
+	}
+}
+
+// TestMemoryCheckAsksToReReadAnAnchorFarBehind (CON-145): an anchor
+// staleAnchorCommits or more commits behind its branch is no longer a hint:
+// the warning asks for the fact to be re-read or moved into the repo.
+func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
+	old := staleAnchorCommits
+	staleAnchorCommits = 3
+	t.Cleanup(func() { staleAnchorCommits = old })
+	w := liveCrewWorkspace(t, "shop")
+	repo := w.RepoDir("shop/shop")
+	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
+	for _, m := range []string{"two", "three", "four"} {
+		runGitOrFatal(t, repo, "commit", "--allow-empty", "-m", m)
+	}
+	head := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
+	runGitOrFatal(t, repo, "commit", "--allow-empty", "-m", "five")
+	doc := strings.Join([]string{
+		"# shop",
+		"## Layout and state",
+		"- A. (crews/k1/report.md, main@" + first + ")",
+		"- B. (crews/k1/report.md, main@" + head + ")",
+		"",
+	}, "\n")
+	writeMemoryFiles(t, w, memory.Header, doc)
+	code, out, errw := memoryCheckCLI(t, w)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s%s", code, out, errw)
+	}
+	want := []string{
+		"warning: PROJECT.md line 3 is anchored at shop:main@" + first + ", and shop:main has 4 newer commit(s); it is far behind: re-read it from a fresh report or hand-back, or have a Crew write the fact into the repo's own docs and keep only the path here (skill stow)",
+		"warning: PROJECT.md line 4 is anchored at shop:main@" + head + ", and shop:main has 1 newer commit(s); treat it as a hint until a report or hand-back confirms it",
+	}
+	got := strings.Split(strings.TrimRight(errw, "\n"), "\n")
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("stderr:\n%s\nwant:\n%s", errw, strings.Join(want, "\n"))
 	}
 }
 
