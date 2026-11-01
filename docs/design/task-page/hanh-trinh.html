@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mate · task hu-246 · mockup Hành trình</title>
+<style>
+  :root {
+    --page: #141414; --surface: #1c1c1c; --surface-2: #262626; --ink: #ececea; --ink-2: #b8b6b0; --muted: #85837d;
+    --border: rgba(255,255,255,.1); --accent: #5a9cf0; --good: #35c25a; --warning: #fab219; --critical: #e05252;
+    --captain: #e8c06a; --mate: #c58bf2; --observer: #8a8a8a; --crew: #5a9cf0; --machine: #3fbf9f; --github: #f0f0f0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .top { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .top .crumb { color: var(--muted); } .top .right { margin-left: auto; display: flex; gap: 8px; color: var(--muted); }
+  .top .pill { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; color: var(--ink-2); }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+  .mock { background: #3a2f10; color: #f3d27a; border: 1px solid #6e5a1e; border-radius: 6px; padding: 6px 10px; font-size: 12px; margin-bottom: 14px; }
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+  .head h1 { font-size: 18px; margin: 0; font-family: var(--mono); font-weight: 600; }
+  .state { border-radius: 4px; padding: 1px 8px; font-size: 12px; font-weight: 600; background: #173d22; color: #7ee39a; }
+  .chip { font-size: 12px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); }
+  .title { margin: 6px 0 10px; color: var(--ink-2); } a { color: var(--accent); text-decoration: none; }
+  .kpis { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+  .kpi { background: var(--surface); padding: 8px 12px; }
+  .kpi .l { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .kpi .v { font-size: 20px; font-weight: 600; font-family: var(--mono); line-height: 1.2; } .kpi .s { font-size: 11px; color: var(--muted); }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tab { padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; } .tab small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }
+  h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 8px; }
+  .lanes { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 8px 4px; overflow-x: auto; }
+  svg { display: block; font: 11px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  svg .lane-label { font-size: 12px; font-weight: 600; fill: var(--ink); }
+  svg .lane-sub { font-size: 10px; fill: var(--muted); }
+  svg .lane-line { stroke: var(--border); }
+  svg .tick { stroke: var(--border); stroke-dasharray: 2 3; } svg .tick-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+  svg .bar { rx: 3; opacity: .9; } svg .bar-label { fill: #111; font-size: 10.5px; font-weight: 600; }
+  svg .bar-label.light { fill: var(--ink); }
+  svg .dot { stroke: var(--page); stroke-width: 1.5; }
+  svg .dot-label { fill: var(--ink-2); font-size: 10.5px; }
+  svg .arrow { fill: none; stroke: var(--ink-2); stroke-width: 1.2; marker-end: url(#arrowhead); }
+  svg .arrow.bad { stroke: var(--critical); } svg .arrow.quiet { stroke-dasharray: 3 3; stroke: var(--muted); }
+  svg .num { fill: var(--page); font-size: 9.5px; font-weight: 700; } svg .numbg { fill: var(--ink); }
+  svg .numbg.bad { fill: var(--critical); }
+  svg .idle { fill: none; stroke: var(--muted); stroke-dasharray: 2 3; }
+  svg .idle-label { fill: var(--muted); font-size: 10px; font-style: italic; }
+  .legend { font-size: 11px; color: var(--muted); margin: 6px 2px 0; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  table.steps { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .steps th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 4px 8px 6px 0; border-bottom: 1px solid var(--border); }
+  .steps td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--ink-2); }
+  .steps td.n { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .steps td.who { white-space: nowrap; } .steps td.what { color: var(--ink); }
+  .steps td .sub { color: var(--muted); font-size: 12px; display: block; margin-top: 1px; }
+  .steps td.cost { font-family: var(--mono); font-size: 12px; white-space: nowrap; text-align: right; }
+  .badge { display: inline-block; font-size: 9.5px; font-weight: 700; color: #111; border-radius: 3px; padding: 0 5px; margin-right: 4px; vertical-align: 1px; }
+  .b-captain { background: var(--captain); } .b-mate { background: var(--mate); } .b-observer { background: var(--observer); } .b-crew { background: var(--crew); } .b-machine { background: var(--machine); } .b-github { background: var(--github); }
+  .bad { color: var(--critical); } .warn { color: var(--warning); } .ok { color: var(--good); } .dim { color: var(--muted); }
+  code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 0 4px; border-radius: 3px; color: var(--ink); }
+  .missing { font-size: 11px; color: #f3d27a; }
+  .wf td.st { white-space: nowrap; font-weight: 600; } .wf td.ev { font-size: 12px; } .wf td.step { color: var(--ink); }
+  .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .card h3 { margin: 0 0 6px; font-size: 13px; } .card p { margin: 2px 0; color: var(--ink-2); font-size: 13px; } .card .big { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--ink); }
+  .foot { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  @media (max-width: 760px) { .kpis { grid-template-columns: repeat(3, 1fr); } .cards { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="top"><b>mate</b><span class="crumb">workspace / mihuv2 / hu-246-editor-block-knob</span>
+  <span class="right"><span class="pill">Mate Office</span><span class="pill">Agent City</span><span>● live · 22:05</span></span></div>
+<main>
+  <div class="mock">Mockup tĩnh, mọi mốc giờ và con số là dữ liệu thật của <b>mihuv2 / hu-246-editor-block-knob</b> (đêm 30 rạng 31/10, giờ VN). Dòng <b>màu vàng</b>: có trên đĩa nhưng API task chưa trả.</div>
+
+  <div class="head">
+    <h1>hu-246-editor-block-knob</h1><span class="state">merged</span>
+    <span class="chip">claude</span><span class="chip">sonnet · high</span><span class="chip">lane xcode</span><span class="chip">ship</span>
+  </div>
+  <p class="title">HU-246: editor turns text blocks by the knob, drops RotateGesture (E2) · phần 3/3 của HU-228 · <a href="https://github.com/ericsnguyen9941/mihuv2/pull/215">PR #215</a></p>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Token crew</div><div class="v">3.2M</div><div class="s">3.1M cache read · 28k output</div></div>
+    <div class="kpi"><div class="l">Token Mate quanh task</div><div class="v">3.0M</div><div class="s">3 lượt · opus <span class="missing">⚠</span></div></div>
+    <div class="kpi"><div class="l">Model call</div><div class="v">41</div><div class="s">43 tool call · 2 lượt</div></div>
+    <div class="kpi"><div class="l">Thời gian</div><div class="v">12m55s</div><div class="s">01:02:14 → 01:15:09</div></div>
+    <div class="kpi"><div class="l">Crew chờ máy</div><div class="v">6m54s</div><div class="s">53% thời gian</div></div>
+    <div class="kpi"><div class="l">Context đỉnh</div><div class="v">110k</div><div class="s">11% cửa sổ</div></div>
+    <div class="kpi"><div class="l">Hỏi / trả lại</div><div class="v">– / –</div><div class="s">1 báo nhầm observer</div></div>
+  </div>
+
+  <div class="tabs"><div class="tab on">Hành trình</div><div class="tab">Dấu vết <small>17 stage · 8 finding</small></div></div>
+
+  <h2>Ai giao gì cho ai <small>01:01 → 01:16, 15 phút · bấm một đoạn trên làn Crew mở stage tương ứng ở Dấu vết</small></h2>
+  <div class="lanes"><svg id="lanes" viewBox="0 0 1040 420" style="width:100%;min-width:820px;height:auto"></svg></div>
+  <div class="legend">Thanh = đang làm · chấm = một sự kiện · mũi tên = bàn giao, số là bước ở bảng dưới · nét đứt = chờ / im lặng
+    <i style="background:var(--captain)"></i>Captain <i style="background:var(--mate)"></i>Mate (opus) <i style="background:var(--observer)"></i>Observer <i style="background:var(--crew)"></i>Crew (sonnet) <i style="background:var(--machine)"></i>Máy: build · test · gate <i style="background:var(--github)"></i>GitHub</div>
+
+  <h2>Từng bước <small>mỗi dòng là một mũi tên ở trên</small></h2>
+  <table class="steps">
+    <tr><th>#</th><th>Lúc</th><th>Từ → đến</th><th>Chuyện gì</th><th style="text-align:right">Giá</th></tr>
+    <tr><td class="n">1</td><td class="n">30/10</td><td class="who"><span class="badge b-captain">Captain</span>→ Linear</td><td class="what">Viết HU-228 "Xoay mọi món và khối chữ bằng núm trên đầu" và dặn thứ tự làm<span class="sub">"…sau cùng là 228 → 227 → 229". Mate chia HU-228 thành HU-244 / 245 / 246.</span></td><td class="cost dim">–</td></tr>
+    <tr><td class="n">2</td><td class="n">01:01:08</td><td class="who"><span class="badge b-crew">hu-245</span>→ <span class="badge b-mate">Mate</span></td><td class="what">Crew trước báo PR #214 xong<span class="sub">Mate merge #214, viết brief HU-246 (22 KB: lời captain, HU-228 nguyên văn, Build, Acceptance), chọn sonnet · high · lane xcode.</span></td><td class="cost">73s · 1.05M · 5 call</td></tr>
+    <tr><td class="n">3</td><td class="n">01:02:14</td><td class="who"><span class="badge b-mate">Mate</span>→ <span class="badge b-crew">Crew</span></td><td class="what">Spawn crew, prompt "Read and follow the brief…"<span class="sub">Crew báo <code>working: setup</code> sau 1 giây rồi im 12 phút. Không nạp skill nào. <span class="missing">⚠ nội dung brief chưa có trong API</span></span></td><td class="cost dim">brief 22 KB</td></tr>
+    <tr><td class="n">4</td><td class="n">01:02:15</td><td class="who"><span class="badge b-crew">Crew</span></td><td class="what">Đọc code 35 giây, 12 lệnh, <span class="bad">1 lệnh fail</span> (<code>find | xargs wc</code>), rồi sửa code + test + docs 1m17s, 10 lệnh<span class="sub">→ Dấu vết stage 1–7 · 1.3M token, phần lớn là context re-sent</span></td><td class="cost">17 call · 1.4M</td></tr>
+    <tr><td class="n">5</td><td class="n">01:04:31</td><td class="who"><span class="badge b-crew">Crew</span>→ <span class="badge b-machine">Máy</span></td><td class="what">Build simulator 1m46s → test 1m16s → sửa + test 47s → test 10s → chụp 4 ảnh 15s → xem ảnh → lint 8s<span class="sub">Crew ngồi chờ máy 4m41s; mỗi lần chờ là một model call ~100k context.</span></td><td class="cost">6 call · 0.6M</td></tr>
+    <tr><td class="n">6</td><td class="n">01:07:24</td><td class="who"><span class="badge b-observer">Observer</span>→ <span class="badge b-mate">Mate</span></td><td class="what"><span class="bad">Báo nhầm:</span> incident <code>no_turn</code> "no turn in the ledger 5m after launch" trong lúc crew đang chờ build<span class="sub">Mate nhận digest 01:08:39, <code>mate peek</code>, thấy ổn, im lặng. Incident tự đóng 01:15:29 khi crew xong.</span></td><td class="cost">6s · 0.43M · 2 call</td></tr>
+    <tr><td class="n">7</td><td class="n">01:09:31</td><td class="who"><span class="badge b-crew">Crew</span>→ <span class="badge b-machine">Máy</span></td><td class="what">Format, commit <code>[HU-246] Turn a text block by its knob…</code>, đẩy gate <code>make pre-merge E=E2</code> chạy nền rồi kết thúc lượt 1<span class="sub">Lượt 1: 36 call · 2.7M · 7m21s. Crew không tốn token trong 2 phút gate chạy.</span></td><td class="cost">gate 1m59s</td></tr>
+    <tr><td class="n">8</td><td class="n">01:11:30</td><td class="who"><span class="badge b-machine">Máy</span>→ <span class="badge b-crew">Crew</span></td><td class="what"><code>&lt;task-notification&gt;</code> gate xong exit 0, mở lượt 2<span class="sub">Crew đọc log gate, thấy một test ✘ (BlockWidthTests đếm pixel núm), sửa test rồi chạy lại 2m21s. → Dấu vết stage 16–17</span></td><td class="cost">5 call · 534k · 3m</td></tr>
+    <tr><td class="n">9</td><td class="n">01:14:26</td><td class="who"><span class="badge b-crew">Crew</span>→ <span class="badge b-github">GitHub</span></td><td class="what">Viết handback.md (<span class="ok">8/8 tiêu chí pass</span>, 3 lệch so với Build, 3 còn mở), <code>gh pr create</code> → PR #215, báo <code>pr-open</code><span class="sub"><span class="missing">⚠ handback chưa có trong API</span></span></td><td class="cost">4.9s</td></tr>
+    <tr><td class="n">10</td><td class="n">01:14:40</td><td class="who"><span class="badge b-crew">Crew</span>→ <span class="badge b-mate">Mate</span></td><td class="what">Digest <code>wait-mate: PR #215</code><span class="sub">Project tắt review. Mate đọc handback, merge fast-forward <code>f128f56</code> (01:14:56), đóng crew 01:15:09, dọn simulator 1.8 GB + 2 process.</span></td><td class="cost" rowspan="2">93s · 1.57M · 7 call</td></tr>
+    <tr><td class="n">11</td><td class="n">01:16:05</td><td class="who"><span class="badge b-mate">Mate</span>→ <span class="badge b-captain">Captain</span> · crew mới</td><td class="what">Báo captain "HU-228 đã xong cả ba phần (PR #213, #214, #215)…", ghi vào #87 việc chưa thử tay, spawn <code>hu-227-order-plan</code><span class="sub">Cùng một lượt Mate: 93 giây từ lúc nhận pr-open đến lúc crew kế đã chạy.</span></td></tr>
+  </table>
+
+  <h2>Quy trình repo <small>9 bước mihuv2 khai trong project.yaml, tick từ lệnh và file crew đã đụng · <span class="missing">⚠ chưa có trong API</span></small></h2>
+  <table class="steps wf">
+    <tr><th>Bước repo dặn</th><th>Crew</th><th>Bằng chứng</th></tr>
+    <tr><td class="step">Đọc <code>docs/harness/mate.md</code></td><td class="st ok">✓ có</td><td class="ev">01:02:15 <code>cat docs/harness/mate.md | head -40</code>, lệnh đầu tiên</td></tr>
+    <tr><td class="step">Theo <code>feature.md</code> từ bước inspect</td><td class="st bad">✗ không đọc</td><td class="ev">không Read/cat file nào trong <code>docs/harness/workflows/</code></td></tr>
+    <tr><td class="step"><code>make agent-start E=</code></td><td class="st bad">✗ không</td><td class="ev">–</td></tr>
+    <tr><td class="step"><code>make gate-plan E=</code></td><td class="st bad">✗ không</td><td class="ev">–</td></tr>
+    <tr><td class="step">Gate <code>make pre-merge E=</code> trên commit</td><td class="st ok">✓ 2 lần</td><td class="ev">01:09:31 chạy nền · 01:11:42 chạy lại sau khi sửa BlockWidthTests, exit 0</td></tr>
+    <tr><td class="step">Chụp ảnh bằng <code>make shot NAME=</code></td><td class="st warn">~ tự chế</td><td class="ev">01:08:55 <code>xcodebuild test … TEST_RUNNER_HU246_SHOTS</code> ghi vào thư mục shots của crew, simulator từ <code>scripts/simulator.sh</code></td></tr>
+    <tr><td class="step"><code>ios-ui-verify</code> sau khi đổi UI</td><td class="st bad">✗ không</td><td class="ev">diff chạm <code>NoteEditorView.swift</code>, <code>TextBlockField.swift</code>; không nạp skill, không chạy capture/compare</td></tr>
+    <tr><td class="step"><code>learn.md</code> trước khi trả bài</td><td class="st warn">~ đúng mẫu, không đọc</td><td class="ev">handback có <code>Learning: none (HU-246 4397c62)</code>, mẫu do brief chép ở dòng 142</td></tr>
+    <tr><td class="step">Hand-over có profile · SHA · PASS · receipt</td><td class="st ok">✓ có</td><td class="ev">01:14:26 handback.md hàng "Gate green", <code>gh pr create --body-file handback.md</code></td></tr>
+  </table>
+  <div class="legend">Skill đã nạp: <b>0</b> · entry point <code>/name</code>, <code>$name</code> của repo: <b>0/8</b> · crew đi theo brief + AGENTS.md: phần brief chép thì làm, phần brief chỉ trỏ tới file thì bỏ.</div>
+
+  <h2>Đọc nhanh</h2>
+  <div class="cards">
+    <div class="card"><h3>Task này chạy đúng vòng</h3><p>Brief → crew → gate nền → PR → Mate merge → báo captain → crew kế. Không hỏi captain câu nào, không bị trả lại, teardown sạch.</p><p class="dim">Chỗ cần soi: quy trình repo 4/9 bước, bỏ <code>ios-ui-verify</code> dù đổi UI; crew im 12 phút không báo status line.</p></div>
+    <div class="card"><h3>Mate tốn ngang crew</h3><p class="big">3.0M <span class="dim" style="font-size:13px">Mate</span> · 3.2M <span class="dim" style="font-size:13px">crew</span></p><p>Ba lượt Mate quanh task (viết brief, xử lý báo nhầm, merge và giao tiếp) tốn bằng cả crew làm việc, do context Mate 213k–233k mỗi call. <span class="missing">⚠ chưa tách phần của task này khỏi việc khác trong lượt</span></p></div>
+    <div class="card"><h3>Một nửa thời gian là chờ máy</h3><p class="big">6m54s / 12m55s</p><p>Build, test, gate. Gate chạy nền nên không tốn token; nhưng 4m41s chờ build/test ở lượt 1 vẫn tốn 6 model call ~100k context mỗi call.</p></div>
+  </div>
+
+  <div class="foot">Tab Dấu vết (không vẽ ở mockup này) giữ cùng trục thời gian: 17 stage theo token, 8 finding, bảng theo loại việc, bấm stage mở segment và evidence. Route <code>/usage</code> mở thẳng tab đó.</div>
+</main>
+
+<script>
+(function () {
+  // Mốc giờ thật (giờ VN) từ performance.executions, status_lines, mate exchanges, incidents.log, .meta.
+  var T0 = t("01:00:50"), T1 = t("01:17:20");
+  var W = 1040, LEFT = 118, RIGHT = 12, TOP = 22, LANE_H = 64;
+  var lanes = [
+    { key: "captain", label: "Captain", sub: "① 30/10 viết HU-228 trên Linear", color: "var(--captain)" },
+    { key: "mate", label: "Mate", sub: "opus · mate-7b09de89", color: "var(--mate)" },
+    { key: "observer", label: "Observer", sub: "ledger watch", color: "var(--observer)" },
+    { key: "crew", label: "Crew", sub: "sonnet · high", color: "var(--crew)" },
+    { key: "machine", label: "Máy", sub: "simulator · xcodebuild · gate", color: "var(--machine)" },
+    { key: "github", label: "GitHub", sub: "mihuv2", color: "var(--github)" }
+  ];
+  var bars = [
+    { lane: "mate", from: "01:01:08", to: "01:02:21", label: "M1 · merge #214, viết brief HU-246, spawn", above: true },
+    { lane: "mate", from: "01:08:39", to: "01:08:45", label: "M2 · peek, im lặng", above: true },
+    { lane: "mate", from: "01:14:40", to: "01:16:13", label: "M3 · merge, đóng, dọn, báo captain, spawn HU-227", above: true },
+    { lane: "crew", from: "01:02:14", to: "01:02:49", label: "đọc code", href: "#stage-1" },
+    { lane: "crew", from: "01:03:11", to: "01:04:28", label: "sửa code · test · docs" },
+    { lane: "crew", from: "01:04:31", to: "01:09:12", label: "chờ build / test, xem ảnh", idle: true },
+    { lane: "crew", from: "01:09:19", to: "01:09:36", label: "" },
+    { lane: "crew", from: "01:11:30", to: "01:11:42", label: "" },
+    { lane: "crew", from: "01:11:42", to: "01:14:03", label: "sửa test, chờ chạy lại", idle: true },
+    { lane: "crew", from: "01:14:22", to: "01:14:31", label: "" },
+    { lane: "machine", from: "01:04:31", to: "01:06:17", label: "build 1m46s" },
+    { lane: "machine", from: "01:06:19", to: "01:07:35", label: "test 1m16s" },
+    { lane: "machine", from: "01:07:43", to: "01:08:30", label: "test 47s" },
+    { lane: "machine", from: "01:08:43", to: "01:08:53", label: "", short: true },
+    { lane: "machine", from: "01:08:55", to: "01:09:10", label: "ảnh", short: true },
+    { lane: "machine", from: "01:09:31", to: "01:11:30", label: "gate pre-merge (nền) 1m59s" },
+    { lane: "machine", from: "01:11:42", to: "01:14:03", label: "test lại 2m21s" }
+  ];
+  var idle = [
+    { lane: "crew", from: "01:09:36", to: "01:11:30", label: "chờ gate, 0 token" }
+  ];
+  var dots = [
+    { lane: "captain", at: "01:02:21", label: "nhận: HU-245 xong, HU-246 bắt đầu", side: "right" },
+    { lane: "captain", at: "01:16:13", label: "nhận: HU-228 xong cả ba phần", side: "left" },
+    { lane: "observer", at: "01:07:24", label: "incident no_turn (nhầm)", bad: true },
+    { lane: "observer", at: "01:15:29", label: "resolved", side: "right" },
+    { lane: "crew", at: "01:02:15", label: "" },
+    { lane: "crew", at: "01:02:18", label: "", bad: true },
+    { lane: "crew", at: "01:14:31", label: "pr-open", below: true, side: "left" },
+    { lane: "github", at: "01:14:31", label: "PR #215 mở", side: "left" },
+    { lane: "github", at: "01:14:56", label: "merged ff f128f56", side: "right" },
+    { lane: "crew", at: "01:15:09", label: "closed · teardown", below: true, side: "right" }
+  ];
+  var arrows = [
+    { n: 2, from: "crew", to: "mate", at: "01:01:08", label: "hu-245 báo #214" },
+    { n: 3, from: "mate", to: "crew", at: "01:02:14" },
+    { n: 5, from: "crew", to: "machine", at: "01:04:31" },
+    { n: 6, from: "observer", to: "mate", at: "01:08:39", bad: true },
+    { n: 7, from: "crew", to: "machine", at: "01:09:31" },
+    { n: 8, from: "machine", to: "crew", at: "01:11:30" },
+    { n: 9, from: "crew", to: "github", at: "01:14:28" },
+    { n: 10, from: "crew", to: "mate", at: "01:14:40" },
+    { n: 10, from: "mate", to: "github", at: "01:14:56", quiet: true, nonum: true },
+    { n: 10, from: "mate", to: "crew", at: "01:15:09", quiet: true, nonum: true },
+    { n: 11, from: "mate", to: "captain", at: "01:16:13" }
+  ];
+
+  function t(s) { var p = s.split(":"); return (+p[0]) * 3600 + (+p[1]) * 60 + (+p[2]); }
+  function x(s) { return LEFT + (t(s) - T0) / (T1 - T0) * (W - LEFT - RIGHT); }
+  function laneY(key) { var i = lanes.findIndex(function (l) { return l.key === key; }); return TOP + i * LANE_H + LANE_H / 2; }
+  var svg = document.getElementById("lanes");
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, text) { var n = document.createElementNS(NS, tag); for (var k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; svg.appendChild(n); return n; }
+  svg.setAttribute("viewBox", "0 0 " + W + " " + (TOP + lanes.length * LANE_H + 8));
+  var defs = el("defs"); var m = document.createElementNS(NS, "marker");
+  m.setAttribute("id", "arrowhead"); m.setAttribute("markerWidth", "7"); m.setAttribute("markerHeight", "7"); m.setAttribute("refX", "6"); m.setAttribute("refY", "3.5"); m.setAttribute("orient", "auto");
+  var mp = document.createElementNS(NS, "path"); mp.setAttribute("d", "M0,0 L7,3.5 L0,7 z"); mp.setAttribute("fill", "context-stroke"); m.appendChild(mp); defs.appendChild(m);
+
+  // ticks every minute
+  for (var s = t("01:01:00"); s <= T1; s += 60) {
+    var xx = LEFT + (s - T0) / (T1 - T0) * (W - LEFT - RIGHT);
+    el("line", { x1: xx, x2: xx, y1: TOP - 4, y2: TOP + lanes.length * LANE_H, class: "tick" });
+    var mm = Math.floor(s / 60) % 60;
+    if (mm % 2 === 1) el("text", { x: xx, y: TOP - 8, class: "tick-label", "text-anchor": "middle" }, "01:" + (mm < 10 ? "0" : "") + mm);
+  }
+  lanes.forEach(function (l, i) {
+    var y = TOP + i * LANE_H;
+    el("line", { x1: 0, x2: W, y1: y, y2: y, class: "lane-line" });
+    el("rect", { x: 0, y: y + 6, width: 4, height: LANE_H - 12, fill: l.color, rx: 1 });
+    el("text", { x: 12, y: y + LANE_H / 2 - 2, class: "lane-label" }, l.label);
+    el("text", { x: 12, y: y + LANE_H / 2 + 11, class: "lane-sub" }, l.sub);
+  });
+  bars.forEach(function (b) {
+    var y = laneY(b.lane), x1 = x(b.from), x2 = Math.max(x(b.to), x(b.from) + 4);
+    var color = lanes.find(function (l) { return l.key === b.lane; }).color;
+    var r = el("rect", { x: x1, y: y - 10, width: x2 - x1, height: 20, class: "bar", fill: color, "fill-opacity": b.idle ? 0.35 : 1 });
+    if (b.idle) r.setAttribute("stroke", color);
+    r.appendChild(document.createElementNS(NS, "title")).textContent = b.label + " · " + b.from + " → " + b.to;
+    var fits = (x2 - x1) > b.label.length * 6.4 + 8;
+    if (b.label && b.above) el("text", { x: x1, y: y - 15, class: "dot-label" }, b.label);
+    else if (b.label && fits) el("text", { x: x1 + 4, y: y + 4, class: "bar-label" + (b.idle ? " light" : "") }, b.label);
+    else if (b.label) el("text", { x: x1, y: y + 24, class: "dot-label" }, b.label);
+  });
+  idle.forEach(function (b) {
+    var y = laneY(b.lane);
+    el("rect", { x: x(b.from), y: y - 10, width: x(b.to) - x(b.from), height: 20, class: "idle", rx: 3 });
+    el("text", { x: x(b.from) + 4, y: y + 4, class: "idle-label" }, b.label);
+  });
+  dots.forEach(function (d) {
+    var y = laneY(d.lane), xx = x(d.at);
+    var color = d.bad ? "var(--critical)" : lanes.find(function (l) { return l.key === d.lane; }).color;
+    el("circle", { cx: xx, cy: y, r: 4.5, class: "dot", fill: color });
+    if (d.label) el("text", { x: d.side === "left" ? xx - 8 : xx + 8, y: d.below ? y + 24 : y + 4, class: "dot-label", "text-anchor": d.side === "left" ? "end" : "start" }, d.label);
+  });
+  arrows.forEach(function (a) {
+    var xx = x(a.at), y1 = laneY(a.from), y2 = laneY(a.to);
+    var dir = y2 > y1 ? 1 : -1;
+    var start = y1 + dir * 12, end = y2 - dir * 12;
+    el("path", { d: "M" + xx + "," + start + " L" + xx + "," + end, class: "arrow" + (a.bad ? " bad" : "") + (a.quiet ? " quiet" : "") });
+    if (!a.nonum) {
+      var ny = (start + end) / 2;
+      el("circle", { cx: xx, cy: ny, r: 7.5, class: "numbg" + (a.bad ? " bad" : "") });
+      el("text", { x: xx, y: ny + 3.5, class: "num", "text-anchor": "middle" }, String(a.n));
+    }
+    if (a.label) el("text", { x: xx + 10, y: (start + end) / 2 + 3, class: "dot-label" }, a.label);
+  });
+})();
+</script>
+</body>
+</html>
