@@ -160,6 +160,9 @@ func newFixture(t *testing.T) *fixture {
 			BranchExists: func(_ context.Context, _, _, branch string) (bool, error) {
 				return branch == fixtureBranch, nil
 			},
+			ChangedFiles: func(context.Context, string, string, bool, string) ([]string, error) {
+				return []string{"README.md"}, nil
+			},
 		},
 	})
 	if err != nil {

@@ -36,6 +36,11 @@ type Deps struct {
 	// that crew works in; the crew is passed because a project may own
 	// several repos and only the crew's meta says which is its.
 	BranchExists func(ctx context.Context, project, crew, branch string) (bool, error)
+	// ChangedFiles lists the files a crew's work touched: its branch
+	// against the default branch while the branch exists, else the merge
+	// commit its meta recorded. nil leaves the task page's workflow check
+	// unable to tell which steps apply.
+	ChangedFiles func(ctx context.Context, project, crew string, branchExists bool, mergeCommit string) ([]string, error)
 	// Now is the clock behind `generated_at`; tests freeze it.
 	Now func() time.Time
 	// PluginHarness says whether a Mate on harness kind can be given its
@@ -93,6 +98,9 @@ type Server struct {
 	agents *agentIndex
 	acting *actionLocks
 	mux    *http.ServeMux
+	// mateMemo holds one project's Mate exchanges for one event id, so
+	// every task page's journey does not rebuild them (journey.go).
+	mateMemo mateExchangesMemo
 }
 
 // New builds the server and its routes. It reads nothing yet: a dashboard

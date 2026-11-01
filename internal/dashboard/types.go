@@ -341,6 +341,10 @@ type TaskResponse struct {
 	Questions   []Question              `json:"questions"`
 	Branch      Branch                  `json:"branch"`
 	Performance diagnostics.Performance `json:"performance"`
+	// Journey is what the Journey tab reads beyond the fields above
+	// (journey.go): brief, hand-back, meta, reviews, the Mate's turns about
+	// this crew, incidents, the project's workflow checked.
+	Journey Journey `json:"journey"`
 }
 
 // TaskSummaryResponse is GET /api/projects/{project}/tasks/{crew}?view=summary:

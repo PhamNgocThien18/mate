@@ -1040,6 +1040,7 @@ button.overview-stage:hover { border-color: var(--accent); color: var(--ink); }
 .journey-tick-label { fill: var(--muted); font: 10px var(--mono); }
 .journey-bar rect { fill: var(--kind, var(--lane-crew)); opacity: 0.9; }
 .journey-bar[data-lane="machine"] rect { fill: var(--lane-machine); }
+.journey-bar[data-lane="mate"] rect { fill: var(--lane-mate); }
 .journey-bar[data-failed="true"] rect { fill: var(--critical); }
 .journey-bar[role="button"] { cursor: pointer; }
 .journey-bar[role="button"]:hover rect, .journey-bar[role="button"]:focus rect { opacity: 1; stroke: var(--ink); stroke-width: 1; }
@@ -1076,6 +1077,17 @@ button.overview-stage:hover { border-color: var(--accent); color: var(--ink); }
 .lane-badge[data-lane="machine"] { background: var(--lane-machine); }
 .lane-badge[data-lane="github"] { background: var(--lane-github); }
 
+.journey-steps.workflow td.st[data-state="done"] .glyph { color: var(--good); }
+.journey-steps.workflow td.st[data-state="missed"] .glyph { color: var(--critical); }
+.journey-steps.workflow td.st[data-state="n/a"] .glyph, .journey-steps.workflow td.st[data-state="unknown"] .glyph { color: var(--muted); }
+.journey-steps td.st { white-space: nowrap; font-weight: 600; color: var(--ink); }
+.journey-steps td.ev { font-size: 12px; overflow-wrap: anywhere; }
+.journey-steps tr.total td { color: var(--muted); border-bottom: 0; }
+.journey-steps.criteria tr[data-pass="false"] td.st { color: var(--critical); }
+.journey-details { margin-top: 4px; font-size: 12.5px; }
+.journey-details > summary { cursor: pointer; color: var(--accent); }
+.journey-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin: 6px 0; max-height: 360px; overflow: auto; }
+.journey-missing { font-size: 12px; margin-top: 10px; }
 .journey-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .glance h3 { font-size: 13px; margin: 0 0 6px; }
 .glance .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }

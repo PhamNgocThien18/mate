@@ -385,6 +385,22 @@ A branch that is gone is not an error: the crew was torn down and its work lande
 }
 ```
 
+### The journey field
+
+`journey` (journey.go, docs/design/task-page.md) is what the task page's Journey tab reads beyond the fields above. Each part is one file or one query, and `missing` names in words what could not be read, so the page says "not recorded" rather than drawing zero.
+
+| Field | Meaning |
+| --- | --- |
+| `brief` | `crews/<crew>/brief.md`: `captain_words` (the `## Captain's words` section) and `task` (the `# Task` body up to the next level-one heading); the role and rules boilerplate is not returned. `null` when there is no brief. |
+| `handback` | `crews/<crew>/handback.md` verbatim in `markdown`, plus `closes` (the tracker lines at the top), `criteria[]{name, result, pass, command, output}` from the table whose header starts with `criterion`, `deviations[]`, `still_open[]`, and `learning` (the text after `Learning:`). `null` when the crew has not handed back. |
+| `meta` | The crew's `.meta`, the keys the page reads: `pr_url`, `pr_state`, `pr_sync`, `merge_commit`, `lane`, `size`, `teardown`, `cleanup`, `launched_at`, `started_at`, `stopped_at`, `state`, `worktree`, `repo`. |
+| `reviews[]` | `{crew, verdict}` for each reviewer `mate review` started for this task; the verdict is the reviewer's report's, `pending` while it has none. |
+| `mate_turns[]` | The Mate's exchanges (section 3's shape) that touched this crew: one whose activities name it (spawned, answered, merged, closed) or whose prompt opens with the crew's name (its digests). Each is the whole exchange: what else the Mate did in it is not separated out, and `activities` says what it did. They are computed once per `last_event_id` and shared across task pages. |
+| `incidents[]` | This crew's lines of `incidents.log`: `at`, `kind`, `state` (`open` or `resolved`), `text`. |
+| `workflow[]` | project.yaml's `workflow` steps checked against the recording: `{step, state, evidence, at}` with `state` `done`, `missed`, `n/a` (the step's `files` matched nothing the crew changed) or `unknown` (a bad pattern, or `files` could not be checked). `null` when the project declares none. A step is done when its `command` matches a native, non-poll command the crew ran, its `read` matches a path it read (a file tool's target or a command naming the path), its `skill` matches a skill it loaded, or its `handback` matches a line of the hand-back. |
+| `changed_files[]` | The files the crew's work touched: its branch against its base while the branch exists, else its merge commit's. `null` when neither could be read. |
+| `missing[]` | What this answer could not read: `brief`, `hand-back`, `meta`, `incidents`, `project.yaml`, `changed files`, `Mate's turns: <why>`. |
+
 ### Crew performance projection
 
 The task response also carries `performance` (`version: crew-observability-v1`).
