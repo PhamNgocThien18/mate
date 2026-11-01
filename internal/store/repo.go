@@ -62,9 +62,9 @@ type RepoConfig struct {
 	// Lane names the machine resource the repo's crews contend for
 	// (CON-118): `xcode` for a repo whose gate builds on this machine's
 	// simulators. Repos of different projects that name the same lane
-	// share its cap; `mate crew dispatch` reports how full each lane is
-	// and the brief of a crew in the `xcode` lane carries the Xcode loop.
-	// Empty is no lane.
+	// share its cap; `mate crew dispatch` reports how full each lane is.
+	// How a crew spends the resource is the repo's business (its gate and
+	// skills), not the brief's. Empty is no lane.
 	Lane string `yaml:"lane,omitempty"`
 }
 

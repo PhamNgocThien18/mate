@@ -55,16 +55,6 @@ Everything you read stays in your context and is paid for again on every later c
 - Wait for a build, a test run, a simulator or a pull-request check once: one blocking command with the longest timeout the tool allows, or a background command that wakes you when it exits, then end your turn. Never `sleep` or poll; polling once cost crews 40% of their build minutes.
 - Never rerun a failed command unchanged: read its log and change something first.
 - Never read a whole directory of images; downscale a PNG before you read it, and read only the ones a step needs.
-{{- if eq .Lane "xcode"}}
-
-# The Xcode loop
-This machine builds for every Crew at once, so every xcodebuild you skip is minutes given back to all of them.
-- Build once per edit with `build-for-testing`, then run the one test you need with `test-without-building -xctestrun <file> -only-testing:<Target/Class/method>`; a full `xcodebuild test` is for the gate.
-- Pass `-collect-test-diagnostics never` (two tokens) on every test run: otherwise a failed test collects a sysdiagnose for up to 600 seconds.
-- One simulator for this worktree, booted once and kept warm.
-- A probe test prints every value you want in one run. Kill xcodebuild as soon as its log shows `error:`.
-- Never run two xcodebuilds at once.
-{{- end}}
 {{- if .Scout}}
 
 # Definition of done

@@ -270,9 +270,6 @@ type BriefParams struct {
 	// both empty omits the whole section.
 	WorkspaceCrewRules string
 	ProjectCrewRules   string
-	// Lane is the repo's lane (store.RepoConfig.Lane). `xcode` adds the
-	// Xcode loop section (CON-117); anything else adds nothing.
-	Lane string
 }
 
 // RenderBrief fills assets/crew/brief.md.tmpl with p and returns the result.

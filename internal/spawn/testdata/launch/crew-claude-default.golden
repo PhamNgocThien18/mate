@@ -202,12 +202,12 @@ worktree=.worktrees/shop-k3
     {
       "path": "embedded:crew/brief.md.tmpl",
       "role": "crew_prompt_template",
-      "sha256": "cc25a067166ebc4877ed1a1188c33e0403f5cc98cacbaa539aa8bc77e5e00c0c",
-      "bytes": 17338,
+      "sha256": "e2792959f3620c218e616a8221924dae6d6dd25e2c93b4c308e465096497327c",
+      "bytes": 16620,
       "state": "configured"
     }
   ],
-  "fingerprint": "ed6e5c459a5ba22392ce449266f20865d8382b8cdaa2d6e7610c1c3050e1a0b7"
+  "fingerprint": "18dd17d269605ae1b97b1d09cf458b195b27abbb46f7d4f281f5782fb48ccaeb"
 }
 --- end {{WORKSPACE}}/.mate/projects/shop/crews/k3/harness-profile.json ---
 

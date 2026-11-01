@@ -126,7 +126,7 @@ func writeLanes(out io.Writer, rows []laneRow) {
 // dispatches work outside the lane (skill new-task). It reports and the
 // Mate still decides, but twice in one evening a Mate dispatched into a
 // lane that `crew dispatch` had just called full, so the report alone was
-// not enough. `--lane none` passes, for a crew whose gate never runs the
+// not enough. `--lane none` passes, for a crew that will never use the
 // lane's resource.
 func laneGuard(w *store.Workspace, req spawn.SpawnCrewRequest) error {
 	cfg, err := w.LoadProject(req.Project)
@@ -147,7 +147,7 @@ func laneGuard(w *store.Workspace, req spawn.SpawnCrewRequest) error {
 		if r.Name != lane || !r.Full() {
 			continue
 		}
-		return newUsageErrorf("mate crew spawn: lane %s is full (%d/%d: %s); queue the task with `blocked-by: lane %s` and dispatch work outside the lane, or pass --lane none only when this crew's gate never runs xcodebuild",
+		return newUsageErrorf("mate crew spawn: lane %s is full (%d/%d: %s); queue the task with `blocked-by: lane %s` and dispatch work outside the lane, or pass --lane none only when this crew will never use the lane's resource",
 			lane, len(r.Holders), r.Cap, strings.Join(r.Holders, ", "), lane)
 	}
 	return nil
