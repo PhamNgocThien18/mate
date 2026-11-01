@@ -330,6 +330,7 @@ func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.Repo
 	var out []string
 	for _, sha := range order {
 		var why string
+		far := false
 		switch {
 		case sha == memory.NoCommit && !hasHead, hasHead && sha != memory.NoCommit && strings.HasPrefix(head, sha):
 			continue
@@ -350,13 +351,28 @@ func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.Repo
 				why = fmt.Sprintf("%s is not %s's head", sha, label)
 			default:
 				why = fmt.Sprintf("%s has %d newer commit(s)", label, n)
+				far = n >= staleAnchorCommits
 			}
 		}
-		out = append(out, fmt.Sprintf("warning: %s %s anchored at %s@%s, and %s; treat %s as a hint until a report or hand-back confirms it",
-			memory.ProjectFileName, lineList(bySHA[sha]), label, sha, why, itThem(len(bySHA[sha]))))
+		advice := fmt.Sprintf("treat %s as a hint until a report or hand-back confirms it", itThem(len(bySHA[sha])))
+		if far {
+			subject := "it is"
+			if len(bySHA[sha]) > 1 {
+				subject = "they are"
+			}
+			advice = fmt.Sprintf("%s far behind: re-read %s from a fresh report or hand-back, or have a Crew write the fact into the repo's own docs and keep only the path here (skill stow)", subject, itThem(len(bySHA[sha])))
+		}
+		out = append(out, fmt.Sprintf("warning: %s %s anchored at %s@%s, and %s; %s",
+			memory.ProjectFileName, lineList(bySHA[sha]), label, sha, why, advice))
 	}
 	return out, nil
 }
+
+// staleAnchorCommits is how many commits an anchor may fall behind its
+// branch before `memory check` stops calling the line a hint and asks for
+// it to be re-read or moved into the repo (CON-145). A fact that old was
+// recorded against a tree that no longer exists.
+var staleAnchorCommits = 50
 
 func lineList(lines []int) string {
 	s := make([]string, len(lines))
