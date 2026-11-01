@@ -358,8 +358,9 @@
 
   function parseHash() {
     var h = (location.hash || "#/").replace(/^#/, "");
-    // An optional /usage suffix opens the task and scrolls to its token
-    // consumption; routeHash never writes it, so the crumbs stay plain.
+    // An optional /usage suffix opens the task on its Trace tab and scrolls
+    // to its token consumption; routeHash never writes it, so the crumbs
+    // stay plain.
     var m = /^\/p\/([^/]+)\/t\/([^/]+?)(\/usage)?\/?$/.exec(h);
     if (m) return { tier: "task", project: decodeURIComponent(m[1]), crew: decodeURIComponent(m[2]), usage: !!m[3] };
     m = /^\/p\/([^/]+)\/mate\/?$/.exec(h);
@@ -763,35 +764,24 @@
 
   // ----------------------------------------------------------- tier 3
 
+  // The task page lives in task.js (docs/design/task-page.md): one header,
+  // a Journey tab and a Trace tab. It is built once with the helpers the
+  // two files share and keeps the chosen tab across polls.
+  var taskView = null;
+
+  function task() {
+    if (!taskView) taskView = mateTaskView({
+      el: el, txt: txt, append: append, svgNode: svgNode, timestamp: timestamp,
+      fmtTokens: fmtTokens, fmtMs: fmtMs, fmtPct: fmtPct, clock: clock, count: count, excerpt: excerpt, kindLabel: kindLabel,
+      taskPill: taskPill, runtimeChips: runtimeChips, spawnSpanMs: spawnSpanMs, savedDetails: savedDetails,
+      crewPerformance: crewPerformance, ledgerHeader: ledgerHeader, statusList: statusList, questionList: questionList,
+      diffPanel: diffPanel, turnTimeline: turnTimeline, revealPrompt: revealPrompt, draw: function () { draw(); }
+    });
+    return taskView;
+  }
+
   function renderTask(body) {
-    var out = el("div");
-    var ledger = body.ledger || {};
-    out.appendChild(el("div", { class: "card-head crew-head" }, [
-      el("h1", { text: body.crew }),
-      stateSpan(ledger.state),
-      runtimeChips(body)
-    ]));
-    out.appendChild(el("p", { class: "muted", style: "margin:0 0 6px", text: ledger.text || "" }));
-    out.appendChild(crewFacts(body));
-    out.appendChild(crewPerformance(body));
-    out.appendChild(savedDetails("ledger", "Crew totals and branch", [ledgerHeader(ledger, body.branch || {})], "section diagnostics"));
-    if ((body.status_lines || []).length) {
-      out.appendChild(el("div", { class: "section" }, [
-        el("h2", { text: "status lines" }),
-        statusList(body.status_lines)
-      ]));
-    }
-    out.appendChild(el("div", { class: "section" }, [
-      el("h2", { text: "questions" }),
-      questionList(body.questions || [])
-    ]));
-    out.appendChild(el("div", { class: "section" }, [
-      el("h2", { text: "diff" }),
-      diffPanel(body)
-    ]));
-    out.appendChild(savedDetails("raw-calls", "Raw model calls and events (" + (body.turns || []).length + ")",
-      [turnTimeline(body)], "section diagnostics"));
-    return out;
+    return task().render(body);
   }
 
   // The harness and model the recording actually observed, as chips beside
@@ -2608,10 +2598,13 @@
       segmentKindFilter = "all";
       selectedFinding = "";
       selectedSegment = "";
+      task().reset();
     }
     if (next.tier !== route.tier || next.project !== route.project) filter = "open";
     route = next;
     revealUsage = !!next.usage;
+    // /usage is the trace tab: the token card it scrolls to lives there.
+    if (next.usage) task().openTab("trace");
     data = null;
     renderCrumbs();
     draw();
