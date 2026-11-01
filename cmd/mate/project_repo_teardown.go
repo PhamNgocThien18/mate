@@ -67,7 +67,7 @@ func cmdProjectRepoTeardown(args []string, stdout, stderr io.Writer) error {
 // teardownSettingLine says what a crew stop will run for the repo.
 func teardownSettingLine(project, repo, cmd string) string {
 	if cmd == "" {
-		return fmt.Sprintf("%s/%s teardown: none - a crew stop runs only mate's own sweeps (processes, docker compose, Xcode DerivedData, simulators named after the worktree)", project, repo)
+		return fmt.Sprintf("%s/%s teardown: none - a crew stop only ends the processes still running in the worktree; a stack, simulator or build folder the repo starts per worktree stays behind", project, repo)
 	}
-	return fmt.Sprintf("%s/%s teardown: %s - runs with sh -c in each crew's worktree before a stop removes it, then mate's own sweeps", project, repo, cmd)
+	return fmt.Sprintf("%s/%s teardown: %s - runs with sh -c in each crew's worktree before a stop removes it, then ends the processes still running there", project, repo, cmd)
 }

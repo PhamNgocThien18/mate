@@ -161,12 +161,12 @@ CODEX_HOME={{CODEX_HOME}}
 (rendered asset) sha256=04809623c9d64cd49c34268bb3f84c13419738b3870d185eb2364ecce54a26c7
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/crew-recovery/SKILL.md ---
 
---- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/mate-commands/SKILL.md mode=-rw-r--r-- bytes=13033 ---
-(rendered asset) sha256=5d57c8d2e950939c5b09487ee3cf6ea9bbacc07b125cc119af9488f96b0cce32
+--- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/mate-commands/SKILL.md mode=-rw-r--r-- bytes=13053 ---
+(rendered asset) sha256=fbbbdf3048e3de3050142dc6b7f76b87a7bd00df1bf377f13eb0471a046b88f5
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/mate-commands/SKILL.md ---
 
---- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/new-task/SKILL.md mode=-rw-r--r-- bytes=20901 ---
-(rendered asset) sha256=3328cf05af6de81f956b5c22870881ad13d4bb149ab5dd03d8c1d02e61f13068
+--- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/new-task/SKILL.md mode=-rw-r--r-- bytes=20907 ---
+(rendered asset) sha256=6d95a899b630fc685c99d43bce13bbc105160bac40fb45265bf716220045e3f0
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/new-task/SKILL.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/plugin-local-tools-notes/SKILL.md mode=-rw-r--r-- bytes=67 ---
@@ -177,8 +177,8 @@ CODEX_HOME={{CODEX_HOME}}
 (rendered asset) sha256=20cf965d46c6c79d6ae2abc176bab049526e0c63bd592319fefbee16b178b57d
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/plugin-tracker-work-workflow/SKILL.md ---
 
---- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/review-delivery/SKILL.md mode=-rw-r--r-- bytes=9738 ---
-(rendered asset) sha256=591a9f6d0fa5472ae3987bf11e0275c10231a25f95ebdb0a122cbb07d8321233
+--- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/review-delivery/SKILL.md mode=-rw-r--r-- bytes=9739 ---
+(rendered asset) sha256=0a6ee15e431d4319c78dc48c629dd7deaffed5901f3fec5cb0a73df879457c4c
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/review-delivery/SKILL.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/stow/SKILL.md mode=-rw-r--r-- bytes=9687 ---

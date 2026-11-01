@@ -125,7 +125,7 @@ A lesson from memory that applies to Crews goes into `## Build` until the captai
 
 - Check that the proposed verification can observe the requested behaviour, using earlier evidence or a bounded read-only check. A new feature need not pass before implementation. An unreachable state or contradictory expectation is a scope question to settle before ship.
 - A diagnosis in the captain's words goes under `## What we already know` labelled `verified (<source>)` or `unverified`; unverified, it is never a criterion.
-- "Try both ways" carries a cap and a stop condition: "B failed before (ios-gotchas:25); one build each, stop and record it if the trap repeats".
+- "Try both ways" carries a cap and a stop condition: "B failed before (<memory file>:<line>); one build each, stop and record it if the trap repeats".
 - Resolve a foreseeable design conflict before ship when it changes behaviour or acceptance. Record an authorised resolution and its source in the facts and reflect it in Build and Acceptance; a conditional fallback names its trigger and decision owner.
 
 Then `/usr/local/bin/mate brief check /ws/.mate/projects/shop/mate/briefs/<id>.md` (`--scout` for a scout), and fix every line it prints. Passing means the shape is right, not that the brief is good.

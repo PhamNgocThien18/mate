@@ -80,8 +80,8 @@ type WorkspaceConfig struct {
 }
 
 // DefaultLaneCap is how many crews may hold a lane workspace.yaml does not
-// size: two, because on the captain's machine a third concurrent Xcode
-// build makes every crew wait (CON-118).
+// size: two, because on the captain's machine a third concurrent heavy
+// build made every crew wait (CON-118).
 const DefaultLaneCap = 2
 
 // LaneCap is how many crews may hold the lane at once.

@@ -45,7 +45,7 @@ The project's repos are yours to run (the manual); the captain can change the li
 - `{{.MatevBin}} project repo add {{.ProjectName}} <git-url|repo-path> [--name <name>]` - a URL is cloned into `{{.WorkspaceRoot}}/<name>`; a repo with no commit at all gets an empty first commit, because a Crew branches from one; nothing is ever pushed, and the command says what it did.
 - `{{.MatevBin}} project repo remove {{.ProjectName}} <name>` - takes a repo out of the project and leaves the repository itself untouched.
 - `{{.MatevBin}} project repo teardown {{.ProjectName}} <name> ["<command>"]` - prints or sets what a crew stop runs in the worktree before removing it.
-- `{{.MatevBin}} project repo lane {{.ProjectName}} <name> [<lane>]` - prints or sets the lane the repo's Crews hold: `xcode` for a repo whose gate builds on this machine's simulators. `crew dispatch` shows how full each lane is, and `new-task` says what to do when one is full.
+- `{{.MatevBin}} project repo lane {{.ProjectName}} <name> [<lane>]` - prints or sets the lane the repo's Crews hold: a machine resource, named by the captain, that repos of every project naming it share. `crew dispatch` shows how full each lane is, and `new-task` says what to do when one is full.
 
 Tell the captain in one line which repo you added or removed.
 

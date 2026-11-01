@@ -49,7 +49,7 @@ Once the review passes, land the work yourself:
 
 With the project's review `off`, land it once the hand-back checks out, with `{{.MatevBin}} merge {{.ProjectName}} <id>` and no `--review`.
 With `--review` it pins the commit the reviewer saw; either way it closes the Crew; report what it printed, in outcome words, then keep the work moving, as AGENTS.md says.
-The close also removes what the worktree started (its compose stack, simulators, build folders); a `left behind:` part names what could not go and why: tell the captain in one line, it does not hold the task.
+The close also runs the repo's teardown command and ends processes still running in the worktree; a `left behind:` part names what could not go and why: tell the captain in one line, it does not hold the task.
 When memory `## Captain` says the captain merges this kind of work, report it as ready instead, naming the branch or the pull request.
 New reviews pass only with Findings and Verification gaps both set to none; Notes never block. For a legacy review that passed but left findings standing, record them first: add a line under `## Queued` with `mate backlog add`, or name the tracker issue, and merge again with `--followups backlog:<text>` or `--followups <TRACKER-id>`.
 A passing review's `## Notes` open no correction round: merge, and record a note worth keeping with `mate backlog add` or in the tracker, as you judge; it needs no `--followups`.

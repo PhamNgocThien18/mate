@@ -9,8 +9,7 @@ import (
 
 // cmdProjectRepoLane implements `mate project repo lane <project> <repo>
 // [<lane>] [--clear]` (CON-118): the machine resource the repo's crews
-// contend for, `xcode` for a repo whose gate builds on this machine's
-// simulators. Without a lane it prints the setting.
+// contend for, named by the captain. Without a lane it prints the setting.
 func cmdProjectRepoLane(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("project repo lane", flag.ContinueOnError)
 	fs.SetOutput(stderr)
