@@ -52,6 +52,27 @@ type ProjectConfig struct {
 	// empty, takes the tracker's next ready task without asking;
 	// NextWorkAsk asks the captain which work comes next.
 	NextWork string `yaml:"next_work,omitempty"`
+	// Workflow is the project's own process as the admin task page checks
+	// it (docs/design/task-page.md, CON-148): the steps the harness asks a
+	// crew to take, each with the evidence that proves it was taken. Empty
+	// means the project declares none and the page draws no checklist.
+	Workflow []WorkflowStep `yaml:"workflow,omitempty"`
+}
+
+// WorkflowStep is one step of ProjectConfig.Workflow. Every pattern is a
+// Go regular expression; a step is done when any one of them matches:
+// Command against a shell command the crew ran, Read against a path it
+// read (a file tool's target, or a command naming the path), Skill against
+// a skill it loaded, Handback against a line of its hand-back. Files, when
+// set, says which changed files make the step apply at all: a crew whose
+// diff matches none of them has the step as "n/a", not "missed".
+type WorkflowStep struct {
+	Step     string `yaml:"step"`
+	Command  string `yaml:"command,omitempty"`
+	Read     string `yaml:"read,omitempty"`
+	Skill    string `yaml:"skill,omitempty"`
+	Handback string `yaml:"handback,omitempty"`
+	Files    string `yaml:"files,omitempty"`
 }
 
 // The values of ProjectConfig.Review.

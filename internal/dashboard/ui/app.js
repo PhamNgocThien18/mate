@@ -772,7 +772,7 @@
   function task() {
     if (!taskView) taskView = mateTaskView({
       el: el, txt: txt, append: append, svgNode: svgNode, timestamp: timestamp,
-      fmtTokens: fmtTokens, fmtMs: fmtMs, fmtPct: fmtPct, clock: clock, count: count, excerpt: excerpt, kindLabel: kindLabel,
+      fmtTokens: fmtTokens, fmtMs: fmtMs, fmtPct: fmtPct, fmtBytes: fmtBytes, clock: clock, count: count, excerpt: excerpt, kindLabel: kindLabel,
       taskPill: taskPill, runtimeChips: runtimeChips, spawnSpanMs: spawnSpanMs, savedDetails: savedDetails,
       crewPerformance: crewPerformance, ledgerHeader: ledgerHeader, statusList: statusList, questionList: questionList,
       diffPanel: diffPanel, turnTimeline: turnTimeline, revealPrompt: revealPrompt, draw: function () { draw(); }

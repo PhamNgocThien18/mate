@@ -203,11 +203,13 @@ func (s *Server) handleTask(ctx context.Context, r *http.Request, env envelope) 
 	if err != nil {
 		return nil, err
 	}
+	branch := s.branch(ctx, project, crew, ledger.Branch)
 	return TaskResponse{
 		envelope: env, Project: project, Crew: crew, Ledger: ledger,
 		Turns: turns, StatusLines: lines, Questions: decisionsOnly(questions),
-		Branch:      s.branch(ctx, project, crew, ledger.Branch),
+		Branch:      branch,
 		Performance: performance,
+		Journey:     s.journey(ctx, project, crew, ledger, performance, branch, env),
 	}, nil
 }
 

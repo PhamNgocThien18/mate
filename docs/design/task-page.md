@@ -65,14 +65,14 @@ workflow:
     command: ^make shot
   - step: ios-ui-verify sau khi đổi UI
     skill: ios-ui-verify
-    when: ui            # chỉ bắt buộc khi diff chạm file UI (đuôi .swift trong Views/, .storyboard, .xib)
+    files: '\.swift$'   # chỉ áp dụng khi diff chạm file Swift
   - step: learn.md trước khi trả bài
     read: docs/harness/workflows/learn.md
   - step: Handback có dòng Learning
     handback: ^Learning:
 ```
 
-Một bước là xong khi có một bằng chứng khớp: `command` khớp lệnh Bash trong `executions`, `read` khớp path của Read/cat/head, `skill` khớp tên trong `skills`, `handback` khớp một dòng trong handback.md. `when: ui` thành "không áp dụng" khi diff không chạm UI. Project không khai `workflow` thì khối ẩn.
+Một bước là xong khi có một bằng chứng khớp: `command` khớp lệnh Bash trong `executions`, `read` khớp path của Read/cat/head, `skill` khớp tên trong `skills`, `handback` khớp một dòng trong handback.md. Mọi mẫu là regex Go. `files` (thay cho `when: ui` ở bản nháp) là regex trên danh sách file crew đã đổi: không khớp file nào → "n/a"; không đọc được danh sách (nhánh đã xoá, `.meta` không có merge_commit) → "unknown". Project không khai `workflow` thì khối ẩn.
 Kết quả tính ở server (`journey.workflow[]`), vì UI không đọc project.yaml. Đợt đầu mate chép sẵn danh sách này cho mihuv2 khi onboard; sau này kit harness tự sinh.
 
 Trên hu-246 (31/10) khối này cho ra: crew đi 4/9 bước (đọc mate.md, gate hai lần, handback đủ tiêu chí và dòng Learning, `gh pr create`), bỏ 5 (agent-start, gate-plan, `make shot` thay bằng xcodebuild tự chế, ios-ui-verify dù đổi UI, learn.md), nạp 0 skill. Crew theo brief và AGENTS.md, phần nào brief chép thì làm, phần nào brief chỉ trỏ tới file thì bỏ.
@@ -116,7 +116,7 @@ Chữ giải thích cách đo vào tooltip ⓘ ở tiêu đề khối. Task đã
 | PR | Việc | Tách file |
 | --- | --- | --- |
 | 1 (CON-148) | header chung + tab bar; tab Hành trình với dữ liệu đã có (prompt turn, status line, question, skill, execution, PR từ status line); route `/usage` mở Dấu vết. Làn Observer chờ PR2 vì incident chưa có trong API | `ui/task.js` tách khỏi `app.js`, view-model tính một lần từ body |
-| 2 | API `journey` (brief, handback, meta, reviews, exchanges, workflow) và các chương Mate giao / Trả bài / Review / PR, khối Quy trình repo; khai `workflow` cho mihuv2 | `internal/dashboard/journey.go` |
+| 2 (CON-148) | API `journey` (brief, handback, meta, reviews, mate_turns, incidents, workflow, changed_files, missing) và trên tab Hành trình: làn Mate (thanh = lượt), làn Observer (incident), brief và handback nở ra ở dòng spawn và dòng PR, khối Quy trình repo, thẻ Đọc nhanh đọc PR/merge từ `.meta`; khai `workflow` cho mihuv2 trong `~/workspace/.mate/projects/mihuv2/project.yaml` | `internal/dashboard/journey.go`, `store.WorkflowStep`, seam `Deps.ChangedFiles` |
 | 3 | Dấu vết rút gọn: timeline xương sống, findings, một bảng loại việc, drill-down, Chi tiết gập | `ui/trace.js` |
 
 Test: `ui_observability_test.cjs` theo tab Dấu vết, `ui_journey_test.cjs` cho tab Hành trình với fixture hình hu-246; cả hai chạy trong `go test` qua `ui_admin_test.go`, DOM giả dùng chung ở `ui_testdom.cjs`.

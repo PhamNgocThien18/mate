@@ -13,10 +13,10 @@
  * can be read and tested on its own while app.js keeps the routing, the
  * polling and the state the trace tab needs.
  *
- * Everything on the Journey tab comes from the task body as the API returns
- * it today: ledger, prompt turns, status lines, questions, executions. What
- * the API does not return yet (brief, hand-back, Mate's own turns, observer
- * incidents, the PR's merge state) is said to be missing rather than drawn
+ * The Journey tab reads the task body: ledger, prompt turns, status lines,
+ * questions, executions, and `journey` (brief, hand-back, meta, reviews,
+ * the Mate's turns about this crew, incidents, the project's workflow
+ * checked). What could not be read is said to be missing rather than drawn
  * as empty. Each number appears once: the header owns the totals, the tabs
  * only split them.
  */
@@ -32,12 +32,13 @@ function mateTaskView(h) {
 
   var LANES = [
     { key: "captain", label: "Captain", sub: "questions and answers" },
-    { key: "mate", label: "Mate", sub: "spawn and close" },
+    { key: "mate", label: "Mate", sub: "turns about this crew" },
+    { key: "observer", label: "Observer", sub: "incidents" },
     { key: "crew", label: "Crew", sub: "stages by work type" },
     { key: "machine", label: "Machine", sub: "commands of 5 s or more" },
     { key: "github", label: "GitHub", sub: "pull request" }
   ];
-  var LANE_LABEL = { captain: "Captain", mate: "Mate", crew: "Crew", machine: "Machine", github: "GitHub" };
+  var LANE_LABEL = { captain: "Captain", mate: "Mate", observer: "Observer", crew: "Crew", machine: "Machine", github: "GitHub" };
 
   function reset() { tab = "journey"; }
   function openTab(name) { tab = name === "trace" ? "trace" : "journey"; }
@@ -81,7 +82,7 @@ function mateTaskView(h) {
     return h.el("div", { class: "task-kpis", role: "list" }, [
       kpi("tokens", "crew tokens", ledger.turns === 0 ? "–" : h.fmtTokens(tokens.total),
         "thinking " + h.fmtTokens(tokens.thinking) + " inside output"),
-      kpi("mate", "Mate around this task", "?", "Mate's turns are not in the API yet"),
+      mateKpi(body),
       kpi("calls", "model calls", dashed(ledger.turns), h.count(ledger.tool_count || 0, "tool call")),
       kpi("time", ledger.closed ? "spawn → close" : "open for", span == null ? "?" : h.fmtMs(span), when),
       kpi("machine", "waiting on the machine", machine, machineSub),
@@ -91,6 +92,19 @@ function mateTaskView(h) {
         ledger.waited_ms ? "waited " + h.fmtMs(ledger.waited_ms) : "no decision wait")
     ]);
   }
+
+  // Mate's turns about this crew, whole turns: what else the Mate did in
+  // the same turn is not separated out, and the sub-line says so.
+  function mateKpi(body) {
+    var turns = journeyOf(body).mate_turns;
+    if (!turns) return kpi("mate", "Mate around this task", "?", "Mate's turns could not be read");
+    if (!turns.length) return kpi("mate", "Mate around this task", "–", "no Mate turn names this crew");
+    var total = 0, calls = 0;
+    turns.forEach(function (t) { total += (t.tokens && t.tokens.total) || 0; calls += t.model_calls || 0; });
+    return kpi("mate", "Mate around this task", h.fmtTokens(total), h.count(turns.length, "whole turn") + " · " + h.count(calls, "call"));
+  }
+
+  function journeyOf(body) { return body.journey || {}; }
 
   function kpi(key, label, value, sub) {
     return h.el("div", { class: "kpi", role: "listitem", "data-kpi": key }, [
@@ -174,11 +188,34 @@ function mateTaskView(h) {
       h.el("h2", {}, [h.txt("Step by step"), h.el("small", { text: "one row per numbered arrow" })]),
       stepsTable(body, j)
     ]));
+    if (j.journey.workflow) out.appendChild(h.el("section", { class: "section", "aria-label": "The project's workflow" }, [
+      h.el("h2", {}, [h.txt("Repo workflow"), h.el("small", { text: "the steps project.yaml declares, ticked from what the crew ran, read and loaded" })]),
+      workflowTable(j.journey.workflow)
+    ]));
     out.appendChild(h.el("section", { class: "section", "aria-label": "The task at a glance" }, [
       h.el("h2", { text: "At a glance" }),
       glanceCards(body, j)
     ]));
+    if ((j.journey.missing || []).length) out.appendChild(h.el("p", { class: "journey-missing muted", text: "Not in this answer: " + j.journey.missing.join(" · ") }));
     return out;
+  }
+
+  var WORKFLOW_GLYPH = { done: "✓", missed: "✗", "n/a": "–", unknown: "?" };
+
+  function workflowTable(checks) {
+    var table = h.el("table", { class: "journey-steps workflow" });
+    table.appendChild(h.el("tr", {}, [h.el("th", { text: "step the repo asks for" }), h.el("th", { text: "crew" }), h.el("th", { text: "evidence" })]));
+    checks.forEach(function (c) {
+      table.appendChild(h.el("tr", { "data-workflow": c.state }, [
+        h.el("td", { class: "step", text: c.step }),
+        h.el("td", { class: "st", "data-state": c.state }, [h.el("span", { class: "glyph", "aria-hidden": "true", text: WORKFLOW_GLYPH[c.state] || "?" }), h.txt(" " + c.state)]),
+        h.el("td", { class: "ev" }, [c.at ? h.el("span", { class: "n num", text: h.clock(c.at) + " " }) : null, h.txt(c.evidence || "")])
+      ]));
+    });
+    var done = checks.filter(function (c) { return c.state === "done"; }).length;
+    var applicable = checks.filter(function (c) { return c.state === "done" || c.state === "missed"; }).length;
+    table.appendChild(h.el("tr", { class: "total" }, [h.el("td", { text: "taken" }), h.el("td", { class: "st num", text: done + " / " + applicable }), h.el("td", { class: "ev muted", text: "of the steps that apply" })]));
+    return table;
   }
 
   // journey builds the view-model once from the body: the time span, the
@@ -193,6 +230,10 @@ function mateTaskView(h) {
     var turns = body.turns || [];
     var lines = body.status_lines || [];
     var questions = body.questions || [];
+    var j = journeyOf(body);
+    var mateTurns = j.mate_turns || [];
+    var incidents = j.incidents || [];
+    var meta = j.meta || {};
 
     var times = [];
     function note(ts) { var n = h.timestamp(ts); if (n != null) times.push(n); }
@@ -202,6 +243,8 @@ function mateTaskView(h) {
     execs.forEach(function (e) { note(e.started_at); note(e.ended_at); });
     lines.forEach(function (s) { note(s.at); });
     questions.forEach(function (q) { note(q.asked_at); note(q.answered_at); });
+    mateTurns.forEach(function (t) { note(t.prompt_at); note(t.started_at); note(t.ended_at); });
+    incidents.forEach(function (i) { note(i.at); });
     if (!times.length) return null;
     var t0 = Math.min.apply(null, times);
     var t1 = Math.max.apply(null, times);
@@ -222,7 +265,8 @@ function mateTaskView(h) {
       var step = { at: i === 0 && ledger.spawned_at ? ledger.spawned_at : at, prompt: prompt,
         from: notification ? "machine" : "mate", to: "crew",
         what: i === 0 ? "Spawned the crew" : notification ? "A background command finished" : "Prompt " + (i + 1),
-        sub: h.excerpt(notification ? notificationText(text) : plainText(text), 160), cost: cost };
+        sub: h.excerpt(notification ? notificationText(text) : plainText(text), 160), cost: cost,
+        brief: i === 0 ? j.brief : null };
       steps.push(step);
       (prompt.overview && prompt.overview.steps || []).forEach(function (stage) {
         if (!stage.started_at) return;
@@ -237,8 +281,31 @@ function mateTaskView(h) {
       }
     });
     if (!prompts.length && ledger.spawned_at) {
-      steps.push({ at: ledger.spawned_at, from: "mate", to: "crew", what: "Spawned the crew", sub: "no prompt recorded yet", cost: "–" });
+      steps.push({ at: ledger.spawned_at, from: "mate", to: "crew", what: "Spawned the crew", sub: "no prompt recorded yet", cost: "–", brief: j.brief });
     }
+
+    // The Mate's turns about this crew: a bar on its lane, and a step from
+    // whoever woke it. The one that spawned the crew is the spawn step's
+    // price on the Mate's side, so it is not a second row.
+    mateTurns.forEach(function (t) {
+      var spawned = (t.activities || []).some(function (a) { return a.kind === "crew.spawned" && a.crew === body.crew; });
+      var what = mateTurnWhat(t, body.crew);
+      bars.push({ lane: "mate", from: t.started_at || t.prompt_at, to: t.ended_at || null, label: what, mate: t,
+        title: what + " · " + mateTurnCost(t) + (t.prompt ? " · " + h.excerpt(t.prompt, 120) : "") });
+      if (spawned) {
+        var spawn = steps.filter(function (s) { return s.what === "Spawned the crew"; })[0];
+        if (spawn) { spawn.mate = t; return; }
+      }
+      steps.push({ at: t.prompt_at || t.started_at, from: t.source === "captain" ? "captain" : t.source === "crew" ? "crew" : "mate", to: "mate",
+        what: what, sub: h.excerpt(t.prompt || "", 160) + (t.response ? " → " + h.excerpt(t.response, 120) : ""), cost: mateTurnCost(t), mate: t });
+    });
+
+    incidents.forEach(function (inc) {
+      var open = inc.state === "open";
+      dots.push({ lane: "observer", at: inc.at, label: (open ? "" : "resolved ") + inc.kind, tone: open ? "critical" : "muted",
+        title: inc.kind + " " + inc.state + " · " + (inc.text || "") });
+      if (open) steps.push({ at: inc.at, from: "observer", to: "mate", what: "Incident " + inc.kind.replace(/_/g, " "), sub: inc.text || "", cost: "–", bad: true });
+    });
 
     questions.forEach(function (q) {
       steps.push({ at: q.asked_at, from: "crew", to: "captain", what: "Asked a question", sub: h.excerpt(q.text || "", 160),
@@ -251,7 +318,7 @@ function mateTaskView(h) {
       var verb = lineVerb(s);
       var pr = prNumber(s.text || s.line || "");
       if (verb === "pr-open") {
-        steps.push({ at: s.at, from: "crew", to: "github", what: "Opened " + (pr ? "PR #" + pr : "a pull request"), sub: s.text || "", href: s.text, cost: "–" });
+        steps.push({ at: s.at, from: "crew", to: "github", what: "Opened " + (pr ? "PR #" + pr : "a pull request"), sub: s.text || "", href: s.text, cost: "–", handback: j.handback });
         dots.push({ lane: "github", at: s.at, label: pr ? "PR #" + pr : "PR", tone: "good", title: s.line || "" });
       } else if (verb === "pr-merged") {
         steps.push({ at: s.at, from: "github", to: "mate", what: "Merged " + (pr ? "PR #" + pr : "the pull request"), sub: s.text || "", href: s.text, cost: "–" });
@@ -259,7 +326,7 @@ function mateTaskView(h) {
       } else if (verb === "needs-decision" || verb === "blocked") {
         steps.push({ at: s.at, from: "crew", to: "captain", what: "Needs a decision", sub: s.text || "", cost: "–", bad: true });
       } else if (verb === "wait-mate" || verb === "handback" || verb === "done") {
-        steps.push({ at: s.at, from: "crew", to: "mate", what: "Handed back", sub: s.text || "", cost: "–" });
+        steps.push({ at: s.at, from: "crew", to: "mate", what: "Handed back", sub: s.text || "", cost: "–", handback: j.handback });
       } else {
         dots.push({ lane: "crew", at: s.at, label: s.line || verb, tone: "muted", title: s.line || "", small: true });
       }
@@ -277,6 +344,10 @@ function mateTaskView(h) {
       }
     });
 
+    if (meta.pr_state === "merged" && !lines.some(function (s) { return lineVerb(s) === "pr-merged"; }) && (ledger.closed_at || meta.stopped_at)) {
+      var mergedAt = ledger.closed_at || meta.stopped_at;
+      dots.push({ lane: "github", at: mergedAt, label: "merged", tone: "good", title: "merged · " + (meta.pr_sync || "") + (meta.merge_commit ? " · " + meta.merge_commit.slice(0, 7) : "") });
+    }
     if (ledger.spawned_at) dots.push({ lane: "mate", at: ledger.spawned_at, label: "spawn", tone: "info", title: "spawned " + ledger.spawned_at });
     if (ledger.closed && ledger.closed_at) {
       var close = ledger.close_state || "closed";
@@ -292,7 +363,31 @@ function mateTaskView(h) {
     bars.forEach(function (b) { if (b.lane === "machine" && b.to) machineMs += h.timestamp(b.to) - h.timestamp(b.from); });
 
     return { t0: t0, t1: t1, t0iso: new Date(t0).toISOString(), t1iso: new Date(t1).toISOString(),
-      steps: steps, bars: bars, dots: dots, idle: idle, machineMs: machineMs };
+      steps: steps, bars: bars, dots: dots, idle: idle, machineMs: machineMs, journey: j };
+  }
+
+  function mateTurnWhat(t, crew) {
+    var acts = (t.activities || []).filter(function (a) { return !a.crew || a.crew === crew; });
+    var words = acts.map(function (a) {
+      if (a.kind === "crew.spawned") return "spawned " + (a.crew || "the crew");
+      if (a.kind === "crew.answer") return "answered the crew";
+      if (a.kind === "merge.done") return a.text.toLowerCase();
+      if (a.kind === "crew.finished") return "closed the crew";
+      if (a.kind === "crew.failed") return "closed the crew as failed";
+      if (a.kind === "review.started") return "started a review";
+      return a.text || a.kind;
+    });
+    if (!words.length && t.source === "crew") words.push("read the crew's digest");
+    if (!words.length && t.source === "captain") words.push("answered the captain");
+    var others = (t.activities || []).filter(function (a) { return a.crew && a.crew !== crew && a.kind === "crew.spawned"; });
+    if (others.length) words.push("spawned " + others.map(function (a) { return a.crew; }).join(", "));
+    if (words.length) return "Mate " + words.join(", ");
+    return "Mate turn";
+  }
+
+  function mateTurnCost(t) {
+    var ms = t.duration_ms != null ? t.duration_ms : (t.ended_at && t.started_at ? h.timestamp(t.ended_at) - h.timestamp(t.started_at) : null);
+    return (ms == null ? "?" : h.fmtMs(ms)) + " · " + h.fmtTokens(t.tokens && t.tokens.total) + " · " + h.count(t.model_calls || 0, "call");
   }
 
   // The words of a prompt without its markup; a task-notification keeps
@@ -351,11 +446,11 @@ function mateTaskView(h) {
 
   function swimlane(body, j) {
     var height = TOP + LANES.length * LANE_H + 22;
-    var svg = h.svgNode("svg", { class: "journey-svg", viewBox: "0 0 " + W + " " + height, role: "img",
+    var svg = svgEl("svg", { class: "journey-svg", viewBox: "0 0 " + W + " " + height, role: "img",
       "aria-label": "Swimlane: " + j.steps.length + " hand-offs across " + LANES.length + " lanes" });
-    var defs = h.svgNode("defs");
-    var marker = h.svgNode("marker", { id: "journey-arrowhead", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "6", markerHeight: "6", orient: "auto-start-reverse" });
-    marker.appendChild(h.svgNode("path", { d: "M0,0.5 L8,4 L0,7.5 z", class: "journey-arrowhead" }));
+    var defs = svgEl("defs");
+    var marker = svgEl("marker", { id: "journey-arrowhead", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "6", markerHeight: "6", orient: "auto-start-reverse" });
+    marker.appendChild(svgEl("path", { d: "M0,0.5 L8,4 L0,7.5 z", class: "journey-arrowhead" }));
     defs.appendChild(marker);
     svg.appendChild(defs);
 
@@ -366,23 +461,26 @@ function mateTaskView(h) {
     // Ticks at a round interval, never more than about ten.
     var tick = tickInterval(span);
     for (var t = Math.ceil(j.t0 / tick) * tick; t <= j.t1; t += tick) {
-      svg.appendChild(h.svgNode("line", { class: "journey-tick", x1: x(t), x2: x(t), y1: TOP, y2: TOP + LANES.length * LANE_H }));
-      svg.appendChild(h.svgNode("text", { class: "journey-tick-label", x: x(t), y: TOP + LANES.length * LANE_H + 14, "text-anchor": "middle" },
+      svg.appendChild(svgEl("line", { class: "journey-tick", x1: x(t), x2: x(t), y1: TOP, y2: TOP + LANES.length * LANE_H }));
+      svg.appendChild(svgEl("text", { class: "journey-tick-label", x: x(t), y: TOP + LANES.length * LANE_H + 14, "text-anchor": "middle" },
         h.clock(new Date(t).toISOString()).slice(0, 5)));
     }
 
     LANES.forEach(function (lane, i) {
       var y = TOP + i * LANE_H;
-      svg.appendChild(h.svgNode("line", { class: "journey-lane-line", x1: LEFT, x2: W - RIGHT, y1: y + LANE_H, y2: y + LANE_H }));
-      svg.appendChild(h.svgNode("text", { class: "journey-lane-label", x: 8, y: y + LANE_H / 2 - 2, "data-lane": lane.key }, lane.label));
-      svg.appendChild(h.svgNode("text", { class: "journey-lane-sub", x: 8, y: y + LANE_H / 2 + 11 }, lane.sub));
+      svg.appendChild(svgEl("line", { class: "journey-lane-line", x1: LEFT, x2: W - RIGHT, y1: y + LANE_H, y2: y + LANE_H }));
+      svg.appendChild(svgEl("text", { class: "journey-lane-label", x: 8, y: y + LANE_H / 2 - 2, "data-lane": lane.key }, lane.label));
+      svg.appendChild(svgEl("text", { class: "journey-lane-sub", x: 8, y: y + LANE_H / 2 + 11 }, lane.sub));
     });
 
-    j.idle.forEach(function (g) {
-      var y = laneY(g.lane);
-      svg.appendChild(h.svgNode("line", { class: "journey-idle", x1: x(g.from), x2: x(g.to), y1: y, y2: y }));
-      var mid = (x(g.from) + x(g.to)) / 2;
-      if (x(g.to) - x(g.from) > g.label.length * 6) svg.appendChild(h.svgNode("text", { class: "journey-idle-label", x: mid, y: y - 10, "text-anchor": "middle" }, g.label));
+    j.idle.forEach(function (gap) {
+      var y = laneY(gap.lane);
+      var g = svgEl("g", { class: "journey-idle-group" });
+      g.appendChild(svgEl("title", {}, gap.label));
+      g.appendChild(svgEl("line", { class: "journey-idle", x1: x(gap.from), x2: x(gap.to), y1: y, y2: y }));
+      var mid = (x(gap.from) + x(gap.to)) / 2;
+      if (x(gap.to) - x(gap.from) > gap.label.length * 6) g.appendChild(svgEl("text", { class: "journey-idle-label", x: mid, y: y - 10, "text-anchor": "middle" }, gap.label));
+      svg.appendChild(g);
     });
 
     j.bars.forEach(function (b) {
@@ -390,13 +488,13 @@ function mateTaskView(h) {
       if (x1 == null) return;
       var w = Math.max(2, x2 - x1);
       var y = laneY(b.lane) - BAR_H / 2;
-      var g = h.svgNode("g", { class: "journey-bar", "data-lane": b.lane, "data-kind": b.kind || null, "data-failed": b.failed ? "true" : null,
+      var g = svgEl("g", { class: "journey-bar", "data-lane": b.lane, "data-kind": b.kind || null, "data-failed": b.failed ? "true" : null,
         "data-prompt": b.prompt ? b.prompt.id : null, "data-execution": b.execution ? b.execution.id : null, tabindex: b.prompt ? "0" : null,
         role: b.prompt ? "button" : null });
-      var title = h.svgNode("title", {}, b.title);
+      var title = svgEl("title", {}, b.title);
       g.appendChild(title);
-      g.appendChild(h.svgNode("rect", { x: x1, y: y, width: w, height: BAR_H, rx: 3 }));
-      if (w > b.label.length * 6.4 + 8) g.appendChild(h.svgNode("text", { class: "journey-bar-label", x: x1 + 4, y: y + BAR_H - 3.5 }, b.label));
+      g.appendChild(svgEl("rect", { x: x1, y: y, width: w, height: BAR_H, rx: 3 }));
+      if (w > b.label.length * 6.4 + 8) g.appendChild(svgEl("text", { class: "journey-bar-label", x: x1 + 4, y: y + BAR_H - 3.5 }, b.label));
       if (b.prompt) g.addEventListener("click", function () { tab = "trace"; h.revealPrompt(b.prompt.id); });
       svg.appendChild(g);
     });
@@ -408,13 +506,13 @@ function mateTaskView(h) {
       var cx = x(d.at);
       if (cx == null) return;
       var cy = laneY(d.lane);
-      var g = h.svgNode("g", { class: "journey-dot", "data-lane": d.lane, "data-tone": d.tone || "" });
-      g.appendChild(h.svgNode("title", {}, d.title || d.label));
-      g.appendChild(h.svgNode("circle", { cx: cx, cy: cy, r: d.small ? 3 : 4.5 }));
+      var g = svgEl("g", { class: "journey-dot", "data-lane": d.lane, "data-tone": d.tone || "" });
+      g.appendChild(svgEl("title", {}, d.title || d.label));
+      g.appendChild(svgEl("circle", { cx: cx, cy: cy, r: d.small ? 3 : 4.5 }));
       if (!d.small) {
         var last = lastLabel[d.lane];
         var below = last && cx - last.x < 40 && !last.below;
-        g.appendChild(h.svgNode("text", { class: "journey-dot-label", x: cx, y: below ? cy + 16 : cy - 8, "text-anchor": "middle" }, d.label));
+        g.appendChild(svgEl("text", { class: "journey-dot-label", x: cx, y: below ? cy + 16 : cy - 8, "text-anchor": "middle" }, d.label));
         lastLabel[d.lane] = { x: cx, below: below };
       }
       svg.appendChild(g);
@@ -424,18 +522,26 @@ function mateTaskView(h) {
       var cx = x(s.at);
       if (cx == null) return;
       var y1 = laneY(s.from), y2 = s.to ? laneY(s.to) : y1;
-      var g = h.svgNode("g", { class: "journey-arrow", "data-step": s.n, "data-bad": s.bad ? "true" : null });
-      g.appendChild(h.svgNode("title", {}, s.n + ". " + s.what));
+      var g = svgEl("g", { class: "journey-arrow", "data-step": s.n, "data-bad": s.bad ? "true" : null });
+      g.appendChild(svgEl("title", {}, s.n + ". " + s.what));
       if (s.to) {
         var dir = y2 > y1 ? 1 : -1;
-        g.appendChild(h.svgNode("line", { x1: cx, x2: cx, y1: y1 + dir * (BAR_H / 2 + 1), y2: y2 - dir * (BAR_H / 2 + 1), "marker-end": "url(#journey-arrowhead)" }));
+        g.appendChild(svgEl("line", { x1: cx, x2: cx, y1: y1 + dir * (BAR_H / 2 + 1), y2: y2 - dir * (BAR_H / 2 + 1), "marker-end": "url(#journey-arrowhead)" }));
       }
       var by = s.to ? (y1 + y2) / 2 : y1 + 14;
-      g.appendChild(h.svgNode("circle", { class: "journey-num-bg", cx: cx, cy: by, r: 7 }));
-      g.appendChild(h.svgNode("text", { class: "journey-num", x: cx, y: by + 3.2, "text-anchor": "middle" }, String(s.n)));
+      g.appendChild(svgEl("circle", { class: "journey-num-bg", cx: cx, cy: by, r: 7 }));
+      g.appendChild(svgEl("text", { class: "journey-num", x: cx, y: by + 3.2, "text-anchor": "middle" }, String(s.n)));
       svg.appendChild(g);
     });
     return svg;
+  }
+
+  // svgEl is h.svgNode without the attributes that are null: an absent
+  // role or data-kind is no attribute, not the word "null".
+  function svgEl(tag, attrs, text) {
+    var clean = {};
+    Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] != null) clean[k] = attrs[k]; });
+    return h.svgNode(tag, clean, text);
   }
 
   function tickInterval(span) {
@@ -465,6 +571,9 @@ function mateTaskView(h) {
       var what = [h.el("span", { class: "what", text: s.what })];
       if (s.href) { what.push(h.txt(" · ")); what.push(h.el("a", { href: s.href, target: "_blank", rel: "noopener", text: "on GitHub" })); }
       if (s.sub) what.push(h.el("span", { class: "sub", text: s.sub }));
+      if (s.brief) what.push(briefDetails(s.brief));
+      if (s.handback) what.push(handbackDetails(s.handback));
+      if (s.mate && s.what === "Spawned the crew") what.push(h.el("span", { class: "sub", text: "Mate's turn: " + mateTurnWhat(s.mate, body.crew).replace(/^Mate /, "") + " · " + mateTurnCost(s.mate) }));
       table.appendChild(h.el("tr", { "data-step": s.n, "data-bad": s.bad ? "true" : null }, [
         h.el("td", { class: "n num", text: String(s.n) }),
         h.el("td", { class: "n num", title: s.at || "", text: h.clock(s.at) || "?" }),
@@ -474,6 +583,37 @@ function mateTaskView(h) {
       ]));
     });
     return table;
+  }
+
+  function briefDetails(b) {
+    return h.savedDetails("journey:brief", "The brief · " + h.fmtBytes(b.bytes) + (b.captain_words ? " · captain: " + h.excerpt(b.captain_words.replace(/\s+/g, " "), 80) : ""),
+      [b.captain_words ? h.el("pre", { class: "journey-text", text: b.captain_words }) : null,
+        h.el("pre", { class: "journey-text", text: b.task || "(no # Task section)" })], "journey-details");
+  }
+
+  function handbackDetails(hb) {
+    var passed = (hb.criteria || []).filter(function (c) { return c.pass; }).length;
+    var label = "The hand-back · " + (hb.criteria && hb.criteria.length ? passed + "/" + hb.criteria.length + " criteria pass" : "no criteria table") +
+      ((hb.deviations || []).length ? " · " + h.count(hb.deviations.length, "deviation") : "") +
+      ((hb.still_open || []).length ? " · " + h.count(hb.still_open.length, "still open") : "") +
+      (hb.learning ? " · learning: " + h.excerpt(hb.learning, 60) : "");
+    var children = [];
+    if (hb.criteria && hb.criteria.length) {
+      var table = h.el("table", { class: "journey-steps criteria" });
+      table.appendChild(h.el("tr", {}, [h.el("th", { text: "criterion" }), h.el("th", { text: "result" }), h.el("th", { text: "evidence" })]));
+      hb.criteria.forEach(function (c) {
+        table.appendChild(h.el("tr", { "data-pass": c.pass ? "true" : "false" }, [
+          h.el("td", { class: "step", text: c.name }),
+          h.el("td", { class: "st", text: (c.pass ? "✓ " : "✗ ") + c.result }),
+          h.el("td", { class: "ev", text: [c.command, c.output].filter(Boolean).join(" → ") })
+        ]));
+      });
+      children.push(table);
+    }
+    if ((hb.deviations || []).length) children.push(h.el("p", { class: "answer-sub" }, [h.el("b", { text: "Deviations: " }), h.txt(hb.deviations.join(" · "))]));
+    if ((hb.still_open || []).length) children.push(h.el("p", { class: "answer-sub" }, [h.el("b", { text: "Still open: " }), h.txt(hb.still_open.join(" · "))]));
+    children.push(h.savedDetails("journey:handback-md", "the whole hand-back · " + h.fmtBytes(hb.bytes), [h.el("pre", { class: "journey-text", text: hb.markdown })], "journey-details"));
+    return h.savedDetails("journey:handback", label, children, "journey-details");
   }
 
   function laneBadge(key) {
@@ -492,15 +632,26 @@ function mateTaskView(h) {
       return !e.is_wrapper && !e.poll && (e.status === "failed" || (e.exit_code != null && e.exit_code !== 0));
     }).length;
     var skills = Array.isArray(p.skills) ? p.skills.length : null;
+    var jj = j.journey || {};
+    var meta = jj.meta || {};
+    var prState = meta.pr_state || "";
+    opened = opened || !!meta.pr_url;
+    merged = merged || prState === "merged";
+    var reviews = jj.reviews || [];
+    var workflow = jj.workflow || null;
     var round = [
       tick(!!ledger.spawned_at, "spawned" + (ledger.spawned_at ? " " + h.clock(ledger.spawned_at).slice(0, 5) : "")),
-      tick(opened, opened ? "pull request opened" : "no pull request yet"),
-      tick(merged, merged ? "merged" : "not merged" + (ledger.closed ? "" : " yet")),
+      tick(opened, opened ? "pull request opened" + (meta.pr_url ? " · " + (prNumber(meta.pr_url) ? "#" + prNumber(meta.pr_url) : "") : "") : "no pull request yet"),
+      reviews.length ? line("reviewed: " + reviews.map(function (r) { return r.crew + " · " + (r.verdict || "pending"); }).join(", ")) : null,
+      tick(merged, merged ? "merged" + (meta.pr_sync ? " · " + meta.pr_sync : "") : prState ? "PR " + prState : "not merged" + (ledger.closed ? "" : " yet")),
       tick(ledger.closed, ledger.closed ? "closed · " + (ledger.close_state || "closed").replace(/[_-]/g, " ") : "still open"),
       line((ledger.question_count ? "asked the captain " + h.count(ledger.question_count, "time") : "asked the captain nothing") +
         " · handed back " + (ledger.handback_count ? h.count(ledger.handback_count, "time") : "never")),
       line(skills == null ? "skills: not recorded" : skills ? "loaded " + h.count(skills, "skill") : "loaded no skill"),
-      line(failed ? h.count(failed, "failed command") : "no failed command")
+      workflow ? line("repo workflow: " + workflow.filter(function (c) { return c.state === "done"; }).length + " of " +
+        workflow.filter(function (c) { return c.state === "done" || c.state === "missed"; }).length + " steps that apply") : null,
+      line(failed ? h.count(failed, "failed command") : "no failed command"),
+      meta.teardown ? line("teardown " + meta.teardown + (meta.cleanup ? " · cleanup " + h.excerpt(meta.cleanup, 60) : "")) : null
     ];
     var time = p.time || {};
     var longest = j.bars.filter(function (b) { return b.lane === "machine" && b.to; }).map(function (b) {
@@ -515,7 +666,7 @@ function mateTaskView(h) {
         h.el("h3", { text: "Who paid" }),
         h.el("div", { class: "big num", text: ledger.turns === 0 ? "–" : h.fmtTokens((ledger.tokens || {}).total) }),
         h.el("p", { class: "answer-sub", text: "the crew, over " + h.count(ledger.turns || 0, "model call") }),
-        h.el("p", { class: "answer-sub missing", text: "Mate's own turns around this task are not in the API yet" })
+        mateGlance(jj.mate_turns)
       ]),
       h.el("section", { class: "card glance", "data-glance": "machine", "aria-label": "Waiting on the machine" }, [
         h.el("h3", { text: "Waiting on the machine" }),
@@ -526,6 +677,14 @@ function mateTaskView(h) {
         }) : [h.el("li", { class: "muted", text: "no command of 5 s or more" })])
       ])
     ]);
+  }
+
+  function mateGlance(turns) {
+    if (!turns) return h.el("p", { class: "answer-sub missing", text: "Mate's turns could not be read" });
+    if (!turns.length) return h.el("p", { class: "answer-sub", text: "no Mate turn names this crew" });
+    var total = 0;
+    turns.forEach(function (t) { total += (t.tokens && t.tokens.total) || 0; });
+    return h.el("p", { class: "answer-sub", text: "Mate " + h.fmtTokens(total) + " over " + h.count(turns.length, "whole turn") + " about this crew; what else those turns did is counted in, not separated out" });
   }
 
   function tick(ok, text) {

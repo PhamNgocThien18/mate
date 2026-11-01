@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
@@ -121,6 +122,9 @@ func dashboardDeps(w *store.Workspace) dashboard.Deps {
 			}
 			return git.BranchExists(ctx, w.RepoDir(repoCfg.Path), branch)
 		},
+		ChangedFiles: func(ctx context.Context, project, crew string, branchExists bool, mergeCommit string) ([]string, error) {
+			return crewChangedFiles(ctx, w, git, project, crew, branchExists, mergeCommit)
+		},
 	}
 }
 
@@ -143,4 +147,72 @@ func openInBrowser(url string) error {
 		return fmt.Errorf("no %s on PATH", name)
 	}
 	return exec.Command(path, append(args, url)...).Start()
+}
+
+// crewChangedFiles is the task page's "which files did this crew touch":
+// the branch against its base while the branch exists, otherwise the merge
+// commit the crew's meta recorded (`git show --name-only`), otherwise an
+// error saying there is nothing left to read.
+func crewChangedFiles(ctx context.Context, w *store.Workspace, git gitx.Git, project, crew string, branchExists bool, mergeCommit string) ([]string, error) {
+	cfg, err := w.LoadProject(project)
+	if err != nil {
+		return nil, err
+	}
+	meta, err := w.ReadCrewMeta(project, crew)
+	if err != nil {
+		return nil, err
+	}
+	repoCfg, err := cfg.CrewRepo(meta)
+	if err != nil {
+		return nil, err
+	}
+	dir := w.RepoDir(repoCfg.Path)
+	if branchExists && meta["branch"] != "" {
+		base, err := git.BranchBase(ctx, dir, repoCfg.DefaultBranch, meta["branch"])
+		if err != nil {
+			return nil, err
+		}
+		entries, err := git.DiffNumstat(ctx, dir, base, meta["branch"])
+		if err != nil {
+			return nil, err
+		}
+		files := make([]string, 0, len(entries))
+		for _, e := range entries {
+			files = append(files, e.Path)
+		}
+		return files, nil
+	}
+	if mergeCommit == "" {
+		return nil, fmt.Errorf("the branch is gone and the crew's meta records no merge commit")
+	}
+	// A merge commit's own `--name-only` is empty; its files are the diff
+	// from its first parent (main before) to its second (the branch tip).
+	// A fast-forward has one parent and keeps only its last commit's
+	// files: the branch's base is not recorded anywhere once it is gone.
+	parents, err := git.Log(ctx, dir, mergeCommit, "-1", "--format=%P")
+	if err != nil {
+		return nil, err
+	}
+	if fields := strings.Fields(parents); len(fields) >= 2 {
+		entries, err := git.DiffNumstat(ctx, dir, fields[0], fields[1])
+		if err != nil {
+			return nil, err
+		}
+		files := make([]string, 0, len(entries))
+		for _, e := range entries {
+			files = append(files, e.Path)
+		}
+		return files, nil
+	}
+	out, err := git.Log(ctx, dir, mergeCommit, "-1", "--name-only", "--format=")
+	if err != nil {
+		return nil, err
+	}
+	files := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
 }

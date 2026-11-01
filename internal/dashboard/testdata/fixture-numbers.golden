@@ -4030,6 +4030,85 @@
       "coverage": "Polling chains need native process identities; this harness reports them."
     },
     "skills": []
+  },
+  "journey": {
+    "brief": null,
+    "handback": null,
+    "meta": {
+      "started_at": "2026-09-19T10:44:09Z",
+      "state": "spawned",
+      "worktree": ".worktrees/shop-buybtn"
+    },
+    "reviews": [],
+    "mate_turns": [
+      {
+        "id": "mate:shop#8414030c-5d90-4925-94cc-c94e12aae4a9#prompt#e6114c69-5e7a-4d34-b35d-ef6c74677ed2",
+        "source": "unknown",
+        "prompt": "Prompt not recorded",
+        "prompt_at": "2026-09-19T10:43:38.918000000Z",
+        "response": "",
+        "started_at": "2026-09-19T10:43:38.918000000Z",
+        "ended_at": "2026-09-19T10:45:23.225000000Z",
+        "duration_ms": null,
+        "model_calls": 8,
+        "tool_calls": 7,
+        "model": "claude-fable-5-1",
+        "tokens": {
+          "input": 226,
+          "cache_read": 444856,
+          "cache_write": 37069,
+          "output": 2646,
+          "thinking": 219,
+          "total": 484797
+        },
+        "activities": [
+          {
+            "at": "2026-09-19T10:44:09.000000000Z",
+            "kind": "crew.spawned",
+            "crew": "buybtn",
+            "text": "Started: Add a Buy button to README.md linking to the checkout page"
+          }
+        ]
+      },
+      {
+        "id": "mate:shop#8414030c-5d90-4925-94cc-c94e12aae4a9#prompt#50d8f9f4-3b9b-476c-97b5-755082d9f453",
+        "source": "crew",
+        "prompt": "buybtn asked: \"what is the checkout page URL for the Buy button?\"",
+        "prompt_at": "2026-09-19T10:44:40.000000000Z",
+        "response": "buybtn is ready in branch mate/buybtn; say the word and I will land it.",
+        "started_at": "2026-09-19T10:45:45.503000000Z",
+        "ended_at": "2026-09-19T10:46:30.963000000Z",
+        "duration_ms": 120000,
+        "model_calls": 3,
+        "tool_calls": 3,
+        "model": "claude-fable-5-1",
+        "tokens": {
+          "input": 66,
+          "cache_read": 188128,
+          "cache_write": 1596,
+          "output": 1228,
+          "thinking": 670,
+          "total": 191018
+        },
+        "activities": [
+          {
+            "at": "2026-09-19T10:46:00.000000000Z",
+            "kind": "crew.answer",
+            "crew": "buybtn",
+            "text": "Use pages/checkout-express.html for the Buy button."
+          }
+        ]
+      }
+    ],
+    "incidents": [],
+    "workflow": null,
+    "changed_files": [
+      "README.md"
+    ],
+    "missing": [
+      "brief",
+      "hand-back"
+    ]
   }
 }
 
