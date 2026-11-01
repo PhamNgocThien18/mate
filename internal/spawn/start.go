@@ -515,6 +515,8 @@ func prepareMateDir(w *store.Workspace, deps Deps, project string, cfg store.Pro
 		MateDir:          mateDir,
 		CrewsDir:         w.CrewsDir(project),
 		Headless:         headless,
+		ReviewDecided:    cfg.Review != "",
+		ProjectDocSeeded: mateassets.ProjectDocSeeded(w.ProjectDoc(project)),
 	}); err != nil {
 		return err
 	}

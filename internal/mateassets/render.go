@@ -86,6 +86,13 @@ type Params struct {
 	// crew's `.meta` and `.status` file lives. The Mate reads it, never
 	// writes it.
 	CrewsDir string
+	// ReviewDecided is true once project.yaml records the captain's review
+	// choice (CON-101); until then the manual tells the Mate to ask before
+	// its first merge (CON-144).
+	ReviewDecided bool
+	// ProjectDocSeeded is true when PROJECT.md holds only its headings at
+	// this start, so the manual asks for the onboarding scout (CON-144).
+	ProjectDocSeeded bool
 }
 
 // Skills are the names of Mate's built-in skills. User skills are managed

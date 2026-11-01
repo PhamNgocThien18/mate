@@ -1,6 +1,6 @@
 ---
 name: mate-commands
-description: What a `mate` command's refusal means and what to do about each, the output of `project facts` and `recall`, and setting up console editor bindings, plugins and the captain's task tracker. Load it when a command refuses, before a command you have not used, and when the captain asks about the console, plugins or a tracker. Syntax is in `mate <command> --help`.
+description: What a `mate` command's refusal means and what to do about each, the output of `project facts` and `recall`, the news, backlog and `project repo` commands, and setting up console editor bindings, plugins and the captain's task tracker. Load it when a command refuses, before a command you have not used, and when the captain asks about the console, plugins or a tracker. Syntax is in `mate <command> --help`.
 ---
 
 # mate-commands
@@ -38,6 +38,17 @@ Once it has one, each block names the repo and prints `head: <sha> (anchor <repo
 {{- end}}
 Cite it as a source in `## What we already know`. The `(anchor ...)` is exactly what a PROJECT.md fact about that repo carries, `<repo>:<branch>@<sha>`. A file's name says nothing about its content, so it never replaces a scout.
 
+## Repos
+
+The project's repos are yours to run (the manual); the captain can change the list while you run, and `{{.MatevBin}} project repo list {{.ProjectName}}` is always the current one.
+
+- `{{.MatevBin}} project repo add {{.ProjectName}} <git-url|repo-path> [--name <name>]` - a URL is cloned into `{{.WorkspaceRoot}}/<name>`; a repo with no commit at all gets an empty first commit, because a Crew branches from one; nothing is ever pushed, and the command says what it did.
+- `{{.MatevBin}} project repo remove {{.ProjectName}} <name>` - takes a repo out of the project and leaves the repository itself untouched.
+- `{{.MatevBin}} project repo teardown {{.ProjectName}} <name> ["<command>"]` - prints or sets what a crew stop runs in the worktree before removing it.
+- `{{.MatevBin}} project repo lane {{.ProjectName}} <name> [<lane>]` - prints or sets the lane the repo's Crews hold: `xcode` for a repo whose gate builds on this machine's simulators. `crew dispatch` shows how full each lane is, and `new-task` says what to do when one is full.
+
+Tell the captain in one line which repo you added or removed.
+
 ## Recall
 
 `mate recall <project>` prints your session-start digest in numbered parts, live state first and memory last, so a cut digest never loses the crews:
@@ -58,6 +69,37 @@ A missing file prints `ABSENT` and an empty one `(empty)`, which mean different 
 
 - `{{.MatevBin}} learnings open {{.ProjectName}}` - every open prediction of `{{.MateDir}}/learnings/*.md`, as `<crew> <id>: <claim>`; `new-task` reads it, nothing else does.
 - `{{.MatevBin}} learnings close {{.ProjectName}} <crew> <id> improved|unchanged|inconclusive|not comparable --evidence "<task/revision: what it showed>"` - rewrites that one item's outcome, dated; `task-learning` runs it for each `Prediction` line a brief carried. An unknown id or outcome word is exit 2.
+
+## Backlog
+
+`{{.MatevBin}} backlog add|move|done {{.ProjectName}} ...` writes `{{.BacklogFile}}`: `## In flight` for every Crew you run, `## Queued` for each next step with its `blocked-by:` and each promise to the captain with what triggers it, `## Done` for what landed (`backlog done` keeps the 10 most recent and archives the rest). `--tracker <id>` ties a line to the captain's tracker.
+A promise is the line exactly as you made it, with its trigger:
+
+```text
+{{.MatevBin}} backlog add {{.ProjectName}} reinstall-app --section Queued --text "promised \"I will reinstall it when this build expires on 11-04\"; waits on: the captain asking"
+```
+
+A `## Held for the captain` section, which recall flags, is retired: open a news for each question in it the captain has not answered, add each promise under `## Queued`, drop the rest, then delete the section by hand.
+
+## News
+
+A news is one question to the captain, and the only way to ask one (the manual). One question per news: the captain sees each news as one question, answered or not, so a new question opens a new news, even about a matter that already has one.
+
+```text
+{{.MatevBin}} news open {{.ProjectName}} [--crew <id>] --kind <needs-decision|blocked|review|budget|failed> --title "<one line>" --context "<evidence line>"... --question "<the question>" --option "a=<choice>"... --recommend <key>
+```
+
+It prints the news's id. Leave out `--crew` when the question is yours, not a Crew's. Write the title, context, question and options in the captain's language and in the escalation form: evidence first, then the consequence, the options, your recommendation. The options are two to four choices for the captain, keyed `a` to `d`, including the one you recommend.
+This is that form: "The repository has no files yet, so there is no page to add the button to. Building the page first is a separate, larger task. I can have one drafted from the earlier research report, or you can tell me where the page lives; I recommend the draft." This is not: "Please send the page location or confirm I should create one", which gives the captain no evidence, no consequence and no recommendation.
+
+- `{{.MatevBin}} news list {{.ProjectName}}` - the open ones. When an event only adds to a matter that already has an open news, add the line to it with `news update {{.ProjectName}} <id> "<line>"` instead of opening another; `--ask` puts that news's question to the captain again, reworded: the text becomes its question and the old options go.
+- `{{.MatevBin}} news close {{.ProjectName}} <id> --reason "<one line>"` - once its own question is answered and the captain's words are in the task. `--dropped` closes a news whose question went away before the captain answered.
+{{if .Headless}}
+How an answer reaches you: a message that begins `[news #<id> · <title>]` is the captain answering that news, the question after `Hỏi:` and their answer after `Trả lời:`; it does not belong to the chat. Act on it as you would on their answer in the chat, and reply in a sentence or two (the reply shows in that news). When the captain writes `#<id> …` in the chat, the app turns it into that answer.
+{{else}}
+The captain answers a news by typing to you, often beginning `#<id>`.
+{{end}}
+When the captain's words left the question unclear, act on what they settled, leave the news open, and put its question again with `news update {{.ProjectName}} <id> "<question>" --ask`.
 
 ## Refusals
 

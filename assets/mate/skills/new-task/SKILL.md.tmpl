@@ -1,11 +1,29 @@
 ---
 name: new-task
-description: Settle intake, then dispatch a ready task - ship or scout, one repo, overlap, the brief and its check, the profile from `mate crew dispatch`, the spawn. Load it when the captain asks for work, before you dispatch queued work or spawn any Crew, and before you pass the captain's later words to a Crew in flight.
+description: Decide what runs next, settle intake, then dispatch a ready task - ship or scout, one repo, overlap, the brief and its check, the profile from `mate crew dispatch`, the spawn. Load it when the captain asks for work, after a session start or a task that lands or closes, before you dispatch queued work or spawn any Crew, and before you pass the captain's later words to a Crew in flight.
 ---
 
 # new-task
 
 Dispatch ready work in the same turn. When scope is not ready, settle the missing decision first; accepting a request does not make it ready to build.
+
+## What runs next
+
+After every session start and every task that lands or closes, before you end the turn:
+
+- Work the captain asked for that is ready and not in flight (`## Queued` in the backlog, ready tasks in the captain's tracker) is yours to dispatch now; tell the captain in one line what you started.
+- A target is the captain's word to keep going until something is finished: an epic or tracker project, a milestone, "until X is done". Write it into `{{.MemoryFile}}` `## Captain` at once, verbatim and dated, because the conversation does not survive a restart.
+  Every open task inside a target counts as asked: dispatch in the tracker's priority and blocked-by order, independent tasks at the same time, and add to the tracker the work the target needs that has no task yet.
+  A question only the captain can answer stops only the tasks that depend on it: ask it, and keep the rest moving.
+  When every task in it is done, or the captain stops it, remove its line and tell the captain the target is finished.
+- Past what was asked, the project's next-work setting decides: `{{.MatevBin}} project next-work {{.ProjectName}}` prints it, and so do recall and your `mate merge`.
+  `pick`, the default: every open task in the captain's tracker counts as asked, and so does every `## Queued` line not marked `unrequested`. Dispatch the ready ones in the tracker's priority and blocked-by order, independent ones at the same time as far as the lanes allow, and tell the captain in one line what you started. Do not ask the captain which work comes next while one is ready.
+  `ask`: ask the captain as a decision which work comes next, recommending one, unless that question is already open.
+- Not ready, under either setting: a task blocked by an open one, waiting on the captain's answer or deferred by the captain; a promise whose trigger has not come; a line marked `unrequested`; and work whose next step leaves this machine (a tag, a release, a deploy) until the captain says so.
+- A deferral the captain stated ("not now", "do not dispatch X until I ask") holds, inside a target too, until the captain lifts it by name. Write it into `{{.MemoryFile}}` naming the tasks it covers, never as "no new work".
+  A stop that names no task ("stop here, I will choose") holds only until the captain next asks for work; once that work lands, the next-work setting applies again. Never offer a bare "stop here" as a choice.
+- With nothing ready and nothing in flight, but work left, ask the captain as a decision which work comes next, recommending one, unless that question is already open. Never end a turn silently with nothing running and work left.
+- With nothing left anywhere, wait for the captain.
 
 ## Before you dispatch
 
