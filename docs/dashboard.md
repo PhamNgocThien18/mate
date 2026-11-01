@@ -668,7 +668,7 @@ Each is named here because a later change to a view should absorb them rather th
 
 ## 10. The UI
 
-Task 29's page, under `internal/dashboard/ui/`: `index.html`, `app.css`, `app.js` and `humanize.js`.
+Task 29's page, under `internal/dashboard/ui/`: `index.html`, `app.css`, `app.js`, `task.js` (the task tier, docs/design/task-page.md) and `humanize.js`.
 Plain HTML, CSS and JavaScript loaded as classic scripts - no build step, no framework, no CDN and no off-origin request of any kind.
 `internal/dashboard/ui_assets_test.go` walks every embedded file and fails the build on a `<script src=`, `<link href=`, `<img src=`, `fetch(`, `url(`, `@import` or `new WebSocket/EventSource/Worker` pointing anywhere but this origin, and on any bare `http://` or `https://` outside a comment.
 
@@ -681,9 +681,13 @@ The three tiers are one document, routed on the hash, so a link to a task surviv
 | `#/` | workspace: one card per project - mode, the Mate's harness, running/stopped, scene state, since, tokens today, context %, crews counted by state, `N waiting` |
 | `#/p/<project>` | project: the Mate panel, the task table (filter chips, default `open`), the inbox beside it |
 | `#/p/<project>/mate` | Mate: prompt-level questions, replies, decisions and outcomes; filter by captain, crew or system |
-| `#/p/<project>/t/<crew>` | task: the ledger header, the turn timeline, status lines, questions, the branch diff |
+| `#/p/<project>/t/<crew>` | task: one header (state, crew tokens, Mate tokens around the task, model calls, spawn→close, time waiting on the machine, context peak, questions · hand-backs) over two tabs. **Journey** (default): a swimlane of Captain, Mate, Crew, Machine and GitHub from spawn to close, the hand-offs between them as numbered steps with their price, and three cards reading the task at a glance. **Trace**: the per-step diagnostics - stages, findings, timelines, tool mix, segments, the ledger totals, status lines, questions, the branch diff, raw model calls |
 
-`#/p/<project>/t/<crew>/usage` is the task tier exactly as above, then scrolls once to the token consumption card (`data-answer="tokens"`) when it has rendered; the crumbs and links keep producing the plain task hash, and a URL without the suffix does not scroll.
+`#/p/<project>/t/<crew>/usage` is the task tier opened on its Trace tab, then scrolled once to the token consumption card (`data-answer="tokens"`) when it has rendered; the crumbs and links keep producing the plain task hash, and a URL without the suffix opens Journey and does not scroll.
+The chosen tab is kept across polls and reset when the route moves to another crew.
+
+The Journey tab is built from what section 4 already returns: the first prompt is the spawn, a later prompt is a message from Mate or, when it is a `<task-notification>`, a background command reporting back; a question is a hand-off to the captain and its answer one back; a status line whose own verb (the word before the colon in `line`) is `pr-open` or `pr-merged` is a hand-off to or from GitHub, `wait-mate`/`handback` one to Mate, `needs-decision`/`blocked` one to the captain; the crew lane draws the prompt overviews' stages by kind; the machine lane draws native, non-poll executions of 5 s or more; a gap of 5 s or more between prompts is idle.
+What section 4 does not return yet (the brief, the hand-back, Mate's own turns, observer incidents, the PR's merge state from `.meta`) is said to be missing on the page rather than drawn as zero; docs/design/task-page.md lists the `journey` field that will carry it.
 Mate Office links to it.
 
 A project or crew name is `encodeURIComponent`-ed into the hash, and a turn id into the path of `/turns/{turn}` (section 5).

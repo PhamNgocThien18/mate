@@ -12,6 +12,8 @@ Bốn thứ captain cần nhất lại không có: nội dung brief, bản hand-
 
 ## Hai tab, một header
 
+Trên trang, tab và chữ dùng tiếng Anh như phần còn lại của admin: **Journey** là Hành trình, **Trace** là Dấu vết; tài liệu này giữ tên tiếng Việt.
+
 Một task có hai cách đọc, cùng một dòng thời gian ở hai độ cao:
 
 | Tab | Câu hỏi | Dùng khi |
@@ -113,8 +115,8 @@ Chữ giải thích cách đo vào tooltip ⓘ ở tiêu đề khối. Task đã
 
 | PR | Việc | Tách file |
 | --- | --- | --- |
-| 1 | header chung + tab bar; tab Hành trình với dữ liệu đã có (prompt turn, status line, question, skill, finding, PR từ status line); route `/usage` mở Dấu vết | `ui/task.js` tách khỏi `app.js`, view-model tính một lần từ body |
+| 1 (CON-148) | header chung + tab bar; tab Hành trình với dữ liệu đã có (prompt turn, status line, question, skill, execution, PR từ status line); route `/usage` mở Dấu vết. Làn Observer chờ PR2 vì incident chưa có trong API | `ui/task.js` tách khỏi `app.js`, view-model tính một lần từ body |
 | 2 | API `journey` (brief, handback, meta, reviews, exchanges, workflow) và các chương Mate giao / Trả bài / Review / PR, khối Quy trình repo; khai `workflow` cho mihuv2 | `internal/dashboard/journey.go` |
 | 3 | Dấu vết rút gọn: timeline xương sống, findings, một bảng loại việc, drill-down, Chi tiết gập | `ui/trace.js` |
 
-Test: `ui_observability_test.cjs` theo tab Dấu vết, thêm `ui_journey_test.cjs` cho tab Hành trình với fixture hu-246.
+Test: `ui_observability_test.cjs` theo tab Dấu vết, `ui_journey_test.cjs` cho tab Hành trình với fixture hình hu-246; cả hai chạy trong `go test` qua `ui_admin_test.go`, DOM giả dùng chung ở `ui_testdom.cjs`.
