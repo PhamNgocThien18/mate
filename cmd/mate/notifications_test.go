@@ -32,6 +32,13 @@ func TestNotificationSnapshotUsesOwedNewsAcrossProjects(t *testing.T) {
 	if snap.URL != "http://127.0.0.1:9999/office/#captain" {
 		t.Fatalf("wrong captain link: %s", snap.URL)
 	}
+	snap, err = notificationSnapshot(context.Background(), ws, "http://127.0.0.1:9999/ http://192.168.1.5:9999/", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.URL != "http://127.0.0.1:9999/office/#captain" {
+		t.Fatalf("captain link with a LAN URL: %s", snap.URL)
+	}
 	if !strings.Contains(snap.Projects[0].News[0].Title, "cần key") {
 		t.Fatal("news title missing")
 	}

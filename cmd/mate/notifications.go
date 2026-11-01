@@ -117,8 +117,10 @@ func notificationSnapshot(ctx context.Context, ws *store.Workspace, dashboardURL
 		return notifications.Snapshot{}, err
 	}
 	out := notifications.Snapshot{Complete: true}
-	if dashboardURL != "" {
-		out.URL = strings.TrimRight(dashboardURL, "/") + "/office/#captain"
+	// The console's URL can be the loopback one followed by the LAN one
+	// (startConsoleDashboard); the click opens on this Mac, so loopback.
+	if fields := strings.Fields(dashboardURL); len(fields) > 0 {
+		out.URL = strings.TrimRight(fields[0], "/") + "/office/#captain"
 	}
 	for _, p := range snap.Projects {
 		np := notifications.Project{Name: p.Name}
