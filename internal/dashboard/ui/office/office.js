@@ -383,6 +383,7 @@
   function matePath(p) { return "/api/projects/" + enc(p) + "/mate"; }
   function pluginsPath(p) { return "/api/plugins?project=" + enc(p); }
   function actionsPath(p) { return "/api/projects/" + enc(p) + "/actions"; }
+  function chatPath(p) { return "/api/projects/" + enc(p) + "/chat"; }
   function historyPath(p, since) { return "/api/projects/" + enc(p) + "/history?since=" + enc(since); }
 
   // ------------------------------------------------------------ state
@@ -397,6 +398,7 @@
   var detailToken = 0;
   var detail = null;          // {key, body} | {key, error} | {key, loading}
   var apps = null;            // the open Mate drawer's /api/plugins: {key, body} | {key, error}
+  var chat = null;            // the open Mate drawer's /api/projects/{p}/chat: {key, body} | {key, error}
   var live = { state: "loading", at: null, reason: "" };
   var sel = parseHash();
   var lastOpener = null;
@@ -415,7 +417,7 @@
   var diffView = null;        // {key, body} | {key, error} | {key, loading}: a crew's branch diff
   var wsReadOnly = null;      // why this dashboard cannot act ("" when it can, null until known)
   var mateTab = "details";    // the Mate drawer's tab: "details" or "talk"
-  var talkOpen = {};          // exchange id -> true when an older turn is opened up
+  var talkOpen = {};          // turn time -> true when an older turn is opened up
   var mateFull = storedFlag("mate-office-mate-full"); // the Mate drawer fills the page, replies unclipped
   var matesOnly = storedFlag("mate-office-mates-only"); // the console's `v`: rooms show only their Mate
   var inboxMode = {};         // project -> "inbox" | "log"
@@ -566,6 +568,12 @@
         if (token === detailToken) apps = { key: key, body: body };
       }, function (err) {
         if (token === detailToken) apps = { key: key, error: err };
+      }));
+      // Talk is the chat the Mate's REPL shows, from the same history.
+      reads.push(api(chatPath(s.project)).then(function (body) {
+        if (token === detailToken) chat = { key: key, body: body };
+      }, function (err) {
+        if (token === detailToken) chat = { key: key, error: err };
       }));
     }
     return Promise.all(reads);
@@ -1451,8 +1459,8 @@
     var present = running && m.state !== "gone";
     var head = drawerHead(personAvatar(h, shirt("mate:" + name), present),
       ["Mate · team lead", htag(h)], name, chip(s), m.since ? "since " + age(m.since) : null, fullToggle());
-    var ex = exchangesOf(name);
-    var top = [head, actionsSection(name, ""), mateTabs(name, ex.list ? ex.list.length : null)];
+    var talk = chatOf(name);
+    var top = [head, actionsSection(name, ""), mateTabs(name, talk.list ? talk.list.length : null)];
     if (mateTab === "talk") return top.concat([talkSection(name), composer(name)]);
     var nodes = top.concat([
       usageSection({
@@ -1811,60 +1819,64 @@
     return el("div", { class: "tabs", role: "tablist", "aria-label": "Mate of " + name }, [tab("talk", "Talk", n), tab("details", "Details", null)]);
   }
 
-  function exchangesOf(name) {
-    var d = detail && detail.key === "mate/" + enc(name) ? detail : null;
-    if (!d || d.loading) return { loading: true };
-    if (d.error) return { error: d.error };
-    return { list: d.body.exchanges || [] };
+  function chatOf(name) {
+    var c = chat && chat.key === "mate/" + enc(name) ? chat : null;
+    if (!c) return { loading: true };
+    if (c.error) return { error: c.error };
+    return { list: c.body.items || [], headless: c.body.headless, state: c.body.state };
   }
 
   var TURNS_SHOWN = 20;
 
+  // talkSection is the Mate's chat as its REPL shows it: the captain's
+  // messages and the Mate's replies. What crews report, the app's lines and
+  // the Mate's tools stay out (CON-151); Details and the task pages have
+  // them.
   function talkSection(name) {
-    var x = exchangesOf(name);
-    var nodes = [el("p", { class: "chat-note", text: "Each message runs one headless turn of this Mate. Older turns fold to one line." })];
+    var x = chatOf(name);
+    var nodes = [];
     if (x.loading) nodes.push(el("p", { class: "loading-note", text: "loading…" }));
-    else if (x.error) nodes.push(el("p", { class: "err-note", text: "The turns could not be read: " + (x.error.reason || x.error.message) }));
-    else if (!x.list.length) nodes.push(el("p", { class: "chat-note", text: "No turns recorded yet." }));
+    else if (x.error) nodes.push(el("p", { class: "err-note", text: "The chat could not be read: " + (x.error.reason || x.error.message) }));
+    else if (!x.list.length) nodes.push(el("p", { class: "chat-note", text: x.headless ? "No messages yet." : "This Mate is not headless: its chat is in its own pane." }));
     else {
       var list = x.list.slice(-TURNS_SHOWN);
-      list.forEach(function (ex, i) {
+      list.forEach(function (it, i) {
         var last = i === list.length - 1;
-        var open = last || !!talkOpen[ex.id];
-        var at = ex.prompt_at || ex.started_at;
-        var t = ex.tokens ? tok(ex.tokens.total) + " tok" : "? tok";
-        var who = ex.source || "?";
+        var open = last || !!talkOpen[it.at];
         if (!open) {
-          var row = el("button", { class: "tc", type: "button", "aria-expanded": "false", "data-focus": "turn:" + ex.id }, [
-            el("span", { class: "mono", text: at ? clock(at) : "?" }),
-            el("span", { class: "who", text: who }),
-            el("b", { text: firstLine(ex.prompt) }),
-            el("span", { class: "mono", text: t })
+          var row = el("button", { class: "tc", type: "button", "aria-expanded": "false", "data-focus": "turn:" + it.at }, [
+            el("span", { class: "mono", text: it.at ? clock(it.at) : "?" }),
+            el("b", { text: firstLine(it.text) })
           ]);
-          row.addEventListener("click", function () { talkOpen[ex.id] = true; draw(); });
+          row.addEventListener("click", function () { talkOpen[it.at] = true; draw(); });
           nodes.push(row);
           return;
         }
-        var head = [el("span", { class: "mono", text: at ? monthDay(at) + " " + clock(at) : "?" }), el("span", { text: "from " + who }), el("span", { text: t })];
+        var head = [el("span", { class: "mono", text: it.at ? monthDay(it.at) + " " + clock(it.at) : "?" })];
         if (!last) {
-          var fold = el("button", { class: "fold", type: "button", "data-focus": "turn:" + ex.id }, "Fold");
-          fold.addEventListener("click", function () { delete talkOpen[ex.id]; draw(); });
+          var fold = el("button", { class: "fold", type: "button", "data-focus": "turn:" + it.at }, "Fold");
+          fold.addEventListener("click", function () { delete talkOpen[it.at]; draw(); });
           head.push(fold);
         }
-        var steps = [];
-        if (ex.tool_calls != null) steps.push(plural(ex.tool_calls, "tool call", "tool calls"));
-        if (ex.model_calls != null) steps.push(plural(ex.model_calls, "model call", "model calls"));
-        if (ex.duration_ms != null) steps.push(formatRun(ex.duration_ms));
-        var ended = !!(ex.ended_at || ex.response_at);
+        var reply = null;
+        if (it.error) reply = el("p", { class: "turn-meta" }, "✕ This turn failed · " + String(it.error).split("\n")[0]);
+        else if (it.reply) {
+          var end = it.at ? new Date(Date.parse(it.at) + (it.ms || 0)).toISOString() : null;
+          reply = el("div", { class: "msg reply" }, [chatMarkdown(it.reply), el("div", { class: "turn-meta" }, [
+            el("span", { text: it.interrupted ? "⊘ interrupted · the reply above is not complete" : chatMeta(it) }),
+            el("span", { class: "mono", text: end ? clock(end) : "" })
+          ])]);
+        } else if (it.interrupted) reply = el("p", { class: "turn-meta" }, "⊘ interrupted");
         nodes.push(el("div", { class: "tx" }, [
           el("div", { class: "tx-h" }, head),
-          el("div", { class: "msg me" + (who === "captain" ? "" : " other"), text: ex.prompt || "(no prompt recorded)" }),
-          steps.length ? el("p", { class: "steps" }, [icon("tool"), steps.join(" · ")]) : null,
-          ex.response ? el("div", { class: "msg reply", text: ex.response }) : null,
-          el("span", { class: "phase" }, ended ? chip({ word: "done", tone: "t-gone", icon: "done" }) :
-            el("span", { class: "chip t-ok" }, [el("span", { class: "dots", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]), "working"]))
+          el("div", { class: "msg me", text: it.text }),
+          reply
         ]));
       });
+    }
+    if (x.state && x.state.busy) {
+      nodes.push(el("span", { class: "phase" }, el("span", { class: "chip t-ok" }, [el("span", { class: "dots", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]),
+        x.state.turn_source === "app" ? "working" : "thinking"])));
     }
     return el("section", { class: "chat", "aria-label": "Talk" }, nodes);
   }

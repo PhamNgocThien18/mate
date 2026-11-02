@@ -97,7 +97,7 @@ class Node {
 const FIXTURE = path.join(__dirname, "testdata", "office", "busy.json");
 const fixture = () => JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
 
-// boot loads humanize.js and office.js into a fresh context the way the page
+// boot loads humanize.js, chat.js and office.js into a fresh context the way the page
 // does, against a fake fetch that serves the fixture.
 async function boot(opts = {}) {
   const fx = opts.fixture || fixture();
@@ -168,6 +168,7 @@ async function boot(opts = {}) {
       else if ((m = /^\/api\/projects\/([^/]+)\/tasks\/([^/]+)\/diff$/.exec(p))) body = { project: m[1], crew: m[2], branch: "mate/" + m[2], exists: true, text: "diff --git a/x b/x\n+one line\n" };
       else if ((m = /^\/api\/projects\/([^/]+)\/tasks\/([^/]+)$/.exec(p))) body = fx.tasks[m[1] + "/" + m[2]] || taskBody(fx, m[1], m[2]);
       else if ((m = /^\/api\/projects\/([^/]+)\/mate$/.exec(p))) body = fx.mates[m[1]] || { project: m[1], exchanges: [] };
+      else if ((m = /^\/api\/projects\/([^/]+)\/chat$/.exec(p))) body = (fx.chats || {})[m[1]] || { project: m[1], headless: true, items: [], state: null };
       else if ((m = /^\/api\/projects\/([^/]+)$/.exec(p))) body = fx.projects[m[1]];
       if (!body) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ error: "not found " + p }) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(JSON.parse(JSON.stringify(body))) });
@@ -175,7 +176,7 @@ async function boot(opts = {}) {
   });
   // The fixture's own clock: ages read "23m" because it is 14:32:07 there.
   vm.runInContext("Date.now = function () { return " + fx.now_ms + "; };", context);
-  for (const file of ["humanize.js", path.join("office", "office.js")]) {
+  for (const file of ["humanize.js", "chat.js", path.join("office", "office.js")]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "ui", file), "utf8"), context, { filename: file });
   }
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
@@ -968,20 +969,29 @@ test("a read-only dashboard says so in a band under the top bar", async () => {
   assert.equal(acting.root.querySelector(".bn.ro"), null, "a dashboard that can act draws no band");
 });
 
-test("the Mate drawer's Talk tab shows the recorded turns, the last one open, and a composer that says why it cannot send", async () => {
+test("the Mate drawer's Talk tab is the conversation: the captain's messages and the Mate's replies, the last one open", async () => {
   const fx = fixture();
-  fx.mates.shop.exchanges = [
-    { id: "e1", source: "crew", prompt: "api-fix is ready", prompt_at: "2026-10-03T13:42:07.000000000Z", response: "Reviewing it now.", ended_at: "2026-10-03T13:43:07.000000000Z", tool_calls: 2, model_calls: 3, tokens: { total: 1200 } },
-    { id: "e2", source: "captain", prompt: "Merge api-fix when green", prompt_at: "2026-10-03T14:10:07.000000000Z", response: "<b>Merged</b> → main.", ended_at: "2026-10-03T14:11:07.000000000Z", tool_calls: 1, model_calls: 2, tokens: { total: 900 } }
-  ];
+  fx.chats = { shop: { project: "shop", headless: true, state: { busy: true, turn_source: "captain" }, items: [
+    { at: "2026-10-03T13:42:07.000000000Z", source: "captain", text: "Is api-fix ready?", reply: "Yes, reviewing it now.", done: true, tools: ["Bash"], ms: 4100, tokens: 1200 },
+    { at: "2026-10-03T14:10:07.000000000Z", source: "captain", text: "Merge api-fix when green", reply: "<b>Merged</b> → main:\n- **PR #12** in `main`\n- tests green", done: true, tools: ["Bash", "Skill"], ms: 60000, tokens: 900 }
+  ] } };
+  fx.mates.shop.exchanges = [{ id: "e0", source: "crew", prompt: "digest: api-fix is ready", prompt_at: "2026-10-03T13:40:07.000000000Z", response: "Crew api-fix reported.", tokens: { total: 10 } }];
   const app = await boot({ hash: "#mate/shop", fixture: fx, actions: SHOP_ACTIONS });
   await app.click(app.drawer().querySelector('[data-focus="tab:talk"]'));
-  const talk = app.drawer().querySelector('section[aria-label="Talk"]');
-  assert.equal(talk.querySelectorAll(".tc").length, 1, "the older turn folds to one line");
-  assert.match(talk.querySelector(".tc").textContent, /crew.*api-fix is ready/);
-  assert.equal(talk.querySelector(".msg.reply").textContent, "<b>Merged</b> → main.", "a reply stays text");
-  await app.click(talk.querySelector(".tc"));
+  const talk = () => app.drawer().querySelector('section[aria-label="Talk"]');
+  assert.doesNotMatch(talk().textContent, /digest|Crew api-fix reported|Bash|Skill/, "crew reports and tools stay out");
+  assert.equal(talk().querySelectorAll(".tc").length, 1, "the older turn folds to one line");
+  assert.match(talk().querySelector(".tc").textContent, /Is api-fix ready\?/);
+  const reply = talk().querySelector(".msg.reply");
+  assert.equal(reply.querySelector(".md-p").textContent, "<b>Merged</b> → main:", "a reply stays text");
+  assert.equal(reply.querySelectorAll(".md-li").length, 2, "bullets are drawn as bullets");
+  assert.equal(reply.querySelector(".md-li b").textContent, "PR #12");
+  assert.equal(reply.querySelector(".md-li code").textContent, "main");
+  assert.match(reply.querySelector(".turn-meta").textContent, /^1m00s · 900 tok/);
+  assert.match(talk().textContent, /thinking/, "a turn in flight says so");
+  await app.click(talk().querySelector(".tc"));
   assert.equal(app.drawer().querySelectorAll(".tx").length, 2, "a folded turn opens");
+  assert.match(app.drawer().querySelector(".tabs").textContent, /Talk2/, "the tab counts the turns");
   const send = app.drawer().querySelector(".dfoot .btn.primary");
   assert.ok("disabled" in send.attrs);
   assert.match(app.drawer().querySelector(".dfoot").textContent, /not wired yet/);

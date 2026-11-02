@@ -157,12 +157,19 @@ h3.sec .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-siz
 .chat { display: flex; flex-direction: column; gap: 10px; }
 .fold { align-self: center; border: 1px dashed var(--line); background: none; border-radius: 999px; padding: 4px 12px; color: var(--muted); cursor: pointer; font-size: 12px; min-height: 32px; }
 .msg { max-width: 92%; padding: 8px 11px; border-radius: 12px; overflow-wrap: anywhere; }
-.msg.captain { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 4px; }
+.msg.captain { white-space: pre-wrap; align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 4px; }
 .msg.mate { align-self: flex-start; background: var(--card-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
 .msg.pending { background: var(--card); color: var(--ink); border: 1px dashed var(--ink); }
 .msg .meta { display: flex; gap: 8px; font-size: 11.5px; color: var(--muted); margin-top: 4px; flex-wrap: wrap; align-items: center; }
 .msg.captain .meta { color: rgba(255, 253, 248, .7); }
-.msg .tool { font: 11.5px var(--mono); color: var(--muted); }
+.msg .meta .at { margin-left: auto; }
+.md > * + * { margin-top: 2px; }
+.md-gap { height: 6px; }
+.md-h { font-weight: 700; }
+.md-li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+.md-mark { color: var(--muted); }
+.md code { font: .92em var(--mono); }
+.md pre { margin: 4px 0; font: 12px var(--mono); color: var(--muted); white-space: pre; overflow-x: auto; }
 .msg .meta button { border: 1px solid currentColor; background: none; border-radius: 999px; padding: 2px 10px; cursor: pointer; min-height: 28px; }
 .turn { font: 12px var(--mono); color: var(--run); display: flex; gap: 6px; align-items: center; }
 .turn .g { display: inline-block; animation: spin 1.2s linear infinite; }

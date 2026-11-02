@@ -194,7 +194,7 @@ func (m Model) footer(w int) []string {
 			hints = append(hints[:1], append([]keyHint{{"^U", "xoá ô"}}, hints[1:]...)...)
 		}
 	default:
-		hints = []keyHint{{"Enter", "gửi"}, {"^J", "xuống dòng"}, {"^T", "topic"}, {"↑↓ PgUp", "cuộn"}, {"^O", "tool"}, {"?", "phím tắt"}}
+		hints = []keyHint{{"Enter", "gửi"}, {"^J", "xuống dòng"}, {"^T", "topic"}, {"↑↓ PgUp", "cuộn"}, {"?", "phím tắt"}}
 		if len(m.input) > 0 {
 			hints = append(hints[:2], append([]keyHint{{"^U", "xoá ô"}}, hints[2:]...)...)
 		}
@@ -246,11 +246,7 @@ func (m Model) below(w int) []string {
 	if m.mode == viewSession {
 		return append(m.proposalFrame(w), m.backgroundLine(w)...)
 	}
-	var out []string
-	if a := m.activity(); a != "" {
-		out = append(out, styleFaint.Render(ansi.Truncate(a, w-1, "…")))
-	}
-	out = append(out, m.tray(w)...)
+	out := m.tray(w)
 	out = append(out, m.backgroundLine(w)...)
 	return append(out, m.queueLines(w)...)
 }
@@ -270,27 +266,6 @@ func (m Model) queueLines(w int) []string {
 		}
 	}
 	return out
-}
-
-// activity is the faint line for the last app event the Mate kept to
-// itself, for a minute after it ended.
-func (m Model) activity() string {
-	for i := len(m.items) - 1; i >= 0; i-- {
-		it := m.items[i]
-		if it.Source != SourceApp || it.News != 0 {
-			continue
-		}
-		end := it.At.Add(time.Duration(it.MS) * time.Millisecond)
-		if it.shown() || m.now().Sub(end) > activityFor {
-			return ""
-		}
-		text := Summary(it.Text)
-		if it.Error != "" {
-			text = "lỗi: " + firstLine(it.Error)
-		}
-		return fmt.Sprintf(" · %s  %s · %s", end.Format("15:04"), it.Label, text)
-	}
-	return ""
 }
 
 // --- composer ---
@@ -422,7 +397,7 @@ func (m Model) conversation(w int) []string {
 		out = append(out, lines...)
 	}
 	for i, it := range m.items {
-		if !it.shown() {
+		if !it.InChat() {
 			continue
 		}
 		last := i == len(m.items)-1 && m.running == nil
@@ -441,11 +416,6 @@ func (m Model) itemLines(it Item, w int, last bool) []string {
 	} else {
 		out = []string{styleFaint.Render(fmt.Sprintf("   · %s · %s", it.Label, it.At.Format("15:04")))}
 	}
-	if it.Label == "stow" && it.Done && it.Error == "" && !m.expand {
-		// What the Mate saved before a restart is its own bookkeeping:
-		// one line, opened with ^O.
-		return []string{styleMuted.Render(ansi.Truncate(fmt.Sprintf("   ▸ Mate ghi nhớ trước khi khởi động lại · %s · ^O xem", endAt(it).Format("15:04")), w-1, "…"))}
-	}
 	switch {
 	case !it.Done:
 		return append(out, m.liveLines(it, w)...)
@@ -460,40 +430,22 @@ func (m Model) itemLines(it Item, w int, last bool) []string {
 		out = append(out, replyLines(it.Reply, w)...)
 	}
 	if it.Interrupted {
-		for _, t := range it.Tools {
-			if !t.Done {
-				out = append(out, toolRow(t, w, styleMuted.Render("○"), "dừng"))
-			}
-		}
 		return append(out, styleMuted.Render(fmt.Sprintf("   ○ Anh đã ngắt · %s · phần trả lời trên chưa đầy đủ", seconds(time.Duration(it.MS)*time.Millisecond))))
 	}
-	if last && m.expand {
-		for _, t := range it.Tools {
-			out = append(out, doneToolRow(t, w))
-		}
-	}
-	return append(out, metaLine(it, w, last && m.expand))
+	return append(out, metaLine(it, w))
 }
 
-// liveLines are a running turn: what it has said so far, with the cursor
-// at its end, and each tool it called.
+// liveLines are a running turn: the message it is writing, with the
+// cursor at its end. What it wrote before its last tool, and the tools,
+// are its own work; the composer's border names the tool.
 func (m Model) liveLines(it Item, w int) []string {
-	spin := spinnerFrames[m.frame%len(spinnerFrames)]
-	var out []string
-	if strings.TrimSpace(it.Reply) != "" {
-		out = replyLines(it.Reply, w)
-		out[len(out)-1] += styleAccent.Render("▌")
+	said := strings.TrimSpace(it.Reply[min(it.Lead, len(it.Reply)):])
+	if said == "" {
+		spin := spinnerFrames[m.frame%len(spinnerFrames)]
+		return []string{styleWorking.Render(" "+spin) + styleMuted.Render(" đang nghĩ…")}
 	}
-	for _, t := range it.Tools {
-		if t.Done {
-			out = append(out, doneToolRow(t, w))
-		} else {
-			out = append(out, toolRow(t, w, styleWorking.Render(spin), seconds(m.now().Sub(t.Started))))
-		}
-	}
-	if len(out) == 0 {
-		out = append(out, styleWorking.Render(" "+spin)+styleMuted.Render(" đang nghĩ…"))
-	}
+	out := replyLines(said, w)
+	out[len(out)-1] += styleAccent.Render("▌")
 	return out
 }
 
@@ -524,13 +476,10 @@ func replyLines(reply string, w int) []string {
 	return lines
 }
 
-// metaLine closes a finished turn: its tools in one line, how long it took,
-// its tokens, and the time it ended.
-func metaLine(it Item, w int, expanded bool) string {
+// metaLine closes a finished turn: how long it took, its tokens, and the
+// time it ended.
+func metaLine(it Item, w int) string {
 	var parts []string
-	if n := len(it.Tools); n > 0 && !expanded {
-		parts = append(parts, fmt.Sprintf("▸ %d tool · %s", n, toolsSummary(it.Tools)))
-	}
 	if it.MS > 0 {
 		parts = append(parts, seconds(time.Duration(it.MS)*time.Millisecond))
 	}
@@ -542,52 +491,11 @@ func metaLine(it Item, w int, expanded bool) string {
 	return spread(styleMuted.Render(left), styleMuted.Render(at), w)
 }
 
-func toolRow(t ToolRecord, w int, glyph, right string) string {
-	left := "   " + glyph + " " + styleMuted.Render(ansi.Truncate(toolLabel(t), max(4, w-8-len(right)), "…"))
-	return spread(left, styleMuted.Render(right)+" ", w)
-}
-
-func doneToolRow(t ToolRecord, w int) string {
-	glyph := styleSuccess.Render("✓")
-	if t.Error {
-		glyph = styleDanger.Render("✗")
-	} else if !t.Done {
-		glyph = styleMuted.Render("○")
-	}
-	right := ""
-	if t.MS > 0 {
-		right = seconds(time.Duration(t.MS) * time.Millisecond)
-	}
-	return toolRow(t, w, glyph, right)
-}
-
 func toolLabel(t ToolRecord) string {
 	if t.Detail == "" {
 		return t.Name
 	}
 	return t.Name + ": " + t.Detail
-}
-
-// toolsSummary names a turn's tools in one line: the call itself when there
-// is one, the first words of each when there are more.
-func toolsSummary(tools []ToolRecord) string {
-	if len(tools) == 1 {
-		return toolLabel(tools[0])
-	}
-	var names []string
-	seen := map[string]bool{}
-	for _, t := range tools {
-		name := t.Name
-		if t.Detail != "" && t.Name == "Bash" {
-			f := strings.Fields(t.Detail)
-			name = strings.Join(f[:min(3, len(f))], " ")
-		}
-		if !seen[name] {
-			seen[name] = true
-			names = append(names, name)
-		}
-	}
-	return strings.Join(names, ", ")
 }
 
 // --- help ---
@@ -603,7 +511,7 @@ func helpLines() []string {
 		{"Esc", "ngắt lượt đang chạy"},
 		{"^X", "bỏ tin xếp hàng cuối"},
 		{"^R", "thử lại lượt lỗi"},
-		{"^O", "mở/thu gọn tool lượt cuối · phần Mate ghi nhớ · lượt cũ trong khung"},
+		{"^O (Topic)", "mở/thu gọn lượt cũ trong khung"},
 		{"^T", "trang Topic: mỗi câu hỏi một khung"},
 		{"^N", "mở topic chưa trả lời tiếp theo"},
 		{"#3 …", "trả lời topic #3 ngay từ chat"},

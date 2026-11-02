@@ -233,7 +233,7 @@ func (h *Host) waitSession(s *session, run *Run, item *Item) {
 	})
 	h.mu.Lock()
 	result := strings.TrimSpace(reply.Text)
-	item.Reply = finalReply(strings.TrimSpace(item.Reply), result, reply.IsError)
+	item.Reply = finalReply(strings.TrimSpace(item.Reply), result)
 	item.MS = reply.DurationMS
 	if item.MS <= 0 {
 		item.MS = h.now().Sub(item.At).Milliseconds()

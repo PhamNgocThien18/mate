@@ -70,19 +70,24 @@ func TestREPLFitsTheWidth(t *testing.T) {
 
 func TestREPLScreens(t *testing.T) {
 	idle := ansi.Strip(sampleModel(100, 40).View())
-	for _, want := range []string{"mate · hellovietnam", "crew 3 · ctx 84.0k · opus", "› ok anh đã có 2 test user", "● Em đã ghi nhận", "▸ 1 tool · Bash: mate wake hellovietnam · 4.1s · 1.2k tok", "• Ảnh đại diện", "✗ Lượt này lỗi · exit status 1: API Error: 529 overloaded", "^R thử lại", "○ Mate rảnh"} {
+	for _, want := range []string{"mate · hellovietnam", "crew 3 · ctx 84.0k · opus", "› ok anh đã có 2 test user", "● Em đã ghi nhận", "4.1s · 1.2k tok", "• Ảnh đại diện", "✗ Lượt này lỗi · exit status 1: API Error: 529 overloaded", "^R thử lại", "○ Mate rảnh"} {
 		if !strings.Contains(idle, want) {
 			t.Errorf("idle screen lacks %q:\n%s", want, idle)
 		}
 	}
-	if strings.Contains(idle, "· digest ·") {
-		t.Errorf("a silent digest entered the conversation:\n%s", idle)
+	for _, not := range []string{"· digest ·", "tool ·", "mate wake"} {
+		if strings.Contains(idle, not) {
+			t.Errorf("idle screen shows %q, which is not the conversation:\n%s", not, idle)
+		}
 	}
 	busy := ansi.Strip(busyModel(100, 40).View())
-	for _, want := range []string{"đụng vào▌", "✓ Bash: mate task new e1-profile --from-chat", "Bash: mate crew spawn e1-profile", "Xếp hàng (2)", `1 › à nhớ đổi tên`, "Mate đang làm · Bash: mate crew spawn e1-profile · 7.0s", "^C ngắt", "Supabase Storage hay S3?"} {
+	for _, want := range []string{"đụng vào▌", "Xếp hàng (2)", `1 › à nhớ đổi tên`, "Mate đang làm · Bash: mate crew spawn e1-profile · 7.0s", "^C ngắt", "Supabase Storage hay S3?"} {
 		if !strings.Contains(busy, want) {
 			t.Errorf("busy screen lacks %q:\n%s", want, busy)
 		}
+	}
+	if strings.Contains(busy, "mate task new") {
+		t.Errorf("the running turn's tools entered the conversation:\n%s", busy)
 	}
 }
 
@@ -198,19 +203,41 @@ func TestREPLMouseWheel(t *testing.T) {
 	}
 }
 
-// TestREPLFoldsStow keeps what the Mate saved before a restart to one line
-// until ^O opens it.
-func TestREPLFoldsStow(t *testing.T) {
+// TestREPLChatIsTheConversation: the chat is the captain's messages and
+// the Mate's replies (CON-151). App turns stay out, whether the Mate had
+// something to say or saved itself before a restart.
+func TestREPLChatIsTheConversation(t *testing.T) {
 	m := sampleModel(80, 30)
-	m.items = append(m.items[:3], Item{At: m.now(), Source: SourceApp, Label: "stow", Text: Marker + "stow: you are about to be restarted",
-		Reply: "Everything is saved, so a restart loses nothing this session knew.", Done: true, MS: 9000})
-	view := ansi.Strip(m.View())
-	if strings.Contains(view, "Everything is saved") || !strings.Contains(view, "Mate ghi nhớ trước khi khởi động lại") {
-		t.Fatalf("stow not folded:\n%s", view)
+	m.items = append(m.items[:3],
+		Item{At: m.now(), Source: SourceApp, Label: "digest", Text: Marker + "digest: e1 merged", Reply: "HU-165 is done and set to Done in Linear.", Done: true, MS: 4000},
+		Item{At: m.now(), Source: SourceApp, Label: "stow", Text: Marker + "stow: you are about to be restarted",
+			Reply: "Everything is saved, so a restart loses nothing this session knew.", Done: true, MS: 9000},
+		Item{At: m.now(), Source: SourceApp, Label: "event", Text: Marker + "event: e1 failed", Done: true, Error: "exit status 1"})
+	for _, view := range []string{ansi.Strip(m.View()), func() string {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+		return ansi.Strip(next.(Model).View())
+	}()} {
+		for _, not := range []string{"HU-165", "Everything is saved", "ghi nhớ", "digest", "lỗi"} {
+			if strings.Contains(view, not) {
+				t.Fatalf("an app turn entered the chat (%q):\n%s", not, view)
+			}
+		}
 	}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
-	if view := ansi.Strip(next.(Model).View()); !strings.Contains(view, "Everything is saved") {
-		t.Fatalf("^O did not open the stow:\n%s", view)
+}
+
+// TestREPLLiveShowsTheMessageInProgress: a running turn shows what it
+// writes after its last tool, not what it wrote before it.
+func TestREPLLiveShowsTheMessageInProgress(t *testing.T) {
+	m := busyModel(100, 40)
+	m.running.Reply = "Em đang xem lại kế hoạch.\n\nĐã tạo task e1-profile"
+	m.running.Lead = len("Em đang xem lại kế hoạch.\n\n")
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "xem lại kế hoạch") || !strings.Contains(view, "Đã tạo task e1-profile▌") {
+		t.Fatalf("the live turn shows its narration:\n%s", view)
+	}
+	m.running.Reply = m.running.Reply[:m.running.Lead]
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "đang nghĩ…") {
+		t.Fatalf("a turn between messages does not say it is thinking:\n%s", view)
 	}
 }
 
@@ -230,9 +257,13 @@ func TestREPLHoldsTheReadPlace(t *testing.T) {
 	if got := top(m); got != before {
 		t.Fatalf("a growing turn moved the view: %q, was %q", got, before)
 	}
-	m.apply(Event{Item: &Item{At: at, Source: SourceApp, Label: "event", Reply: "Crew e1 xong.\n\nĐã merge.", Done: true}})
+	m.apply(Event{Item: &Item{At: at, Source: SourceApp, Label: "event", Reply: "Crew e1 xong.", Done: true}})
+	if m.unseen != 0 {
+		t.Fatalf("an app turn counted as unseen: %d", m.unseen)
+	}
+	m.apply(Event{Item: &Item{At: at, Source: SourceCaptain, Text: "đang chạy", Reply: "một\n\nhai\n\nba\n\nbốn", Done: true}})
 	if got := top(m); got != before {
-		t.Fatalf("a finished app turn moved the view: %q, was %q", got, before)
+		t.Fatalf("a finished turn moved the view: %q, was %q", got, before)
 	}
 	if m.unseen != 1 {
 		t.Fatalf("unseen = %d, want 1", m.unseen)
@@ -240,7 +271,7 @@ func TestREPLHoldsTheReadPlace(t *testing.T) {
 
 	// At the end the chat still follows what comes.
 	m.scrollBy(-1 << 30)
-	m.apply(Event{Item: &Item{At: at, Source: SourceApp, Label: "event", Reply: "Tin cuối cùng", Done: true}})
+	m.apply(Event{Item: &Item{At: at, Source: SourceCaptain, Text: "nữa", Reply: "Tin cuối cùng", Done: true}})
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "Tin cuối cùng") {
 		t.Fatalf("the chat did not follow at its end:\n%s", view)
 	}

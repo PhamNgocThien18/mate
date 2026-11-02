@@ -190,9 +190,9 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request, req ActionRe
 }
 
 // ChatResponse is GET /api/projects/{project}/chat: the headless Mate's
-// conversation as its REPL keeps it (`mate/history.jsonl`), newest last,
-// and what the Mate is doing now. Items that belong to a news are in it
-// too, with their `news`; a page shows them in that news.
+// conversation as its REPL shows it (`mate/history.jsonl`, captain
+// messages outside a news only), newest last, and what the Mate is doing
+// now.
 type ChatResponse struct {
 	envelope
 	Project  string          `json:"project"`
@@ -223,6 +223,22 @@ type ChatItem struct {
 // chatLimit is how many items a chat shows; the Office keeps the rest.
 const chatLimit = 80
 
+// chatHistory is the last n items of a Mate's history the chat shows: the
+// captain's messages and the Mate's replies, as its REPL shows them
+// (CON-151).
+func chatHistory(path string, n int) []matehost.Item {
+	var out []matehost.Item
+	for _, it := range matehost.History(path, 0) {
+		if it.InChat() {
+			out = append(out, it)
+		}
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	return out
+}
+
 func chatItems(items []matehost.Item) []ChatItem {
 	out := make([]ChatItem, 0, len(items))
 	for _, it := range items {
@@ -244,7 +260,7 @@ func (s *Server) handleChat(ctx context.Context, r *http.Request, env envelope) 
 	}
 	dir := s.ws.MateDir(project)
 	out := ChatResponse{envelope: env, Project: project, Headless: s.ws.MateHeadless(project), Items: []ChatItem{}}
-	out.Items = chatItems(matehost.History(matehost.HistoryPath(dir), chatLimit))
+	out.Items = chatItems(chatHistory(matehost.HistoryPath(dir), chatLimit))
 	if !out.Headless {
 		return out, nil
 	}

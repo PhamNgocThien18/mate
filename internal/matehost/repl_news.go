@@ -831,7 +831,7 @@ func (m Model) threadLines(it Item, w int, last bool) []string {
 		if it.Silent || it.Reply == "" {
 			return nil
 		}
-		return append(replyLines(it.Reply, w), metaLine(it, w, false))
+		return append(replyLines(it.Reply, w), metaLine(it, w))
 	}
 	return m.itemLines(it, w, last)
 }
