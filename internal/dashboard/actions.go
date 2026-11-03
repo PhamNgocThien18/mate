@@ -28,6 +28,8 @@ type ActionRequest struct {
 	// News is the news an `answer`, a `fork` or a `fork_close` is about,
 	// and on `interrupt` the session to stop instead of the Mate's turn.
 	News int `json:"news,omitempty"`
+	// Work is the row an `okay` ticks on the Mate's work board (CON-158).
+	Work int `json:"work,omitempty"`
 	// Harness is the agent a new Mate is created with (`onboard`); empty
 	// is the workspace's default.
 	Harness string `json:"harness,omitempty"`
@@ -355,10 +357,14 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	if pressed.Action == actAssign {
 		req.Line = s.resolveLine(node, req.Crew, req.Key)
 	}
-	if talk[req.Action] || req.Action == actPeek {
-		// Talking and reading a screen do not wait for, or hold up, a
-		// stop or a merge on the same Mate or crew.
+	if talk[req.Action] || req.Action == actPeek || req.Action == actOkay {
+		// Talking, reading a screen and ticking the board do not wait
+		// for, or hold up, a stop or a merge on the same Mate or crew.
 		target += "#" + req.Action
+	}
+	if req.Action == actOkay && req.Work <= 0 {
+		s.writeError(w, r, http.StatusBadRequest, "okay wants the work row it ticks", "")
+		return
 	}
 	if busy, ok := s.acting.take(target, req.Action); !ok {
 		s.writeError(w, r, http.StatusConflict, "Action refused: "+busy+" is still running on "+target+" · nothing started", "")

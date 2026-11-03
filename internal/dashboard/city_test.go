@@ -58,8 +58,11 @@ func TestCityButtonsBesideTheSheet(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.MateMore) != 2 {
+	if len(got.MateMore) != 3 {
 		t.Fatalf("mate_more = %+v", got.MateMore)
+	}
+	if ok := got.MateMore[2]; ok.Action != "okay" || !ok.Available {
+		t.Errorf("okay = %+v, want offered without a Mate: it writes the board's log", ok)
 	}
 	if say := got.MateMore[0]; say.Action != "say" || say.Available || !strings.Contains(say.Reason, "not headless") {
 		t.Errorf("say = %+v, want refused: the fixture Mate is not headless", say)
