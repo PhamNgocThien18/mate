@@ -1787,7 +1787,7 @@
 
   function bands() {
     var out = [];
-    if (wsReadOnly) out.push(el("div", { class: "bn ro", role: "status" }, [icon("lock"), el("b", { text: "Read-only." }), el("span", { text: wsReadOnly })]));
+    if (wsReadOnly) out.push(el("div", { class: "band ro", role: "status" }, [icon("lock"), el("b", { text: "Read-only." }), el("span", { text: wsReadOnly })]));
     return out;
   }
 

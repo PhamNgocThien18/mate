@@ -746,9 +746,9 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
 .btn.dangerP:hover:not([disabled]) { background: var(--badT); opacity: .9; }
 
 /* The band under the top bar. */
-.bn { position: sticky; top: 56px; z-index: 5; display: flex; gap: 8px; align-items: center; padding: 8px 20px; font-size: 12.5px; font-weight: 500; border-bottom: 1px solid var(--line); }
-.bn b { font-weight: 700; }
-.bn.ro { background: var(--infoB); color: var(--infoT); }
+.band { position: sticky; top: 56px; z-index: 5; display: flex; gap: 8px; align-items: center; padding: 8px 20px; font-size: 12.5px; font-weight: 500; border-bottom: 1px solid var(--line); }
+.band b { font-weight: 700; }
+.band.ro { background: var(--infoB); color: var(--infoT); }
 .tog { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink2); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; flex: none; }
 .tog[aria-pressed="true"] { background: var(--selbg); border-color: var(--sel); color: var(--sel); }
 .tog .k { margin-left: 2px; }
@@ -899,7 +899,7 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
 @media (max-width: 759px) {
   .act, .btn, .tog, .tc, .tabs button { min-height: 44px; }
   .tog { width: 44px; height: 44px; padding: 0; justify-content: center; }
-  .bn { top: 56px; padding: 8px 14px; font-size: 12px; flex-wrap: wrap; }
+  .band { top: 56px; padding: 8px 14px; font-size: 12px; flex-wrap: wrap; }
   .drawer-wide { width: auto; }
   .drawer.drawer-full { top: 56px; height: auto; min-height: 0; border-radius: 0; }
   .dbtns { padding: 10px 12px 0; }
