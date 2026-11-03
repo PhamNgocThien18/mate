@@ -181,6 +181,9 @@ func (m Model) projectPeekFields(proj query.ProjectNode, vw int) []detailField {
 	if n := len(mate.OwedNews()); n > 0 {
 		out = append(out, detailField{label: "news", lines: text(fmt.Sprintf("%d waiting on you", n), tAmber)})
 	}
+	if n, _, _, _ := mate.WorkCounts(); n > 0 {
+		out = append(out, detailField{label: "work", lines: text(fmt.Sprintf("%d for you", n), tAmber)})
+	}
 	out = append(out, detailField{label: "mode", lines: one(m.modeLine(proj))})
 	out = append(out, m.repoFields(proj, vw)...)
 	if f, ok := m.lastEventField(mate.LastEvent); ok {
@@ -350,7 +353,21 @@ func (m Model) mateDetailFields(vw int) []detailField {
 	if mate.Error.IsKnown() && mate.Error.Value != "" {
 		out = append(out, detailField{label: "error", lines: wrapped(string(mate.Error.Value), tRed, vw)})
 	}
-	return append(out, m.mateNewsFields(mate, vw)...)
+	out = append(out, m.mateNewsFields(mate, vw)...)
+	return append(out, m.mateWorkFields(mate, vw)...)
+}
+
+// mateWorkFields is the Mate's work board in one line (CON-158): how many
+// rows wait on the captain's tick, run, wait on a topic, and are okayed.
+// No board at all says nothing; an unreadable one says why.
+func (m Model) mateWorkFields(mate query.MateNode, vw int) []detailField {
+	switch {
+	case mate.Work.State == query.Unknown:
+		return []detailField{{label: "work", lines: fieldState(mate.Work, vw)}}
+	case !mate.Work.IsKnown():
+		return nil
+	}
+	return []detailField{{label: "work", lines: one(m.workCountsLine(mate).cut(vw, m.g))}}
 }
 
 // mateNewsFields are the Mate's open news - each one's title, and whether

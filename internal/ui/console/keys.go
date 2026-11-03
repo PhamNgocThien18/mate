@@ -48,6 +48,8 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.onConfirmKey(key)
 	case m.actions:
 		return m.onMenuKey(key)
+	case m.work.open:
+		return m.onWorkKey(key)
 	}
 	switch m.phase {
 	case phaseLoading:
@@ -120,6 +122,8 @@ func (m Model) onListKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "o":
 		return m.beginBoxActions(), nil
+	case "w":
+		return m.beginWork(), nil
 	case "esc", "backspace":
 		return m.onBack(), nil
 	case "up", "k":
@@ -170,6 +174,8 @@ func (m Model) onDetailKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "a":
 		return m.beginActions(), nil
+	case "w":
+		return m.beginWork(), nil
 	case "esc", "backspace":
 		return m.setFocus(paneList), nil
 	case "enter":

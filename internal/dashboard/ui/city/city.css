@@ -195,6 +195,20 @@ h3.sec .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-siz
 .list .side button { min-height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); padding: 0 10px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
 .list .side small { font-size: 11px; }
 .group-h { font-size: 12px; font-weight: 700; color: var(--muted); margin: 4px 0 -2px; }
+
+/* The Mate's work board (CON-158): a tick for a done row, a tag for what the Mate proposed, okayed rows struck */
+.list.work .g.tick { background: none; line-height: 1; padding-top: 2px; }
+.list.work .g.tick input { width: 18px; height: 18px; margin: 0; accent-color: var(--ok); cursor: pointer; }
+.list.work .g.tick input:disabled { cursor: not-allowed; opacity: .5; }
+.list.work li.done { border-color: var(--ok); }
+.list.work li.okayed .g { color: var(--ok); }
+.list.work li.okayed b { text-decoration: line-through; color: var(--muted); }
+.list.work .tag { font: 600 10.5px var(--mono); letter-spacing: .04em; text-transform: uppercase; background: var(--warn-bg); color: var(--coral-ink); border-radius: 4px; padding: 0 4px; }
+.list.work .okaying { color: var(--ink); }
+.list.work .okaying button { border: 1px solid currentColor; background: none; border-radius: 999px; padding: 2px 10px; cursor: pointer; min-height: 28px; margin-left: 6px; }
+.list.work .side .link { border: 0; background: none; padding: 0; min-height: 0; color: var(--run); font-weight: 600; font-size: 12px; cursor: pointer; }
+.list.work .notes { grid-column: 2 / -1; margin: 4px 0 0; padding: 0; list-style: none; font: 11.5px var(--mono); color: var(--muted); border-top: 1px dashed var(--line); }
+.list.work .notes li { display: block; padding: 3px 0 0; border: 0; background: none; }
 .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
 .toggle button { border: 0; background: none; border-radius: 999px; padding: 3px 10px; cursor: pointer; color: var(--muted); min-height: 28px; }
 .toggle button[aria-pressed="true"] { background: var(--ink); color: var(--card); }

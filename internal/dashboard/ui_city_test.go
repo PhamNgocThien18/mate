@@ -4,6 +4,9 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 	"testing"
@@ -104,4 +107,30 @@ func TestTheOtherUIsLinkToTheCity(t *testing.T) {
 	if office := fetchText(t, f, "/office/office.js"); !strings.Contains(office, `href: "../city/"`) {
 		t.Error("the Office's view switch has no City tab (href: \"../city/\")")
 	}
+}
+
+// TestCityBehaviour runs ui_city_test.cjs - the Mate's work board (CON-158):
+// its tab, groups, tick with undo, topic link, and that none of it is a
+// need - against app.js in node, as TestOfficeBehaviour does for the
+// Office. Not skipped on a machine without node: node is not a dependency
+// of this repository, so the subtest is simply not registered there.
+func TestCityBehaviour(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Log("no node on PATH, so ui_city_test.cjs is not run here")
+		return
+	}
+	t.Run("node", func(t *testing.T) {
+		cmd := exec.Command(node, "--test", "--test-timeout=30000", path.Join(".", "ui_city_test.cjs"))
+		// The fixture's times are shown as local clock readings; pin the
+		// zone so the run does not depend on where the machine is.
+		cmd.Env = append(os.Environ(), "TZ=UTC")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("ui_city_test.cjs failed:\n%s", out)
+		}
+		if !strings.Contains(string(out), "fail 0") {
+			t.Fatalf("unexpected node output:\n%s", out)
+		}
+	})
 }

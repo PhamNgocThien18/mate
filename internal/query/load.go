@@ -133,6 +133,7 @@ func loadProject(ws *store.Workspace, ref store.ProjectRef, live Liveness, w *wa
 
 	p.Mate = loadMate(ws, ref.Name, live, w)
 	p.Mate.News = note(w, loadNews(ws, ref.Name), "news", RowRef{Kind: RowMate, ID: ref.Name, Label: ref.Name})
+	p.Mate.Work = note(w, loadWork(ws, ref.Name), "work", RowRef{Kind: RowMate, ID: ref.Name, Label: ref.Name})
 	// The box is read before the Crews because a Crew's state depends on
 	// it: `blocked` is an open incident in the merged view and nothing
 	// else (mvp.md section 4b).
@@ -255,6 +256,32 @@ func loadNews(ws *store.Workspace, project string) Field[[]NewsItem] {
 			continue
 		}
 		items = append(items, NewsItem{ID: n.ID, Crew: n.Crew, Kind: n.Kind, Title: n.Title, Question: n.Question, Owed: n.Owed(), At: n.At})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].At.After(items[j].At) })
+	return KnownField(items)
+}
+
+// loadWork reads a Mate's work board from `mate/work.jsonl`, every row
+// including the okayed ones, latest move first.
+func loadWork(ws *store.Workspace, project string) Field[[]WorkItem] {
+	path := matehost.WorkPath(ws.MateDir(project))
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return AbsentField[[]WorkItem]("this Mate has no work board")
+		}
+		return UnknownField[[]WorkItem](readFailureReason(err))
+	}
+	list, err := matehost.LoadWork(path)
+	if err != nil {
+		return UnknownField[[]WorkItem](readFailureReason(err))
+	}
+	items := []WorkItem{}
+	for _, w := range list {
+		it := WorkItem{ID: w.ID, Kind: w.Kind, Title: w.Title, Status: w.Status, Topic: w.Topic, Last: w.Last, At: w.At}
+		for _, n := range w.Notes {
+			it.Notes = append(it.Notes, WorkNote{At: n.At, Op: n.Op, Text: n.Text, Topic: n.Topic})
+		}
+		items = append(items, it)
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].At.After(items[j].At) })
 	return KnownField(items)

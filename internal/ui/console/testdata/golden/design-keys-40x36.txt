@@ -10,7 +10,6 @@
   agent    payments-api.mate            
   harness  ✻ claude                     
   status   running · 38m                
-  repo     ~/src/payments-api           
 ─ keys ─────────────────────── any key ─
   ↑ ↓         move; fields in detail    
   enter       show in next pane         
@@ -22,6 +21,7 @@
   m           flip its mode             
   v           projects / mates only     
   y           copy                      
+  w           work board of the mate    
   e           crew report               
   t           project tasks             
   l           box: whole log            

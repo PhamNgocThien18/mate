@@ -566,6 +566,64 @@ func TestLoadReadsTheMatesOpenNews(t *testing.T) {
 	}
 }
 
+// The Mate's work board reaches the snapshot with every row, okayed ones
+// too, latest move first, and its notes; no log at all is Absent.
+func TestLoadReadsTheMatesWorkBoard(t *testing.T) {
+	ws := newWorkspace(t, "shop")
+	work := func() Field[[]WorkItem] {
+		t.Helper()
+		snap, err := Load(context.Background(), ws, testHarnesses, nil)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		return snap.Projects[0].Mate.Work
+	}
+	if got := work(); got.State != Absent {
+		t.Fatalf("Work without a log = %+v, want Absent", got)
+	}
+	if err := os.MkdirAll(ws.MateDir("shop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := matehost.WorkPath(ws.MateDir("shop"))
+	at := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	for i, title := range []string{"Epic 1", "Epic 2", "Tidy the docs"} {
+		kind := matehost.WorkAssigned
+		if i == 2 {
+			kind = matehost.WorkProposed
+		}
+		if _, err := matehost.AddWork(path, kind, title, "", at.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := matehost.DoneWork(path, 1, "PR #9 merged", at.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := matehost.OkayWork(path, 1, at.Add(11*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := matehost.WaitWork(path, 2, 7, "which account?", at.Add(12*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got := work()
+	if !got.IsKnown() || len(got.Value) != 3 {
+		t.Fatalf("Work = %+v, want three rows", got)
+	}
+	v := got.Value
+	if v[0].ID != 2 || v[0].Status != "waiting" || v[0].Topic != 7 || v[0].Last != "which account?" {
+		t.Fatalf("latest row = %+v, want #2 waiting on topic 7", v[0])
+	}
+	if v[1].ID != 1 || v[1].Status != "okayed" || v[1].Open() || len(v[1].Notes) != 3 || v[1].Notes[1].Text != "PR #9 merged" {
+		t.Fatalf("okayed row = %+v, want #1 okayed with three notes", v[1])
+	}
+	if v[2].ID != 3 || v[2].Kind != "proposed" || v[2].Status != "working" {
+		t.Fatalf("oldest row = %+v, want #3 proposed, working", v[2])
+	}
+	forYou, working, waiting, okayed := MateNode{Work: got}.WorkCounts()
+	if forYou != 0 || working != 1 || waiting != 1 || okayed != 1 {
+		t.Fatalf("counts = %d %d %d %d, want 0 1 1 1", forYou, working, waiting, okayed)
+	}
+}
+
 // The tool keys cmd/mate hands Load reach the snapshot as data, in the
 // order given, and the snapshot holds its own copy.
 func TestLoadCarriesCommandBindings(t *testing.T) {
