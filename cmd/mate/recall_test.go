@@ -190,31 +190,31 @@ func TestRecallListsTheOpenNews(t *testing.T) {
 	}
 }
 
-// TestRecallListsTheWorkBoard: the open rows of the work board (CON-158)
+// TestRecallListsTheDutyBoard: the open rows of the duty board (CON-158)
 // follow the news in part 1, with the Mate's last line; an okayed row is
 // off the board and gone.
-func TestRecallListsTheWorkBoard(t *testing.T) {
+func TestRecallListsTheDutyBoard(t *testing.T) {
 	w, now, _ := recallFixture(t)
-	path := matehost.WorkPath(w.MateDir("shop"))
-	hook, err := matehost.AddWork(path, matehost.WorkAssigned, "Pre-push hook", "", now)
+	path := matehost.DutyPath(w.MateDir("shop"))
+	hook, err := matehost.AddDuty(path, matehost.DutyAssigned, "Pre-push hook", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := matehost.WaitWork(path, hook, 3, "which hook?", now); err != nil {
+	if err := matehost.WaitDuty(path, hook, 3, "which hook?", now); err != nil {
 		t.Fatal(err)
 	}
-	old, err := matehost.AddWork(path, matehost.WorkAssigned, "Old thing", "", now)
+	old, err := matehost.AddDuty(path, matehost.DutyAssigned, "Old thing", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := matehost.DoneWork(path, old, "", now); err != nil {
+	if err := matehost.DoneDuty(path, old, "", now); err != nil {
 		t.Fatal(err)
 	}
-	if err := matehost.OkayWork(path, old, now); err != nil {
+	if err := matehost.OkayDuty(path, old, now); err != nil {
 		t.Fatal(err)
 	}
 	out := recallText(t, w, now, recallOptions{LiveOnly: true})
-	mustOrder(t, out, "news: none open", "work: 1 on the board (mate work list shop)",
+	mustOrder(t, out, "news: none open", "duty: 1 on the board (mate duty list shop)",
 		fmt.Sprintf("- #%d waiting on news #3 Pre-push hook", hook), "    which hook?")
 	if strings.Contains(out, "Old thing") {
 		t.Errorf("recall lists an okayed row:\n%s", out)

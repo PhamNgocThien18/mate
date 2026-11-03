@@ -23,7 +23,7 @@ const (
 	sheetDiff
 	sheetKeys
 	sheetMessage
-	sheetWork
+	sheetDuty
 )
 
 // sheetOpen is the sheet on screen, in the order the keyboard reaches them.
@@ -43,8 +43,8 @@ func (m Model) sheetOpen() sheetKind {
 		return sheetKeys
 	case m.shownMsg != nil:
 		return sheetMessage
-	case m.work.open:
-		return sheetWork
+	case m.duty.open:
+		return sheetDuty
 	}
 	return sheetNone
 }
@@ -70,8 +70,8 @@ func (m Model) sheetTitle() (gline, string) {
 		return gl().add("keys", tAcc), "any key"
 	case sheetMessage:
 		return gl().add("message", tAcc), "any key"
-	case sheetWork:
-		return gl().add("Work", tAcc).add(" "+m.g.Dot+" ", tDim).add(m.workProjectName(), tDim), "esc"
+	case sheetDuty:
+		return gl().add("Duty", tAcc).add(" "+m.g.Dot+" ", tDim).add(m.dutyProjectName(), tDim), "esc"
 	}
 	return gl(), ""
 }
@@ -120,8 +120,8 @@ func (m Model) sheetLines(p framePlan) []gline {
 		return m.keysSheetLines(p)
 	case sheetMessage:
 		return m.messageSheetLines(p)
-	case sheetWork:
-		lines, _ := m.workSheetLines(p)
+	case sheetDuty:
+		lines, _ := m.dutySheetLines(p)
 		return lines
 	}
 	return nil
@@ -375,7 +375,7 @@ var keyTable = [][2]string{
 	{"m", "flip its mode"},
 	{"v", "projects / mates only"},
 	{"y", "copy"},
-	{"w", "work board of the mate"},
+	{"d", "duty board of the mate"},
 	toolKeyRows,
 	{"l", "box: whole log"},
 	{"r", "refresh"},

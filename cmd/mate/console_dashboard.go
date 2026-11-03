@@ -123,12 +123,12 @@ func dashboardActionRequest(req dashboard.ActionRequest) console.ActionRequest {
 // is not there says so in its own error.
 func dashboardTalk(ctx context.Context, ws *store.Workspace, req dashboard.ActionRequest) (string, bool, error) {
 	if req.Action == "okay" {
-		// The captain's tick on the work board (CON-158) is the app's own
+		// The captain's tick on the duty board (CON-158) is the app's own
 		// write; no Mate takes part.
-		if err := matehost.OkayWork(matehost.WorkPath(ws.MateDir(req.Project)), req.Work, time.Now()); err != nil {
+		if err := matehost.OkayDuty(matehost.DutyPath(ws.MateDir(req.Project)), req.Duty, time.Now()); err != nil {
 			return "", true, err
 		}
-		return fmt.Sprintf("okayed work #%d of %s; it is off the board", req.Work, req.Project), true, nil
+		return fmt.Sprintf("okayed duty #%d of %s; it is off the board", req.Duty, req.Project), true, nil
 	}
 	c := matehost.Dial(ws.MateDir(req.Project))
 	switch req.Action {

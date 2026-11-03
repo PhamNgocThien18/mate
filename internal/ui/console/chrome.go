@@ -256,7 +256,7 @@ func (m Model) keyHints() []keyHint {
 		return []keyHint{{m.g.UpDown, "scroll"}, {"esc", "close"}}
 	case sheetKeys, sheetMessage:
 		return []keyHint{{"any key", "closes"}}
-	case sheetWork:
+	case sheetDuty:
 		return []keyHint{{"space", "OK"}, {"enter", "history"}, {"t", "topic"}, {"a", "all"}, {"j/k", "move"}, {"esc", "close"}}
 	}
 	if m.emptyWorkspace() {
@@ -265,7 +265,7 @@ func (m Model) keyHints() []keyHint {
 	tools := m.commandHints()
 	switch m.focus {
 	case paneDetail:
-		return joinHints([]keyHint{{m.g.UpDown, "field"}, {"y", "copy"}, {"esc", "list"}}, tools, []keyHint{{"enter", "show"}}, m.workHint())
+		return joinHints([]keyHint{{m.g.UpDown, "field"}, {"y", "copy"}, {"esc", "list"}}, tools, []keyHint{{"enter", "show"}}, m.dutyHint())
 	case paneBox:
 		if items := m.boxItems(); len(items) > 0 && items[m.boxSelection(items)].news != nil {
 			return joinHints([]keyHint{{m.g.UpDown, "move"}, {"enter", "news"}}, tools, []keyHint{{"esc", ""}})
@@ -280,15 +280,15 @@ func (m Model) keyHints() []keyHint {
 		// list adds, and the tool keys would push it off a narrow line.
 		return joinHints([]keyHint{{m.g.UpDown, "move"}, {"enter", "show"}, {"v", "projects"}}, tools, []keyHint{{"a", "act"}, {"?", ""}})
 	}
-	return joinHints([]keyHint{{m.g.UpDown, "move"}, {"enter", "show"}}, tools, []keyHint{{"a", "act"}, {"tab", "pane"}}, m.workHint(), []keyHint{{"?", ""}})
+	return joinHints([]keyHint{{m.g.UpDown, "move"}, {"enter", "show"}}, tools, []keyHint{{"a", "act"}, {"tab", "pane"}}, m.dutyHint(), []keyHint{{"?", ""}})
 }
 
-// workHint is {w work} while the selected row has a work board: a Mate,
+// dutyHint is {w duty} while the selected row has a duty board: a Mate,
 // or a Project (its Mate's). It goes late on the line, after the keys
 // every row has, so a narrow line drops it rather than them.
-func (m Model) workHint() []keyHint {
+func (m Model) dutyHint() []keyHint {
 	if r, ok := m.selectedRow(); ok && (r.kind == rowMate || r.kind == rowProject) {
-		return []keyHint{{"w", "work"}}
+		return []keyHint{{"d", "duty"}}
 	}
 	return nil
 }

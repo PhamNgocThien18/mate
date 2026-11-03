@@ -166,7 +166,7 @@ async function boot(opts = {}) {
       }
       else if (p === "/api/now") body = fx.now;
       else if (p === "/api/news") body = fx.news || { projects: [] };
-      else if (p === "/api/work") body = fx.work || { projects: [] };
+      else if (p === "/api/duty") body = fx.duty || { projects: [] };
       else if (p === "/api/board") body = boardBody(Number(u.searchParams.get("days")));
       else if (p === "/api/board/day") body = boardDayBody(u.searchParams.get("date"));
       else if ((m = /^\/api\/projects\/([^/]+)\/actions$/.exec(p))) body = (opts.actions || {})[m[1]] ||
@@ -1252,29 +1252,29 @@ test("on a phone the rooms are cards and the drawer is a bottom sheet over a scr
   assert.equal(stuck.querySelector(".mw").text, "stuck");
 });
 
-// ------------------------------------------------------------ the Mate's work board (CON-158)
+// ------------------------------------------------------------ the Mate's duty board (CON-158)
 
-const workTab = app => app.drawer().querySelector('[data-focus="tab:work"]');
-const workSec = (app, label) => app.drawer().querySelector(`section[aria-label="${label}"]`);
-const workRows = sec => sec.querySelectorAll("li.wli");
+const dutyTab = app => app.drawer().querySelector('[data-focus="tab:duty"]');
+const dutySec = (app, label) => app.drawer().querySelector(`section[aria-label="${label}"]`);
+const dutyRows = sec => sec.querySelectorAll("li.wli");
 const rowOf = (app, title) => app.drawer().querySelectorAll("li.wli").find(li => li.querySelector(".wtt b").text === title);
 
-test("the Mate drawer has a Work tab between Talk and Details, its badge the rows waiting for an OK", async () => {
+test("the Mate drawer has a Duty tab between Talk and Details, its badge the rows waiting for an OK", async () => {
   const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS });
   const tabs = app.drawer().querySelector(".tabs").querySelectorAll("button");
-  assert.deepEqual(tabs.map(b => b.getAttribute("data-focus")), ["tab:talk", "tab:work", "tab:details"]);
-  assert.equal(workTab(app).querySelector(".n").text, "1", "one row waits for the captain's OK");
-  assert.ok(app.requests.some(r => r.url === "/api/work"), "the board is read with the page");
-  await app.click(workTab(app));
-  assert.equal(workTab(app).getAttribute("aria-selected"), "true");
+  assert.deepEqual(tabs.map(b => b.getAttribute("data-focus")), ["tab:talk", "tab:duty", "tab:details"]);
+  assert.equal(dutyTab(app).querySelector(".n").text, "1", "one row waits for the captain's OK");
+  assert.ok(app.requests.some(r => r.url === "/api/duty"), "the board is read with the page");
+  await app.click(dutyTab(app));
+  assert.equal(dutyTab(app).getAttribute("aria-selected"), "true");
 
   // Sections in the order the captain reads them, each with its count.
   const secs = app.drawer().querySelectorAll("section.ds").map(s => s.getAttribute("aria-label")).filter(l => l !== "Actions");
   assert.deepEqual(secs, ["For you to OK", "In progress", "Waiting on a topic", "Okayed"]);
-  assert.equal(workSec(app, "For you to OK").querySelector(".sh").text, "For you to OK 1");
-  assert.equal(workSec(app, "In progress").querySelector(".sh").text, "In progress 1");
-  assert.match(workSec(app, "Waiting on a topic").text, /Nothing waiting on a topic/);
-  assert.equal(workRows(workSec(app, "Okayed")).length, 1);
+  assert.equal(dutySec(app, "For you to OK").querySelector(".sh").text, "For you to OK 1");
+  assert.equal(dutySec(app, "In progress").querySelector(".sh").text, "In progress 1");
+  assert.match(dutySec(app, "Waiting on a topic").text, /Nothing waiting on a topic/);
+  assert.equal(dutyRows(dutySec(app, "Okayed")).length, 1);
 
   // A row: its title, status chip, kind and the Mate's latest line.
   const done = rowOf(app, "Cart summary redesign");
@@ -1315,7 +1315,7 @@ test("the Mate drawer has a Work tab between Talk and Details, its badge the row
 test("ticking a done row waits five seconds for an undo, then sends the OK and re-reads the board", async () => {
   const pressed = [];
   const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS, press: b => { pressed.push(b); return { body: { line: "okayed #2" } }; } });
-  await app.click(workTab(app));
+  await app.click(dutyTab(app));
   const armed = () => app.timers.filter(t => t.fn && t.ms === 5000);
   await app.click(rowOf(app, "Cart summary redesign").querySelector("input.wck"));
   let row = rowOf(app, "Cart summary redesign");
@@ -1323,7 +1323,7 @@ test("ticking a done row waits five seconds for an undo, then sends the OK and r
   assert.equal(armed().length, 1, "one timer waits out the undo");
   assert.equal(posts(app).length, 0, "nothing is sent at the click");
 
-  await app.click(row.querySelector('[data-focus="work-undo:shop/2"]'));
+  await app.click(row.querySelector('[data-focus="duty-undo:shop/2"]'));
   row = rowOf(app, "Cart summary redesign");
   assert.equal(row.querySelector(".wundo"), null, "Undo takes the line away");
   assert.equal(armed().length, 0, "and disarms the timer");
@@ -1332,19 +1332,19 @@ test("ticking a done row waits five seconds for an undo, then sends the OK and r
   assert.equal(posts(app).length, 0, "a cancelled tick never sends");
 
   await app.click(row.querySelector("input.wck"));
-  app.fx.work.projects[0].work[1].status = "okayed";
-  app.fx.work.projects[0].work[1].okayed_at = "2026-10-03T14:32:00.000000000Z";
+  app.fx.duty.projects[0].duty[1].status = "okayed";
+  app.fx.duty.projects[0].duty[1].okayed_at = "2026-10-03T14:32:00.000000000Z";
   await app.fire();
-  assert.deepEqual(pressed, [{ action: "okay", project: "shop", work: 2 }]);
+  assert.deepEqual(pressed, [{ action: "okay", project: "shop", duty: 2 }]);
   assert.equal(posts(app)[0].url, "/api/actions");
   assert.ok(rowOf(app, "Cart summary redesign").querySelector(".wrow").classes.includes("struck"), "the board is re-read after the OK");
-  assert.equal(workTab(app).querySelector(".n"), null, "nothing waits for an OK any more");
+  assert.equal(dutyTab(app).querySelector(".n"), null, "nothing waits for an OK any more");
 });
 
 test("an OK that fails says so under the row and gives the checkbox back", async () => {
   const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS,
     press: () => ({ status: 409, body: { error: "okay: row 2 is not done" } }) });
-  await app.click(workTab(app));
+  await app.click(dutyTab(app));
   await app.click(rowOf(app, "Cart summary redesign").querySelector("input.wck"));
   await app.fire();
   const row = rowOf(app, "Cart summary redesign");
@@ -1355,26 +1355,26 @@ test("an OK that fails says so under the row and gives the checkbox back", async
 
 test("on a read-only dashboard the board reads but nothing can be ticked", async () => {
   const app = await boot({ hash: "#mate/shop" });
-  await app.click(workTab(app));
+  await app.click(dutyTab(app));
   const row = rowOf(app, "Cart summary redesign");
   assert.ok("disabled" in row.querySelector("input.wck").attrs);
-  assert.equal(workSec(app, "For you to OK").querySelector(".why").text, "read-only dashboard");
+  assert.equal(dutySec(app, "For you to OK").querySelector(".why").text, "read-only dashboard");
   await app.click(row.querySelector("input.wck"));
   assert.equal(app.timers.filter(t => t.fn && t.ms === 5000).length, 0);
 });
 
 test("a row waiting on a topic opens that news on the captain's desk; okayed rows fold to the latest ten", async () => {
   const app = await boot({ hash: "#mate/docs-site", actions: SHOP_ACTIONS });
-  await app.click(workTab(app));
+  await app.click(dutyTab(app));
   const waiting = rowOf(app, "Rename the getting-started page");
   assert.ok(waiting.classes.includes("s-waiting"));
   const topic = waiting.querySelector(".wtopic");
   assert.equal(topic.text, "waiting · topic #4");
   assert.ok(topic.classes.includes("t-wait"));
-  const okayed = workSec(app, "Okayed");
-  assert.equal(workRows(okayed).length, 10, "the latest ten okayed rows");
+  const okayed = dutySec(app, "Okayed");
+  assert.equal(dutyRows(okayed).length, 10, "the latest ten okayed rows");
   await app.click(okayed.querySelector(".news-more"));
-  assert.equal(workRows(workSec(app, "Okayed")).length, 12, "Show all lists every okayed row");
+  assert.equal(dutyRows(dutySec(app, "Okayed")).length, 12, "Show all lists every okayed row");
 
   await app.click(rowOf(app, "Rename the getting-started page").querySelector(".wtopic"));
   assert.equal(app.hash(), "#captain", "the topic chip goes to the captain's desk");
@@ -1386,7 +1386,7 @@ test("the board is a report, not a question: nothing on it reaches the captain's
   const app = await boot();
   // Only shop's news is owed; docs-site's done row and waiting row add nothing.
   assert.equal(app.root.querySelector(".cap .tray b").text, "2");
-  assert.doesNotMatch(app.root.querySelector(".cap").text, /work/);
+  assert.doesNotMatch(app.root.querySelector(".cap").text, /duty/);
   await app.click(app.root.querySelector(".cap"));
   assert.doesNotMatch(app.drawer().text, /Cart summary redesign|Rename the getting-started page/);
 });
@@ -1394,26 +1394,26 @@ test("the board is a report, not a question: nothing on it reaches the captain's
 test("the Mate's desk says how much is on its board and how much waits for an OK", async () => {
   const app = await boot();
   const plate = roomOf(app.root, "shop").querySelector(".mate .wplate");
-  assert.equal(plate.text, "work 2 · 1 for you", "open rows, not okayed ones");
-  assert.equal(roomOf(app.root, "docs-site").querySelector(".mate .wplate").text, "work 2", "nothing for you: the plate says only what is open");
+  assert.equal(plate.text, "duty 2 · 1 for you", "open rows, not okayed ones");
+  assert.equal(roomOf(app.root, "docs-site").querySelector(".mate .wplate").text, "duty 2", "nothing for you: the plate says only what is open");
   assert.equal(roomOf(app.root, "infra").querySelector(".mate .wplate"), null, "a Mate with no board wears no plate");
 });
 
-test("a Mate with no work log says so, an empty board says so, and a board that cannot be read says why", async () => {
+test("a Mate with no duty log says so, an empty board says so, and a board that cannot be read says why", async () => {
   const fx = fixture();
-  fx.work.projects[0] = { project: "shop", logged: true, work: [] };
-  fx.work.projects[1] = { project: "docs-site", logged: true, work: [], error: "work.jsonl: permission denied" };
+  fx.duty.projects[0] = { project: "shop", logged: true, duty: [] };
+  fx.duty.projects[1] = { project: "docs-site", logged: true, duty: [], error: "duty.jsonl: permission denied" };
   const app = await boot({ hash: "#mate/infra", fixture: fx });
-  await app.click(workTab(app));
-  assert.match(app.drawer().text, /This Mate has put nothing on its board\./);
-  assert.equal(workTab(app).querySelector(".n"), null);
+  await app.click(dutyTab(app));
+  assert.match(app.drawer().text, /This Mate has put nothing on its duty board\./);
+  assert.equal(dutyTab(app).querySelector(".n"), null);
   await app.click(roomOf(app.root, "shop").querySelector(".mate"));
-  assert.match(app.drawer().text, /Nothing on the board yet\./);
+  assert.match(app.drawer().text, /Nothing on the duty board yet\./);
   await app.click(roomOf(app.root, "docs-site").querySelector(".mate"));
-  assert.equal(app.drawer().querySelector('section[aria-label="Work"] .err-note').text, "The board could not be read: work.jsonl: permission denied");
+  assert.equal(app.drawer().querySelector('section[aria-label="Duty"] .err-note').text, "The board could not be read: duty.jsonl: permission denied");
 
-  const broken = await boot({ hash: "#mate/shop", fail: { "/api/work": "work is locked" } });
-  await broken.click(workTab(broken));
-  assert.match(broken.drawer().text, /The board could not be read: work is locked/);
+  const broken = await boot({ hash: "#mate/shop", fail: { "/api/duty": "duty is locked" } });
+  await broken.click(dutyTab(broken));
+  assert.match(broken.drawer().text, /The board could not be read: duty is locked/);
   assert.equal(roomOf(broken.root, "shop").querySelector(".mate .wplate"), null);
 });

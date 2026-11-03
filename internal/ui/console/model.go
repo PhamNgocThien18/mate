@@ -112,11 +112,11 @@ const (
 	// (Input is its id): Enter on a news in the box. It writes only the
 	// request the REPL reads, so it has no confirmation.
 	ActionOpenNews Action = "open_news"
-	// ActionOkayWork is the captain's tick on a done row of a Project's work
-	// board (CON-158): Space on it in the work sheet. Input is the row id.
-	// The tick is final (matehost.OkayWork), and it asks nothing: a done
+	// ActionOkayDuty is the captain's tick on a done row of a Project's duty
+	// board (CON-158): Space on it in the duty sheet. Input is the row id.
+	// The tick is final (matehost.OkayDuty), and it asks nothing: a done
 	// row leaving the board is the whole of its effect.
-	ActionOkayWork Action = "okay_work"
+	ActionOkayDuty Action = "okay_duty"
 	// TODO: v1 also had retry, discard and switch_harness. mate has no
 	// retry (a Crew runs once), and no discard action: throwing work away
 	// is `mate crew stop --discard`, on the captain's explicit word.
@@ -335,9 +335,9 @@ type Model struct {
 	detailSel int
 	// keysOpen is `?`: the key list, until the next key.
 	keysOpen bool
-	// work is the work-board sheet (work_sheet.go, CON-158): `w` on a Mate
+	// duty is the duty-board sheet (duty_sheet.go, CON-158): `d` on a Mate
 	// or Project row. Its zero value is closed.
-	work workSheet
+	duty dutySheet
 	// shownMsg is the status line opened in full by a click on it, until
 	// the next key or click.
 	shownMsg *footerMsg

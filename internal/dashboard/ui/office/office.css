@@ -594,7 +594,7 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
 .news-err { padding: 12px 20px 0; }
 .news-ro { padding: 14px 20px 18px; }
 
-/* The Mate's work board (CON-158): the Work tab's rows and the desk plate. */
+/* The Mate's duty board (CON-158): the Duty tab's rows and the desk plate. */
 .wplate { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--infoB); color: var(--infoT); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .wr { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: start; gap: 6px; padding: 8px 0; }
 .wck { width: 18px; height: 18px; margin: 3px 0 0 8px; accent-color: var(--okT); cursor: pointer; }

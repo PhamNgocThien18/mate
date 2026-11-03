@@ -174,36 +174,36 @@ const newsBody = Object.assign({}, env, { projects: [
   { project: "infra", logged: false, news: [] }
 ] });
 
-// GET /api/work (CON-158): shop's Mate has one row working, one done for
+// GET /api/duty (CON-158): shop's Mate has one row working, one done for
 // the captain to OK and one okayed; docs-site's one working, one waiting
 // on news #4 and twelve okayed; infra's Mate never put anything on its
 // board.
-const work1 = (o) => Object.assign({ id: 0, kind: "assigned", title: "", status: "working", last: "", added_at: "", at: "", notes: [] }, o);
-const shopWork = [
-  work1({ id: 3, kind: "assigned", title: "Merge api-fix when green", status: "working", last: "CI is green, reviewing PR #41", added_at: at(50 * m), at: at(12 * m),
+const duty1 = (o) => Object.assign({ id: 0, kind: "assigned", title: "", status: "working", last: "", added_at: "", at: "", notes: [] }, o);
+const shopDuty = [
+  duty1({ id: 3, kind: "assigned", title: "Merge api-fix when green", status: "working", last: "CI is green, reviewing PR #41", added_at: at(50 * m), at: at(12 * m),
     notes: [{ at: at(50 * m), op: "add", text: "Merge api-fix when green" }, { at: at(12 * m), op: "progress", text: "CI is green, reviewing PR #41" }] }),
-  work1({ id: 2, kind: "proposed", title: "Cart summary redesign", status: "done", last: "shipped in PR #40", added_at: at(3 * h), at: at(25 * m), done_at: at(25 * m),
+  duty1({ id: 2, kind: "proposed", title: "Cart summary redesign", status: "done", last: "shipped in PR #40", added_at: at(3 * h), at: at(25 * m), done_at: at(25 * m),
     notes: [{ at: at(3 * h), op: "add", text: "Cart summary redesign" }, { at: at(25 * m), op: "done", text: "shipped in PR #40" }] }),
-  work1({ id: 1, kind: "assigned", title: "Healthcheck endpoint", status: "okayed", last: "merged", added_at: at(1 * d), at: at(20 * h), done_at: at(22 * h), okayed_at: at(20 * h),
+  duty1({ id: 1, kind: "assigned", title: "Healthcheck endpoint", status: "okayed", last: "merged", added_at: at(1 * d), at: at(20 * h), done_at: at(22 * h), okayed_at: at(20 * h),
     notes: [{ at: at(1 * d), op: "add", text: "Healthcheck endpoint" }, { at: at(22 * h), op: "done", text: "merged" }, { at: at(20 * h), op: "okay" }] })
 ];
-const docsWork = [
-  work1({ id: 14, kind: "proposed", title: "Rename the getting-started page", status: "waiting", topic: 4, last: "asked which name you prefer", added_at: at(2 * h), at: at(1 * h),
+const docsDuty = [
+  duty1({ id: 14, kind: "proposed", title: "Rename the getting-started page", status: "waiting", topic: 4, last: "asked which name you prefer", added_at: at(2 * h), at: at(1 * h),
     notes: [{ at: at(2 * h), op: "add", text: "Rename the getting-started page" }, { at: at(1 * h), op: "wait", topic: 4, text: "asked which name you prefer" }] }),
-  work1({ id: 13, kind: "assigned", title: "Sidebar navigation rewrite", status: "working", last: "nav is on it", added_at: at(3 * h), at: at(2 * m),
+  duty1({ id: 13, kind: "assigned", title: "Sidebar navigation rewrite", status: "working", last: "nav is on it", added_at: at(3 * h), at: at(2 * m),
     notes: [{ at: at(3 * h), op: "add", text: "Sidebar navigation rewrite" }] })
 ];
 for (let i = 12; i >= 1; i--) {
-  docsWork.push(work1({ id: i, title: "Old work " + i, status: "okayed", added_at: at((i + 4) * d), at: at((i + 2) * d), done_at: at((i + 3) * d), okayed_at: at((i + 2) * d),
+  docsDuty.push(duty1({ id: i, title: "Old work " + i, status: "okayed", added_at: at((i + 4) * d), at: at((i + 2) * d), done_at: at((i + 3) * d), okayed_at: at((i + 2) * d),
     notes: [{ at: at((i + 4) * d), op: "add", text: "Old work " + i }, { at: at((i + 3) * d), op: "done" }, { at: at((i + 2) * d), op: "okay" }] }));
 }
-const workBody = Object.assign({}, env, { projects: [
-  { project: "shop", logged: true, work: shopWork },
-  { project: "docs-site", logged: true, work: docsWork },
-  { project: "infra", logged: false, work: [] }
+const dutyBody = Object.assign({}, env, { projects: [
+  { project: "shop", logged: true, duty: shopDuty },
+  { project: "docs-site", logged: true, duty: docsDuty },
+  { project: "infra", logged: false, duty: [] }
 ] });
 
 const out = { now_ms: NOW, workspace, now: Object.assign({}, env, { now }), projects, tasks: { "shop/db-migrate": dbTask }, mates: { shop: shopMate },
-  plugins: { shop: shopPlugins }, news: newsBody, work: workBody };
+  plugins: { shop: shopPlugins }, news: newsBody, duty: dutyBody };
 fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1) + "\n");
 console.log("ok", process.argv[2]);

@@ -109,7 +109,7 @@ func TestTheOtherUIsLinkToTheCity(t *testing.T) {
 	}
 }
 
-// TestCityBehaviour runs ui_city_test.cjs - the Mate's work board (CON-158):
+// TestCityBehaviour runs ui_city_test.cjs - the Mate's duty board (CON-158):
 // its tab, groups, tick with undo, topic link, and that none of it is a
 // need - against app.js in node, as TestOfficeBehaviour does for the
 // Office. Not skipped on a machine without node: node is not a dependency

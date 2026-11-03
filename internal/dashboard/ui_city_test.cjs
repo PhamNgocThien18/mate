@@ -1,6 +1,6 @@
 // Behaviour checks for Agent City's panel (ui/city/app.js), written from
 // the rules rather than from the code. Today they cover the Mate's work
-// board (CON-158): the Work tab and its badge, the groups and row states,
+// board (CON-158): the Duty tab and its badge, the groups and row states,
 // the tick with its undo, the link from a waiting row to its topic, and
 // that nothing on the board counts as a need (CON-154).
 //
@@ -127,15 +127,15 @@ function anything() {
 
 // ------------------------------------------------------------ the fixture
 
-// The workspace, pages and news are Mate Office's busy fixture; the work
-// board is this file's own, in the shape GET /api/work answers.
+// The workspace, pages and news are Mate Office's busy fixture; the duty
+// board is this file's own, in the shape GET /api/duty answers.
 const OFFICE = path.join(__dirname, "testdata", "office", "busy.json");
 const office = () => JSON.parse(fs.readFileSync(OFFICE, "utf8"));
 const at = (m) => `2026-10-03T14:${String(m).padStart(2, "0")}:07.000000000Z`;
-const workBoard = () => ({
+const dutyBoard = () => ({
   generated_at: at(32), last_event_id: 900,
   projects: [
-    { project: "shop", logged: true, work: [
+    { project: "shop", logged: true, duty: [
       { id: 1, kind: "assigned", title: "Fold make shot into the pre-push hook", status: "done", last: "PR #232 merged", added_at: at(0), at: at(30), done_at: at(30),
         notes: [{ at: at(0), op: "add", text: "asked in chat" }, { at: at(30), op: "done", text: "PR #232 merged" }] },
       { id: 2, kind: "assigned", title: "Raise the xcode lane to 6", status: "waiting", topic: 14, last: "4 or 6 lanes?", added_at: at(1), at: at(25),
@@ -145,8 +145,8 @@ const workBoard = () => ({
       { id: 4, kind: "assigned", title: "Stop crews pulling main", status: "okayed", added_at: at(0), at: at(6), done_at: at(5), okayed_at: at(6),
         notes: [{ at: at(0), op: "add" }, { at: at(5), op: "done" }, { at: at(6), op: "okay" }] }
     ] },
-    { project: "docs-site", logged: true, work: [] },
-    { project: "infra", logged: false, work: [] }
+    { project: "docs-site", logged: true, duty: [] },
+    { project: "infra", logged: false, duty: [] }
   ]
 });
 const buttons = (project, readOnly) => readOnly
@@ -157,9 +157,9 @@ const buttons = (project, readOnly) => readOnly
 // into a fresh context against a fake fetch that serves the fixture.
 async function boot(opts = {}) {
   const fx = office();
-  // News 14 is the topic work row 2 waits on.
+  // News 14 is the topic duty row 2 waits on.
   fx.news.projects[0].news.unshift({ id: 14, title: "Lane count", question: "Four lanes or six?", options: [], context: [], status: "waiting", opened_at: at(25), at: at(25), notes: [] });
-  const work = opts.work || workBoard();
+  const duty = opts.duty || dutyBoard();
   const doc = { activeElement: null };
   doc.body = new Node("body", doc);
   doc.documentElement = new Node("html", doc);
@@ -198,7 +198,7 @@ async function boot(opts = {}) {
       let m, body = null;
       if (p === "/api/workspace") body = fx.workspace;
       else if (p === "/api/news") body = fx.news;
-      else if (p === "/api/work") body = work;
+      else if (p === "/api/duty") body = duty;
       else if (p === "/api/board") body = { days: 7, projects: [] };
       else if (p === "/api/plugins") body = { apps: [] };
       else if (p === "/api/actions") body = { read_only: opts.readOnly || undefined, projects: Object.fromEntries(Object.keys(fx.projects).map(n => [n, buttons(n, opts.readOnly)])) };
@@ -238,7 +238,7 @@ async function boot(opts = {}) {
       await api.click(dbody.querySelectorAll("li").find(li => li.querySelector("b") && li.querySelector("b").text === `Mate · ${project}`));
       if (tab) await api.click(dbody.querySelector(`#tab-${tab}`));
     },
-    row: (id) => dbody.querySelectorAll("li").find(li => li.dataset.work === String(id)),
+    row: (id) => dbody.querySelectorAll("li").find(li => li.dataset.duty === String(id)),
     groups: () => dbody.querySelectorAll(".group-h").map(n => n.text),
     title: () => doc.getElementById("dock-title").text,
     sub: () => doc.getElementById("dock-sub").text,
@@ -250,20 +250,20 @@ async function boot(opts = {}) {
 
 // ------------------------------------------------------------ the checks
 
-test("the Mate's panel has a Work tab after Chat, its badge the rows waiting for an OK", async () => {
+test("the Mate's panel has a Duty tab after Chat, its badge the rows waiting for an OK", async () => {
   const c = await boot();
   await c.openMate("shop");
   const tabs = c.dbody.querySelectorAll("[role=tab]").map(b => b.text);
-  assert.deepEqual(tabs.slice(0, 3), ["Chat", "Work1", "Inbox1"], "Chat · Work · Inbox, the Work badge counting the one done row");
-  assert.equal(c.sub(), "Claude · plaza of shop · work 3 · 1 for you", "the dock's sub line carries the board's count: open rows, and how many wait for you");
+  assert.deepEqual(tabs.slice(0, 3), ["Chat", "Duty1", "Inbox1"], "Chat · Duty · Inbox, the Duty badge counting the one done row");
+  assert.equal(c.sub(), "Claude · plaza of shop · duty 3 · 1 for you", "the dock's sub line carries the board's count: open rows, and how many wait for you");
   await c.openMate("docs-site");
-  assert.equal(c.dbody.querySelector("#tab-work").text, "Work", "no badge when nothing waits for an OK");
+  assert.equal(c.dbody.querySelector("#tab-duty").text, "Duty", "no badge when nothing waits for an OK");
   assert.equal(c.sub(), "Codex · plaza of docs-site", "and nothing on the sub line");
 });
 
 test("the board groups rows by where they stand, each row in its state", async () => {
   const c = await boot();
-  await c.openMate("shop", "work");
+  await c.openMate("shop", "duty");
   assert.deepEqual(c.groups(), ["For you to OK · 1", "In progress · 1", "Waiting on a topic · 1", "Okayed · 1"]);
   const done = c.row(1), working = c.row(3), waiting = c.row(2), okayed = c.row(4);
   const box = done.querySelector("input[type=checkbox]");
@@ -284,19 +284,19 @@ test("the board groups rows by where they stand, each row in its state", async (
 
 test("the board says when there is nothing, when the Mate keeps none, and when it cannot be read", async () => {
   const empty = await boot();
-  await empty.openMate("docs-site", "work");
-  assert.equal(empty.dbody.querySelector(".note").text, "Nothing on the board yet.");
-  await empty.openMate("infra", "work");
-  assert.equal(empty.dbody.querySelector(".note").text, "This Mate has put nothing on its board.");
-  const broken = await boot({ work: { projects: [{ project: "shop", logged: true, error: "work.jsonl: permission denied", work: [] }] } });
-  await broken.openMate("shop", "work");
-  assert.equal(broken.dbody.querySelector(".note").text, "The board could not be read: work.jsonl: permission denied");
+  await empty.openMate("docs-site", "duty");
+  assert.equal(empty.dbody.querySelector(".note").text, "Nothing on the duty board yet.");
+  await empty.openMate("infra", "duty");
+  assert.equal(empty.dbody.querySelector(".note").text, "This Mate has put nothing on its duty board.");
+  const broken = await boot({ duty: { projects: [{ project: "shop", logged: true, error: "duty.jsonl: permission denied", duty: [] }] } });
+  await broken.openMate("shop", "duty");
+  assert.equal(broken.dbody.querySelector(".note").text, "The board could not be read: duty.jsonl: permission denied");
 });
 
 test("ticking a done row waits five seconds for an undo, then okays it", async () => {
   const presses = [];
   const c = await boot({ press: body => { presses.push(body); return { body: { line: "okayed #1" } }; } });
-  await c.openMate("shop", "work");
+  await c.openMate("shop", "duty");
   const box = c.row(1).querySelector("input[type=checkbox]");
   box.checked = true;
   box.dispatch("change");
@@ -319,21 +319,21 @@ test("ticking a done row waits five seconds for an undo, then okays it", async (
   again.dispatch("change");
   await c.flush();
   await c.tick(5);
-  assert.deepEqual(presses, [{ action: "okay", project: "shop", work: 1 }], "after the countdown the tick is one okay on the row");
-  assert.ok(c.requests.filter(r => r.url === "/api/work").length >= 2, "and the board is read again");
+  assert.deepEqual(presses, [{ action: "okay", project: "shop", duty: 1 }], "after the countdown the tick is one okay on the row");
+  assert.ok(c.requests.filter(r => r.url === "/api/duty").length >= 2, "and the board is read again");
   assert.ok(c.dbody.querySelector(".result") && c.dbody.querySelector(".result").text.includes("okayed #1"), "the server's line shows on the board");
 });
 
 test("a read-only dashboard shows the rows but holds the tick", async () => {
   const c = await boot({ readOnly: "this dashboard is read-only: actions run in the dashboard `mate console` serves" });
-  await c.openMate("shop", "work");
+  await c.openMate("shop", "duty");
   assert.ok(c.row(1).querySelector("input[type=checkbox]").disabled, "the checkbox cannot be ticked");
   assert.ok(c.dbody.querySelector(".band.ro"), "and the band says why");
 });
 
 test("a waiting row's topic button opens that topic in City Hall", async () => {
   const c = await boot();
-  await c.openMate("shop", "work");
+  await c.openMate("shop", "duty");
   await c.click(c.row(2).querySelector(".side button"));
   assert.equal(c.title(), "Lane count", "the topic the row waits on");
   assert.ok(c.sub().startsWith("shop · #14"), "by its number");
@@ -343,19 +343,19 @@ test("a waiting row's topic button opens that topic in City Hall", async () => {
 test("nothing on the board is a need: the rail counts the topics only", async () => {
   const c = await boot();
   assert.equal(c.needs(), "Needs you · 3", "shop's three waiting news (4, 3 and 14), nothing from the board");
-  for (const b of c.rail()) assert.ok(!/make shot|DerivedData|xcode lane|pulling main/.test(b), `the rail names no work row: ${b}`);
+  for (const b of c.rail()) assert.ok(!/make shot|DerivedData|xcode lane|pulling main/.test(b), `the rail names no duty row: ${b}`);
   await c.answerEvents();
   assert.equal(c.needs(), "Needs you · 3", "and a quiet poll, which reads the board again, changes nothing");
-  assert.ok(c.requests.filter(r => r.url === "/api/work").length >= 2, "the board is read on every poll answer");
+  assert.ok(c.requests.filter(r => r.url === "/api/duty").length >= 2, "the board is read on every poll answer");
 });
 
 test("okayed rows fold after ten, Show all opens the rest", async () => {
-  const board = workBoard();
+  const board = dutyBoard();
   const shop = board.projects[0];
-  shop.work = shop.work.filter(r => r.status !== "okayed");
-  for (let i = 1; i <= 12; i++) shop.work.push({ id: 100 + i, kind: "assigned", title: `old ${i}`, status: "okayed", added_at: at(0), at: at(0), okayed_at: at(0), notes: [] });
-  const c = await boot({ work: board });
-  await c.openMate("shop", "work");
+  shop.duty = shop.duty.filter(r => r.status !== "okayed");
+  for (let i = 1; i <= 12; i++) shop.duty.push({ id: 100 + i, kind: "assigned", title: `old ${i}`, status: "okayed", added_at: at(0), at: at(0), okayed_at: at(0), notes: [] });
+  const c = await boot({ duty: board });
+  await c.openMate("shop", "duty");
   assert.equal(c.dbody.querySelectorAll("li.okayed").length, 10);
   const more = c.dbody.querySelectorAll("button").find(b => b.text === "Show all 12");
   await c.click(more);

@@ -169,16 +169,16 @@ type MateNode struct {
 	// when the Mate never opened one, Known and empty when every news is
 	// closed. Newest first.
 	News Field[[]NewsItem]
-	// Work is the Mate's work board (CON-158): what the captain asked for
+	// Duty is the Mate's duty board (CON-158): what the captain asked for
 	// and what the Mate proposed, each with where it stands, from
-	// `mate/work.jsonl`. Absent when the Mate never put a row on it.
+	// `mate/duty.jsonl`. Absent when the Mate never put a row on it.
 	// Okayed rows are kept so the board can show what was ticked off.
 	// Latest move first.
-	Work Field[[]WorkItem]
+	Duty Field[[]DutyItem]
 }
 
-// WorkItem is one row of a Mate's work board.
-type WorkItem struct {
+// DutyItem is one row of a Mate's duty board.
+type DutyItem struct {
 	ID int
 	// Kind is assigned (the captain asked) or proposed (the Mate offered).
 	Kind  string
@@ -191,11 +191,11 @@ type WorkItem struct {
 	Last string
 	// At is when the row last moved.
 	At    time.Time
-	Notes []WorkNote
+	Notes []DutyNote
 }
 
-// WorkNote is one update on a work row.
-type WorkNote struct {
+// DutyNote is one update on a duty row.
+type DutyNote struct {
 	At    time.Time
 	Op    string
 	Text  string
@@ -203,15 +203,15 @@ type WorkNote struct {
 }
 
 // Open reports whether the row is still on the board: not okayed.
-func (w WorkItem) Open() bool { return w.Status != "okayed" }
+func (w DutyItem) Open() bool { return w.Status != "okayed" }
 
-// WorkCounts is the board in numbers: rows done and for the captain to OK,
+// DutyCounts is the board in numbers: rows done and for the captain to OK,
 // rows in progress, rows waiting on a topic, rows okayed.
-func (n MateNode) WorkCounts() (forYou, working, waiting, okayed int) {
-	if !n.Work.IsKnown() {
+func (n MateNode) DutyCounts() (forYou, working, waiting, okayed int) {
+	if !n.Duty.IsKnown() {
 		return 0, 0, 0, 0
 	}
-	for _, w := range n.Work.Value {
+	for _, w := range n.Duty.Value {
 		switch w.Status {
 		case "done":
 			forYou++

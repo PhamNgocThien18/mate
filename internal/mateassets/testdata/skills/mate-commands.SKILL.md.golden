@@ -88,20 +88,20 @@ The captain answers a news by typing to you, often beginning `#<id>`.
 
 When the captain's words left the question unclear, act on what they settled, leave the news open, and put its question again with `news update shop <id> "<question>" --ask`.
 
-## Work board
+## Duty board
 
 The board is your report of where each piece of work the captain asked for stands, and of the work you proposed; the captain reads it in the Office, the City and the console and ticks a done row to clear it. It is never a question: what needs the captain's answer is a news, and a row that waits on one names it.
 
 ```text
-/usr/local/bin/mate work add shop "<title, one line>" [--proposed] [--note "<who asked, or why proposed>"]
-/usr/local/bin/mate work progress shop <id> "<what moved, one line>"
-/usr/local/bin/mate work wait shop <id> --topic <news id> ["<what the captain is asked>"]
-/usr/local/bin/mate work done shop <id> ["<where it landed>"]
-/usr/local/bin/mate work reopen shop <id> ["<why>"]
-/usr/local/bin/mate work list shop [--all]
+/usr/local/bin/mate duty add shop "<title, one line>" [--proposed] [--note "<who asked, or why proposed>"]
+/usr/local/bin/mate duty progress shop <id> "<what moved, one line>"
+/usr/local/bin/mate duty wait shop <id> --topic <news id> ["<what the captain is asked>"]
+/usr/local/bin/mate duty done shop <id> ["<where it landed>"]
+/usr/local/bin/mate duty reopen shop <id> ["<why>"]
+/usr/local/bin/mate duty list shop [--all]
 ```
 
-- `add` prints the row's id. Add a row the moment the captain hands you a task (`--note` who asked and when); add a `--proposed` row for work you suggest, then open a news asking whether to do it and `work wait --topic` that news.
+- `add` prints the row's id. Add a row the moment the captain hands you a task (`--note` who asked and when); add a `--proposed` row for work you suggest, then open a news asking whether to do it and `duty wait --topic` that news.
 - `progress` after each merge or hand-back that moves the row; it also ends a wait once the captain's answer is in. One line, in the captain's language, naming the PR or crew.
 - `wait` when the row cannot go on without the captain: open the news first, then name it here.
 - `done` when the work is in (merged, delivered). Go on with other work; the captain's tick is theirs, and you never wait for it. `list` shows what is still on the board; `--all` the okayed rows too.

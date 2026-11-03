@@ -146,7 +146,7 @@ CODEX_HOME={{CODEX_HOME}}
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/crew-recovery/SKILL.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/mate-commands/SKILL.md mode=-rw-r--r-- bytes=14597 ---
-(rendered asset) sha256=b94b96158b32416745efc03a2c7c79e963b0c20d7245b3656841e486108956ec
+(rendered asset) sha256=9026b41de99a1a366bb7017c889855657b43e9f7e40a940dbf5f5ec286cf5213
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/mate-commands/SKILL.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/.claude/skills/new-task/SKILL.md mode=-rw-r--r-- bytes=20907 ---
@@ -193,11 +193,11 @@ CODEX_HOME={{CODEX_HOME}}
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/.codex/hooks.json ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/AGENTS.md mode=-rw-r--r-- bytes=15390 ---
-(rendered asset) sha256=66d1663c170b85e44bc6ed0031b9e0d049389c536ec2ea45336782d42353ce6c
+(rendered asset) sha256=b699e138030f2160dac0d2fcdfb07ab4d4ba46723034d9e5adea44592d3d0e8c
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/AGENTS.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/AGENTS.override.md mode=-rw-r--r-- bytes=15390 ---
-(rendered asset) sha256=66d1663c170b85e44bc6ed0031b9e0d049389c536ec2ea45336782d42353ce6c
+(rendered asset) sha256=b699e138030f2160dac0d2fcdfb07ab4d4ba46723034d9e5adea44592d3d0e8c
 --- end {{WORKSPACE}}/.mate/projects/shop/mate/AGENTS.override.md ---
 
 --- created {{WORKSPACE}}/.mate/projects/shop/mate/CLAUDE.md mode=-rw-r--r-- bytes=11 ---

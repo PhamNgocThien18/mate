@@ -90,8 +90,8 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 			return mergeCrewAction(ctx, ws, deps, req)
 		case console.ActionOpenNews:
 			return openNewsAction(ws, req)
-		case console.ActionOkayWork:
-			return okayWorkAction(ws, req)
+		case console.ActionOkayDuty:
+			return okayDutyAction(ws, req)
 		default:
 			return "", observability.NewError(observability.CodeUsage,
 				fmt.Sprintf("%s is not wired in this build", req.Action))
@@ -346,20 +346,20 @@ func openNewsAction(ws *store.Workspace, req console.ActionRequest) (string, err
 	return fmt.Sprintf("news #%d opened in the Mate", id), nil
 }
 
-// okayWorkAction is the captain's tick on a done row of the work board
-// (CON-158): Space on it in the console's work sheet. The tick is final;
+// okayDutyAction is the captain's tick on a done row of the duty board
+// (CON-158): Space on it in the console's duty sheet. The tick is final;
 // the row leaves the board and the Mate is never waiting on it.
-func okayWorkAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+func okayDutyAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
 	id, err := strconv.Atoi(req.Input)
 	if err != nil || id <= 0 || req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage,
-			fmt.Sprintf("okay work needs a Project and a row id; the request named %q #%q", req.Target, req.Input))
+			fmt.Sprintf("okay duty needs a Project and a row id; the request named %q #%q", req.Target, req.Input))
 	}
 	if err := requireProject(ws, req.Target); err != nil {
 		return "", err
 	}
-	if err := matehost.OkayWork(matehost.WorkPath(ws.MateDir(req.Target)), id, time.Now()); err != nil {
+	if err := matehost.OkayDuty(matehost.DutyPath(ws.MateDir(req.Target)), id, time.Now()); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("okayed work #%d of %s; it is off the board", id, req.Target), nil
+	return fmt.Sprintf("okayed duty #%d of %s; it is off the board", id, req.Target), nil
 }

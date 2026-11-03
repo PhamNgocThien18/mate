@@ -618,10 +618,10 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 	m.confirm = nil
 	m.actions = false
 	m.menu = nil
-	if msg.choice.action == ActionOkayWork && m.work.open {
+	if msg.choice.action == ActionOkayDuty && m.duty.open {
 		// The board stays open with the outcome under its rows; the
 		// re-read below moves the ticked row to the okayed group.
-		m = m.onWorkDone(msg)
+		m = m.onDutyDone(msg)
 	}
 	if msg.choice.action == ActionNotice {
 		if msg.err != nil {

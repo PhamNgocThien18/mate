@@ -333,31 +333,31 @@ func recallLive(w *store.Workspace, project string, cfg store.ProjectConfig, now
 		}
 	}
 	b.WriteString(recallNews(w, project))
-	b.WriteString(recallWork(w, project))
+	b.WriteString(recallDuty(w, project))
 	return recallPart{1, "Live state", b.String()}, nil
 }
 
-// recallWork lists the work board's open rows (CON-158): what the captain
+// recallDuty lists the duty board's open rows (CON-158): what the captain
 // asked for and what the Mate proposed, where each stands, so a restarted
 // Mate keeps reporting on the same rows instead of adding them again.
-func recallWork(w *store.Workspace, project string) string {
-	list, err := matehost.LoadWork(matehost.WorkPath(w.MateDir(project)))
+func recallDuty(w *store.Workspace, project string) string {
+	list, err := matehost.LoadDuty(matehost.DutyPath(w.MateDir(project)))
 	if err != nil {
-		return fmt.Sprintf("work: unreadable (%v)\n", err)
+		return fmt.Sprintf("duty: unreadable (%v)\n", err)
 	}
-	var open []matehost.Work
+	var open []matehost.Duty
 	for _, x := range list {
 		if x.Open() {
 			open = append(open, x)
 		}
 	}
 	if len(open) == 0 {
-		return "work: nothing on the board\n"
+		return "duty: nothing on the board\n"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "work: %d on the board (mate work list %s)\n", len(open), project)
+	fmt.Fprintf(&b, "duty: %d on the board (mate duty list %s)\n", len(open), project)
 	for _, x := range open {
-		b.WriteString("- " + workListLine(x))
+		b.WriteString("- " + dutyListLine(x))
 	}
 	return b.String()
 }

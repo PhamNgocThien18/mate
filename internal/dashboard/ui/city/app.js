@@ -106,9 +106,9 @@ const S = {
   acts: new Map(), // project → its buttons (GET /api/actions)
   readOnly: '', // why this dashboard cannot act, when it cannot
   news: new Map(), // project → its news (GET /api/news)
-  work: new Map(), // project → { logged, error, rows } (GET /api/work, the Mate's work board)
-  workAll: new Set(), // projects whose okayed rows are all shown
-  workOpen: new Set(), // work row keys whose notes are open
+  duty: new Map(), // project → { logged, error, rows } (GET /api/duty, the Mate's duty board)
+  dutyAll: new Set(), // projects whose okayed rows are all shown
+  dutyOpen: new Set(), // duty row keys whose notes are open
   chats: new Map(), // project → GET /chat
   forks: new Map(), // topic key → GET /forks/{news}
   peeks: new Map(), // project/crew → { text, at, err }
@@ -309,25 +309,25 @@ function refreshNews() {
     .finally(() => (newsBusy = false));
 }
 
-// The Mate's work board (CON-158): what the captain asked it for and what
+// The Mate's duty board (CON-158): what the captain asked it for and what
 // it proposed, with where each row stands. Like the news it is a file the
 // Mate writes, read again on every answer of the long poll. It is a report,
 // never a question: nothing on it is a topic, so nothing on it reaches the
 // Needs-you rail, the pins or City Hall (CON-154).
-let workBusy = false;
-function refreshWork() {
-  if (workBusy) return;
-  workBusy = true;
-  api('/api/work')
+let dutyBusy = false;
+function refreshDuty() {
+  if (dutyBusy) return;
+  dutyBusy = true;
+  api('/api/duty')
     .then((body) => {
-      S.work = new Map((body.projects ?? []).map((p) => [p.project, { logged: Boolean(p.logged), error: p.error ?? '', rows: p.work ?? [] }]));
+      S.duty = new Map((body.projects ?? []).map((p) => [p.project, { logged: Boolean(p.logged), error: p.error ?? '', rows: p.duty ?? [] }]));
       render();
     }, () => {})
-    .finally(() => (workBusy = false));
+    .finally(() => (dutyBusy = false));
 }
-const workRows = (project) => S.work.get(project)?.rows ?? [];
+const dutyRows = (project) => S.duty.get(project)?.rows ?? [];
 // open: rows still on the board (not okayed); done: rows waiting for the captain's tick.
-const workCounts = (project) => ({ open: workRows(project).filter((x) => x.status !== 'okayed').length, done: workRows(project).filter((x) => x.status === 'done').length });
+const dutyCounts = (project) => ({ open: dutyRows(project).filter((x) => x.status !== 'okayed').length, done: dutyRows(project).filter((x) => x.status === 'done').length });
 
 // Every news as a topic: waiting on the captain (`new`, `waiting`), the Mate
 // on it (`working`), or earlier (`done`, `dropped`). Archiving hides an
@@ -380,7 +380,7 @@ async function poll() {
         render();
       }
       refreshNews();
-      refreshWork();
+      refreshDuty();
       refreshBoard();
       refreshOpen();
     } catch (e) {
@@ -599,7 +599,7 @@ function select(sel, { fly: doFly = true } = {}) {
   // What the panel reads for itself.
   if (sel.kind === 'mate' && (sel.tab ?? 'chat') === 'chat') loadChat(sel.project);
   if (sel.kind === 'mate' && sel.tab === 'apps') loadPlugins(sel.project);
-  if (sel.kind === 'mate' && sel.tab === 'work') refreshWork();
+  if (sel.kind === 'mate' && sel.tab === 'duty') refreshDuty();
   if (sel.kind === 'crew' && sel.tab === 'peek') loadPeek(sel.project, sel.crew);
   if (sel.kind === 'crew' && sel.tab === 'diff') loadDiff(sel.project, sel.crew);
   if (sel.kind === 'hall' && sel.topic && topicOf(sel.topic)) loadFork(sel.topic);
@@ -853,14 +853,14 @@ VIEWS.mate = () => {
   const acts = S.acts.get(p.name);
   const inbox = S.inbox.get(p.name) ?? [];
   const tab = S.sel.tab ?? 'chat';
-  const work = workCounts(p.name);
+  const duty = dutyCounts(p.name);
   const state = !hasMate(p) ? stateEl('', ['+', 'no Mate yet', 'off']) : m.running ? stateEl(m.state) : stateEl('', ['◌', 'stopped', 'off']);
   const tent = S.sel.back?.kind === 'tent' ? S.sel.back : null;
   return {
     crumbs: [{ text: 'City' }, { text: p.name, go: () => select({ kind: 'block', project: p.name }) }, ...(tent ? [{ text: `tent ${tent.repo}`, go: () => select(tent) }] : [])],
     title: `Mate · ${p.name}`,
     // The board's count rides on the sub line; it is not a need (CON-154), so it is nowhere else.
-    sub: hasMate(p) ? `${harnessName(m.harness)} · ${tent ? `in tent ${tent.repo}` : `plaza of ${p.name}`}${work.open ? ` · work ${work.open}${work.done ? ` · ${work.done} for you` : ''}` : ''}` : 'This block has a plaza but no Mate',
+    sub: hasMate(p) ? `${harnessName(m.harness)} · ${tent ? `in tent ${tent.repo}` : `plaza of ${p.name}`}${duty.open ? ` · duty ${duty.open}${duty.done ? ` · ${duty.done} for you` : ''}` : ''}` : 'This block has a plaza but no Mate',
     body: [
       ...bands(),
       facts([
@@ -870,8 +870,8 @@ VIEWS.mate = () => {
         ['Context', m.context_pct == null ? '?' : `${Math.round(m.context_pct)}% · ${formatTokens(m.context_tokens ?? 0)}`],
       ]),
       ...actionsBlock({ project: p.name, buttons: acts?.mate ?? [], links: [ext(officeMate(p.name), 'Desk in Office ↗', 'the Mate in Mate Office, in a new tab')] }),
-      tabs([['chat', 'Chat'], ['work', 'Work', work.done], ['inbox', 'Inbox', inbox.length], ['apps', 'Apps'], ['project', 'Project']], tab, setTab),
-      ...{ chat: chatView, work: workView, inbox: inboxView, apps: appsView, project: projectView }[tab](p),
+      tabs([['chat', 'Chat'], ['duty', 'Duty', duty.done], ['inbox', 'Inbox', inbox.length], ['apps', 'Apps'], ['project', 'Project']], tab, setTab),
+      ...{ chat: chatView, duty: dutyView, inbox: inboxView, apps: appsView, project: projectView }[tab](p),
     ],
   };
 };
@@ -959,38 +959,38 @@ async function talk(project, req, draftId) {
   await loadChat(project);
 }
 
-// ---- The Mate's work board (CON-158) ----------------------------------------------
+// ---- The Mate's duty board (CON-158) ----------------------------------------------
 //
 // What the captain asked the Mate for and what it proposed, grouped by where
 // it stands. A done row carries a checkbox: the tick (`okay`) waits 5 s for
 // an undo, then takes the row off the board. A row waiting on a topic links
 // to that topic in City Hall; the row itself never asks anything.
-const WORK_GROUPS = [['done', 'For you to OK'], ['working', 'In progress'], ['waiting', 'Waiting on a topic'], ['okayed', 'Okayed']];
-const WORK_SHOWN = 10; // okayed rows shown before "Show all"
-function workView(p) {
-  const got = S.work.get(p.name);
+const DUTY_GROUPS = [['done', 'For you to OK'], ['working', 'In progress'], ['waiting', 'Waiting on a topic'], ['okayed', 'Okayed']];
+const DUTY_SHOWN = 10; // okayed rows shown before "Show all"
+function dutyView(p) {
+  const got = S.duty.get(p.name);
   if (!got) return [h('p', { class: 'note' }, 'loading…')];
   if (got.error) return [h('p', { class: 'note' }, `The board could not be read: ${got.error}`)];
-  if (!got.logged) return [h('p', { class: 'note' }, 'This Mate has put nothing on its board.')];
-  if (!got.rows.length) return [h('p', { class: 'note' }, 'Nothing on the board yet.')];
-  const groups = WORK_GROUPS.flatMap(([st, label]) => {
+  if (!got.logged) return [h('p', { class: 'note' }, 'This Mate has put nothing on its duty board.')];
+  if (!got.rows.length) return [h('p', { class: 'note' }, 'Nothing on the duty board yet.')];
+  const groups = DUTY_GROUPS.flatMap(([st, label]) => {
     const all = got.rows.filter((x) => x.status === st);
     if (!all.length) return [];
-    const fold = st === 'okayed' && !S.workAll.has(p.name) && all.length > WORK_SHOWN;
+    const fold = st === 'okayed' && !S.dutyAll.has(p.name) && all.length > DUTY_SHOWN;
     return [
       h('div', { class: 'group-h' }, `${label} · ${all.length}`),
-      h('ul', { class: 'list work' }, (fold ? all.slice(0, WORK_SHOWN) : all).map((x) => workRow(p.name, x))),
-      fold ? h('button', { type: 'button', class: 'fold', onclick: () => (S.workAll.add(p.name), render()) }, `Show all ${all.length}`) : null,
+      h('ul', { class: 'list duty' }, (fold ? all.slice(0, DUTY_SHOWN) : all).map((x) => dutyRow(p.name, x))),
+      fold ? h('button', { type: 'button', class: 'fold', onclick: () => (S.dutyAll.add(p.name), render()) }, `Show all ${all.length}`) : null,
     ];
   });
-  return [S.readOnly && got.rows.some((x) => x.status === 'done') ? readOnlyBand() : null, ...groups, resultEl(`${p.name}#work`)];
+  return [S.readOnly && got.rows.some((x) => x.status === 'done') ? readOnlyBand() : null, ...groups, resultEl(`${p.name}#duty`)];
 }
-function workRow(project, x) {
+function dutyRow(project, x) {
   const key = `${project}#${x.id}`;
-  const pend = S.pending.get(`work:${key}`);
+  const pend = S.pending.get(`duty:${key}`);
   const done = x.status === 'done';
   const glyph = done
-    ? h('span', { class: 'g tick' }, h('input', { type: 'checkbox', 'aria-label': `OK: ${x.title}`, disabled: Boolean(S.readOnly) || Boolean(pend), checked: Boolean(pend), onchange: (e) => e.target.checked && okayWork(project, x) }))
+    ? h('span', { class: 'g tick' }, h('input', { type: 'checkbox', 'aria-label': `OK: ${x.title}`, disabled: Boolean(S.readOnly) || Boolean(pend), checked: Boolean(pend), onchange: (e) => e.target.checked && okayDuty(project, x) }))
     : h('span', { class: 'g', 'aria-hidden': 'true' }, x.status === 'working' ? '▶' : x.status === 'waiting' ? '?' : '✓');
   const side = x.status === 'waiting' && x.topic
     ? h('button', { type: 'button', class: 'link', onclick: () => select({ kind: 'hall', tab: 'topics', topic: topicKey(project, x.topic) }, { fly: false }) }, `topic #${x.topic} ›`)
@@ -998,32 +998,32 @@ function workRow(project, x) {
   const k = { working: 'k-run', waiting: 'k-topic', okayed: 'okayed quiet', done: 'done' }[x.status] ?? '';
   const toggle = (e) => {
     if (e.target.closest?.('button, input')) return;
-    if (S.workOpen.has(key)) S.workOpen.delete(key);
-    else S.workOpen.add(key);
+    if (S.dutyOpen.has(key)) S.dutyOpen.delete(key);
+    else S.dutyOpen.add(key);
     render();
   };
-  return h('li', { class: `click ${k}`, dataset: { work: String(x.id), status: x.status }, onclick: toggle },
+  return h('li', { class: `click ${k}`, dataset: { duty: String(x.id), status: x.status }, onclick: toggle },
     glyph,
     h('b', {}, x.title),
     h('div', { class: 'side' }, side),
     pend
-      ? h('small', { class: 'okaying', role: 'status' }, `Okaying in ${pend.left}s `, h('button', { type: 'button', onclick: () => undo(`work:${key}`) }, 'Undo'))
+      ? h('small', { class: 'okaying', role: 'status' }, `Okaying in ${pend.left}s `, h('button', { type: 'button', onclick: () => undo(`duty:${key}`) }, 'Undo'))
       : h('small', {}, x.kind === 'proposed' ? h('span', { class: 'tag' }, 'proposed') : 'assigned', x.last ? ` · ${x.last}` : ''),
-    S.workOpen.has(key) ? h('ol', { class: 'notes' }, (x.notes ?? []).map((n) => h('li', {}, `${clock(n.at)} · ${n.op}${n.topic ? ` #${n.topic}` : ''}${n.text ? ` · ${n.text}` : ''}`))) : null);
+    S.dutyOpen.has(key) ? h('ol', { class: 'notes' }, (x.notes ?? []).map((n) => h('li', {}, `${clock(n.at)} · ${n.op}${n.topic ? ` #${n.topic}` : ''}${n.text ? ` · ${n.text}` : ''}`))) : null);
 }
 // The tick: 5 s to undo, then `okay` on the row; the outcome on the board's result line.
-function okayWork(project, x) {
+function okayDuty(project, x) {
   const key = `${project}#${x.id}`;
-  S.results.delete(`${project}#work`);
-  sendLater(`work:${key}`, String(x.id), async () => {
+  S.results.delete(`${project}#duty`);
+  sendLater(`duty:${key}`, String(x.id), async () => {
     try {
-      const { line } = await press({ action: 'okay', project, work: x.id });
-      S.results.set(`${project}#work`, { kind: 'ok', text: line, at: nowISO() });
+      const { line } = await press({ action: 'okay', project, duty: x.id });
+      S.results.set(`${project}#duty`, { kind: 'ok', text: line, at: nowISO() });
     } catch (e) {
-      S.results.set(`${project}#work`, { kind: outcome(e), text: e.message, at: nowISO() });
+      S.results.set(`${project}#duty`, { kind: outcome(e), text: e.message, at: nowISO() });
     }
     render();
-    refreshWork();
+    refreshDuty();
   });
 }
 
@@ -2022,5 +2022,5 @@ loadAll().then(fromHash, (e) => {
   $('#boot').textContent = `Agent City could not load: ${e.message}`;
 }).finally(poll);
 refreshNews();
-refreshWork();
+refreshDuty();
 refreshBoard();

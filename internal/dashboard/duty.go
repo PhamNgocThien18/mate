@@ -12,34 +12,34 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 )
 
-// WorkResponse is GET /api/work[?project=<p>]: every project's board of
+// DutyResponse is GET /api/duty[?project=<p>]: every project's board of
 // what the captain asked its Mate for and what the Mate proposed
-// (`mate/work.jsonl`, CON-158), okayed rows too, for the Office's and the
-// City's Work tab. It reads the log through matehost.LoadWork on every
+// (`mate/duty.jsonl`, CON-158), okayed rows too, for the Office's and the
+// City's Duty tab. It reads the log through matehost.LoadDuty on every
 // request and is not cached: the Mate writing it is not an event.
-type WorkResponse struct {
+type DutyResponse struct {
 	envelope
 	// Project is the one asked for, empty for the whole workspace.
 	Project  string        `json:"project,omitempty"`
-	Projects []ProjectWork `json:"projects"`
+	Projects []ProjectDuty `json:"projects"`
 }
 
-// ProjectWork is one project's board, latest move first.
-type ProjectWork struct {
+// ProjectDuty is one project's board, latest move first.
+type ProjectDuty struct {
 	Project string `json:"project"`
-	// Logged is whether the project's Mate has a work log at all: a Mate
+	// Logged is whether the project's Mate has a duty log at all: a Mate
 	// that never put anything on the board has none, which is not the
 	// same answer as an empty board.
 	Logged bool        `json:"logged"`
-	Work   []WorkEntry `json:"work"`
-	// Error is why the log could not be read; Work is empty then.
+	Duty   []DutyEntry `json:"duty"`
+	// Error is why the log could not be read; Duty is empty then.
 	Error string `json:"error,omitempty"`
 }
 
-// WorkEntry is one row as its log folds now. Status is matehost's word:
+// DutyEntry is one row as its log folds now. Status is matehost's word:
 // `working`, `waiting` (on news Topic), `done` (the captain may tick it),
 // `okayed` (ticked, off the board).
-type WorkEntry struct {
+type DutyEntry struct {
 	ID       int        `json:"id"`
 	Kind     string     `json:"kind"`
 	Title    string     `json:"title"`
@@ -50,18 +50,18 @@ type WorkEntry struct {
 	At       string     `json:"at"`
 	DoneAt   string     `json:"done_at,omitempty"`
 	OkayedAt string     `json:"okayed_at,omitempty"`
-	Notes    []WorkNote `json:"notes"`
+	Notes    []DutyNote `json:"notes"`
 }
 
-// WorkNote is one update on a row, oldest first.
-type WorkNote struct {
+// DutyNote is one update on a row, oldest first.
+type DutyNote struct {
 	At    string `json:"at"`
 	Op    string `json:"op"`
 	Text  string `json:"text,omitempty"`
 	Topic int    `json:"topic,omitempty"`
 }
 
-func (s *Server) handleWork(_ context.Context, r *http.Request, env envelope) (any, error) {
+func (s *Server) handleDuty(_ context.Context, r *http.Request, env envelope) (any, error) {
 	project := strings.TrimSpace(r.URL.Query().Get("project"))
 	var names []string
 	if project != "" {
@@ -74,18 +74,18 @@ func (s *Server) handleWork(_ context.Context, r *http.Request, env envelope) (a
 			names = append(names, ref.Name)
 		}
 	}
-	out := WorkResponse{envelope: env, Project: project, Projects: []ProjectWork{}}
+	out := DutyResponse{envelope: env, Project: project, Projects: []ProjectDuty{}}
 	for _, name := range names {
-		out.Projects = append(out.Projects, s.projectWork(name))
+		out.Projects = append(out.Projects, s.projectDuty(name))
 	}
 	return out, nil
 }
 
-// projectWork folds one project's work log. It reads the file and writes
+// projectDuty folds one project's duty log. It reads the file and writes
 // nothing: the tick is POST /api/actions `okay`.
-func (s *Server) projectWork(project string) ProjectWork {
-	out := ProjectWork{Project: project, Work: []WorkEntry{}}
-	path := matehost.WorkPath(s.ws.MateDir(project))
+func (s *Server) projectDuty(project string) ProjectDuty {
+	out := ProjectDuty{Project: project, Duty: []DutyEntry{}}
+	path := matehost.DutyPath(s.ws.MateDir(project))
 	if _, err := os.Stat(path); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			out.Error = err.Error()
@@ -93,22 +93,22 @@ func (s *Server) projectWork(project string) ProjectWork {
 		return out
 	}
 	out.Logged = true
-	list, err := matehost.LoadWork(path)
+	list, err := matehost.LoadDuty(path)
 	if err != nil {
 		out.Error = err.Error()
 		return out
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].At.After(list[j].At) })
 	for _, w := range list {
-		e := WorkEntry{
+		e := DutyEntry{
 			ID: w.ID, Kind: w.Kind, Title: w.Title, Status: w.Status, Topic: w.Topic, Last: w.Last,
 			AddedAt: db.FormatTime(w.AddedAt), At: db.FormatTime(w.At), DoneAt: db.FormatTime(w.DoneAt), OkayedAt: db.FormatTime(w.OkayedAt),
-			Notes: []WorkNote{},
+			Notes: []DutyNote{},
 		}
 		for _, n := range w.Notes {
-			e.Notes = append(e.Notes, WorkNote{At: db.FormatTime(n.At), Op: n.Op, Text: n.Text, Topic: n.Topic})
+			e.Notes = append(e.Notes, DutyNote{At: db.FormatTime(n.At), Op: n.Op, Text: n.Text, Topic: n.Topic})
 		}
-		out.Work = append(out.Work, e)
+		out.Duty = append(out.Duty, e)
 	}
 	return out
 }

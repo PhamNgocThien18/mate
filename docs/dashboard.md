@@ -306,18 +306,18 @@ It writes nothing: reading a news here does not mark it seen.
 `seen_at` is when a `new` news was last opened and `answered_at` when the last answer was given; both are absent when that never happened, or happened before the log recorded it.
 `logged` is false when the Mate has no news log, which is not the same answer as a log with nothing in it; a log that cannot be read is `logged: true` with `error` and no news.
 
-## 3e. `GET /api/work?project=<p>`
+## 3e. `GET /api/duty?project=<p>`
 
-The Mate's work board (`mate work`, `mate/work.jsonl`, CON-158): what the captain asked it for and what it proposed, where each row stands, okayed rows included, for the Work tab of Mate Office's Mate drawer and of the City's Mate panel.
+The Mate's duty board (`mate duty`, `mate/duty.jsonl`, CON-158): what the captain asked it for and what it proposed, where each row stands, okayed rows included, for the Duty tab of Mate Office's Mate drawer and of the City's Mate panel.
 It answers "how is the project doing?" and is never a question: a row that waits on the captain names the news (`topic`) it waits on, and nothing on it counts into Needs you.
 Without `project` it answers for every project in workspace order; an unknown `project` is a 404 that names it.
-It folds the log through `matehost.LoadWork` on every request and is not cached: the Mate writing the board is not an event.
+It folds the log through `matehost.LoadDuty` on every request and is not cached: the Mate writing the board is not an event.
 
 ```json
 {
   "generated_at": "…", "last_event_id": 412,
   "projects": [
-    {"project": "shop", "logged": true, "work": [
+    {"project": "shop", "logged": true, "duty": [
       {"id": 3, "kind": "assigned", "title": "Gộp make shot vào pre-push hook", "status": "done", "last": "PR #232 merged",
        "added_at": "…", "at": "…", "done_at": "…",
        "notes": [{"at": "…", "op": "add", "text": "anh giao trong chat"}, {"at": "…", "op": "done", "text": "PR #232 merged"}]},
@@ -327,8 +327,8 @@ It folds the log through `matehost.LoadWork` on every request and is not cached:
 }
 ```
 
-`work` is latest move first. `status` is the log's: `working`, `waiting` (on news `topic`), `done` (the captain may tick it), `okayed` (ticked, off the board; `okayed_at`). `kind` is `assigned` (the captain asked) or `proposed` (the Mate suggested).
-The captain's tick is the one write: `POST /api/actions` with `{"action": "okay", "project": "shop", "work": 3}`, offered in `mate_more` wherever the dashboard can act; it refuses a row that is not `done`. The Mate never okays its own rows, and does not wait for the tick.
+`duty` is latest move first. `status` is the log's: `working`, `waiting` (on news `topic`), `done` (the captain may tick it), `okayed` (ticked, off the board; `okayed_at`). `kind` is `assigned` (the captain asked) or `proposed` (the Mate suggested).
+The captain's tick is the one write: `POST /api/actions` with `{"action": "okay", "project": "shop", "duty": 3}`, offered in `mate_more` wherever the dashboard can act; it refuses a row that is not `done`. The Mate never okays its own rows, and does not wait for the tick.
 
 ## 4. `GET /api/projects/{project}/tasks/{crew}`
 

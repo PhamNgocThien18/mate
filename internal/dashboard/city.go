@@ -31,7 +31,7 @@ const (
 	actAssign        = "assign"
 	actAddProject    = "add_project"
 	actRemoveProject = "remove_project"
-	// actOkay is the captain's tick on a done row of the Mate's work board
+	// actOkay is the captain's tick on a done row of the Mate's duty board
 	// (CON-158): the one write the board takes from a page.
 	actOkay = "okay"
 )

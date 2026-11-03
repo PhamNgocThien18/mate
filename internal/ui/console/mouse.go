@@ -216,21 +216,21 @@ func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) 
 			m.actionIndex = i
 			return m.runEntry(i)
 		}
-	case sheetWork:
-		rows := m.workVisible()
+	case sheetDuty:
+		rows := m.dutyVisible()
 		if wheel {
-			m.work.sel = clampInt(m.work.sel+delta, 0, max0(len(rows)-1))
+			m.duty.sel = clampInt(m.duty.sel+delta, 0, max0(len(rows)-1))
 			return m, nil
 		}
 		// A click on a row selects it; a second click on the selected row
 		// is Space on it (the tick, when it is done).
-		_, rowAt := m.workSheetLines(p)
+		_, rowAt := m.dutySheetLines(p)
 		top, _ := sl.body()
 		if i := y - top; i >= 0 && i < len(rowAt) && rowAt[i] >= 0 {
-			if rowAt[i] == m.work.sel {
-				return m.okayWork()
+			if rowAt[i] == m.duty.sel {
+				return m.okayDuty()
 			}
-			m.work.sel = rowAt[i]
+			m.duty.sel = rowAt[i]
 			return m, nil
 		}
 	case sheetHarness:

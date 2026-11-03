@@ -1670,14 +1670,14 @@
    }
   ]
  },
- "work": {
+ "duty": {
   "generated_at": "2026-10-03T14:32:07.000000000Z",
   "last_event_id": 900,
   "projects": [
    {
     "project": "shop",
     "logged": true,
-    "work": [
+    "duty": [
      {
       "id": 3,
       "kind": "assigned",
@@ -1753,7 +1753,7 @@
    {
     "project": "docs-site",
     "logged": true,
-    "work": [
+    "duty": [
      {
       "id": 14,
       "kind": "proposed",
@@ -2110,7 +2110,7 @@
    {
     "project": "infra",
     "logged": false,
-    "work": []
+    "duty": []
    }
   ]
  }

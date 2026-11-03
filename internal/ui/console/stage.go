@@ -286,11 +286,11 @@ func (m Model) retryStage() (Model, tea.Cmd) {
 // to the keys the tree handlers use.
 var ownedKeys = map[string]bool{
 	"?": true, "G": true, "a": true, "backspace": true, "ctrl+c": true,
-	"down": true, "end": true, "enter": true, "esc": true, "g": true,
-	"home": true, "j": true, "k": true, "l": true, "m": true, "n": true,
-	"o": true, "pgdown": true, "pgup": true, "q": true, "r": true,
-	"s": true, "shift+tab": true, "tab": true, "up": true, "v": true,
-	"w": true, "y": true,
+	"d": true, "down": true, "end": true, "enter": true, "esc": true,
+	"g": true, "home": true, "j": true, "k": true, "l": true, "m": true,
+	"n": true, "o": true, "pgdown": true, "pgup": true, "q": true,
+	"r": true, "s": true, "shift+tab": true, "tab": true, "up": true,
+	"v": true, "y": true,
 }
 
 // commandHints lists configured project keys with their labels. A crew key

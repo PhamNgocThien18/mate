@@ -21,7 +21,7 @@
   m           flip its mode             
   v           projects / mates only     
   y           copy                      
-  w           work board of the mate    
+  d           duty board of the mate    
   e           crew report               
   t           project tasks             
   l           box: whole log            

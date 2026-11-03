@@ -11,36 +11,36 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 )
 
-// cmdWork implements `mate work <add|progress|wait|done|reopen|list> <project> ...`
+// cmdDuty implements `mate duty <add|progress|wait|done|reopen|list> <project> ...`
 // (CON-158): the board of what the captain asked the Mate for and what
 // the Mate proposed, where each stands. It is the Mate's report, not a
 // question: what needs the captain's answer is a news, and a row that
 // waits on one names it with `wait`. The captain ticks a done row in the
 // Office, the City or the console; there is no `okay` here, because the
-// Mate never okays its own work.
-func cmdWork(args []string, stdout, stderr io.Writer) error {
+// Mate never okays its own duty.
+func cmdDuty(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return newUsageError("usage: mate work <add|progress|wait|done|reopen|list> <project> ...")
+		return newUsageError("usage: mate duty <add|progress|wait|done|reopen|list> <project> ...")
 	}
 	switch args[0] {
 	case "add":
-		return cmdWorkAdd(args[1:], stdout, stderr)
+		return cmdDutyAdd(args[1:], stdout, stderr)
 	case "progress":
-		return cmdWorkLine(args[1:], stdout, stderr, "progress", matehost.ProgressWork)
+		return cmdDutyLine(args[1:], stdout, stderr, "progress", matehost.ProgressDuty)
 	case "wait":
-		return cmdWorkWait(args[1:], stdout, stderr)
+		return cmdDutyWait(args[1:], stdout, stderr)
 	case "done":
-		return cmdWorkLine(args[1:], stdout, stderr, "done", matehost.DoneWork)
+		return cmdDutyLine(args[1:], stdout, stderr, "done", matehost.DoneDuty)
 	case "reopen":
-		return cmdWorkLine(args[1:], stdout, stderr, "reopen", matehost.ReopenWork)
+		return cmdDutyLine(args[1:], stdout, stderr, "reopen", matehost.ReopenDuty)
 	case "list":
-		return cmdWorkList(args[1:], stdout, stderr)
+		return cmdDutyList(args[1:], stdout, stderr)
 	default:
-		return newUsageErrorf("unknown work subcommand %q (want add, progress, wait, done, reopen or list)", args[0])
+		return newUsageErrorf("unknown duty subcommand %q (want add, progress, wait, done, reopen or list)", args[0])
 	}
 }
 
-func workLog(workspaceFlag, project string) (string, error) {
+func dutyLog(workspaceFlag, project string) (string, error) {
 	w, err := resolveWorkspace(workspaceFlag)
 	if err != nil {
 		return "", err
@@ -48,22 +48,22 @@ func workLog(workspaceFlag, project string) (string, error) {
 	if err := requireProject(w, project); err != nil {
 		return "", err
 	}
-	return matehost.WorkPath(w.MateDir(project)), nil
+	return matehost.DutyPath(w.MateDir(project)), nil
 }
 
-func workID(s string) (int, error) {
+func dutyID(s string) (int, error) {
 	id, err := strconv.Atoi(strings.TrimPrefix(s, "#"))
 	if err != nil || id <= 0 {
-		return 0, newUsageErrorf("want a work id like 3 or #3, got %q", s)
+		return 0, newUsageErrorf("want a duty id like 3 or #3, got %q", s)
 	}
 	return id, nil
 }
 
-func cmdWorkAdd(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("work add", flag.ContinueOnError)
+func cmdDutyAdd(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("duty add", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, `usage: mate work add <project> "<title, one line>" [--proposed] [--note "<where it starts>"] [--workspace <dir>]`)
+		fmt.Fprintln(stderr, `usage: mate duty add <project> "<title, one line>" [--proposed] [--note "<where it starts>"] [--workspace <dir>]`)
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
 	proposed := fs.Bool("proposed", false, "the Mate proposed it; the captain did not ask for it")
@@ -73,20 +73,20 @@ func cmdWorkAdd(args []string, stdout, stderr io.Writer) error {
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
-		return newUsageError("mate work add: want exactly 2 arguments: <project> <title>")
+		return newUsageError("mate duty add: want exactly 2 arguments: <project> <title>")
 	}
 	if strings.TrimSpace(fs.Arg(1)) == "" {
-		return newUsageError("mate work add: the title is empty")
+		return newUsageError("mate duty add: the title is empty")
 	}
-	kind := matehost.WorkAssigned
+	kind := matehost.DutyAssigned
 	if *proposed {
-		kind = matehost.WorkProposed
+		kind = matehost.DutyProposed
 	}
-	path, err := workLog(*workspaceFlag, fs.Arg(0))
+	path, err := dutyLog(*workspaceFlag, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	id, err := matehost.AddWork(path, kind, fs.Arg(1), *note, time.Now())
+	id, err := matehost.AddDuty(path, kind, fs.Arg(1), *note, time.Now())
 	if err != nil {
 		return err
 	}
@@ -94,18 +94,18 @@ func cmdWorkAdd(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// cmdWorkLine is progress, done and reopen: `<project> <id> ["<line>"]`,
+// cmdDutyLine is progress, done and reopen: `<project> <id> ["<line>"]`,
 // the line required for progress (it is what moved) and optional
 // otherwise.
-func cmdWorkLine(args []string, stdout, stderr io.Writer, name string, op func(path string, id int, text string, now time.Time) error) error {
-	fs := flag.NewFlagSet("work "+name, flag.ContinueOnError)
+func cmdDutyLine(args []string, stdout, stderr io.Writer, name string, op func(path string, id int, text string, now time.Time) error) error {
+	fs := flag.NewFlagSet("duty "+name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		line := ` ["<one line>"]`
 		if name == "progress" {
 			line = ` "<what moved, one line>"`
 		}
-		fmt.Fprintf(stderr, "usage: mate work %s <project> <id>%s [--workspace <dir>]\n", name, line)
+		fmt.Fprintf(stderr, "usage: mate duty %s <project> <id>%s [--workspace <dir>]\n", name, line)
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
@@ -113,24 +113,24 @@ func cmdWorkLine(args []string, stdout, stderr io.Writer, name string, op func(p
 	}
 	if fs.NArg() < 2 || fs.NArg() > 3 {
 		fs.Usage()
-		return newUsageErrorf("mate work %s: want <project> <id> and at most one line", name)
+		return newUsageErrorf("mate duty %s: want <project> <id> and at most one line", name)
 	}
-	id, err := workID(fs.Arg(1))
+	id, err := dutyID(fs.Arg(1))
 	if err != nil {
 		return err
 	}
-	path, err := workLog(*workspaceFlag, fs.Arg(0))
+	path, err := dutyLog(*workspaceFlag, fs.Arg(0))
 	if err != nil {
 		return err
 	}
 	return op(path, id, fs.Arg(2), time.Now())
 }
 
-func cmdWorkWait(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("work wait", flag.ContinueOnError)
+func cmdDutyWait(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("duty wait", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, `usage: mate work wait <project> <id> --topic <news id> ["<what the captain is asked>"] [--workspace <dir>]`)
+		fmt.Fprintln(stderr, `usage: mate duty wait <project> <id> --topic <news id> ["<what the captain is asked>"] [--workspace <dir>]`)
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
 	topic := fs.String("topic", "", "the news (topic) the row waits on")
@@ -139,31 +139,31 @@ func cmdWorkWait(args []string, stdout, stderr io.Writer) error {
 	}
 	if fs.NArg() < 2 || fs.NArg() > 3 {
 		fs.Usage()
-		return newUsageError("mate work wait: want <project> <id> and at most one line")
+		return newUsageError("mate duty wait: want <project> <id> and at most one line")
 	}
-	id, err := workID(fs.Arg(1))
+	id, err := dutyID(fs.Arg(1))
 	if err != nil {
 		return err
 	}
 	if *topic == "" {
-		return newUsageError("mate work wait: --topic is required: a row waits on a news, never on nothing")
+		return newUsageError("mate duty wait: --topic is required: a row waits on a news, never on nothing")
 	}
 	news, err := newsID(*topic)
 	if err != nil {
 		return err
 	}
-	path, err := workLog(*workspaceFlag, fs.Arg(0))
+	path, err := dutyLog(*workspaceFlag, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	return matehost.WaitWork(path, id, news, fs.Arg(2), time.Now())
+	return matehost.WaitDuty(path, id, news, fs.Arg(2), time.Now())
 }
 
-func cmdWorkList(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("work list", flag.ContinueOnError)
+func cmdDutyList(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("duty list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: mate work list <project> [--all] [--workspace <dir>]")
+		fmt.Fprintln(stderr, "usage: mate duty list <project> [--all] [--workspace <dir>]")
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
 	all := fs.Bool("all", false, "okayed rows too")
@@ -172,13 +172,13 @@ func cmdWorkList(args []string, stdout, stderr io.Writer) error {
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return newUsageError("mate work list: want exactly 1 argument: <project>")
+		return newUsageError("mate duty list: want exactly 1 argument: <project>")
 	}
-	path, err := workLog(*workspaceFlag, fs.Arg(0))
+	path, err := dutyLog(*workspaceFlag, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	list, err := matehost.LoadWork(path)
+	list, err := matehost.LoadDuty(path)
 	if err != nil {
 		return err
 	}
@@ -188,7 +188,7 @@ func cmdWorkList(args []string, stdout, stderr io.Writer) error {
 			continue
 		}
 		shown++
-		fmt.Fprint(stdout, workListLine(w))
+		fmt.Fprint(stdout, dutyListLine(w))
 	}
 	if shown == 0 {
 		fmt.Fprintln(stdout, "nothing on the board")
@@ -196,16 +196,16 @@ func cmdWorkList(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// workListLine is one row as `mate work list` prints it: id, status (with
+// dutyListLine is one row as `mate duty list` prints it: id, status (with
 // the topic a waiting row waits on), kind when proposed, title; then the
 // Mate's last line indented.
-func workListLine(w matehost.Work) string {
+func dutyListLine(w matehost.Duty) string {
 	status := w.Status
-	if w.Status == matehost.WorkWaiting && w.Topic > 0 {
+	if w.Status == matehost.DutyWaiting && w.Topic > 0 {
 		status = fmt.Sprintf("waiting on news #%d", w.Topic)
 	}
 	kind := ""
-	if w.Kind == matehost.WorkProposed {
+	if w.Kind == matehost.DutyProposed {
 		kind = " proposed:"
 	}
 	s := fmt.Sprintf("#%d %s%s %s\n", w.ID, status, kind, w.Title)
