@@ -1,5 +1,6 @@
-// The project page's task table (CON-155): sortable columns and pages that
-// hold across polls. Run with:
+// The project page's task table: sortable columns and pages that hold
+// across polls (CON-155), when each task started and how long it took
+// (CON-156). Run with:
 // node --test internal/dashboard/ui_tasks_test.cjs
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -23,7 +24,8 @@ test("the table opens on newest spawn first, 25 rows a page", async () => {
   assert.equal(ids(app.view).length, 25);
   assert.equal(range(app.view).textContent, "1–25 of 30");
   assert.equal(keyed(app.view, "data-page", "prev").getAttribute("disabled"), "", "the first page has no previous page");
-  assert.equal(app.view.querySelectorAll("th[aria-sort]").length, 0, "no column claims the default order");
+  assert.equal(keyed(app.view, "data-sort", "started").parentNode.getAttribute("aria-sort"), "descending", "the default order is a column");
+  assert.equal(app.view.querySelectorAll("[aria-sort]").length, 1);
 
   keyed(app.view, "data-page", "next").click();
   assert.deepEqual(ids(app.view), ["task-4", "task-3", "task-2", "task-1", "task-0"]);
@@ -82,4 +84,39 @@ test("a filter chip returns to page one; sort and page hold across a poll", asyn
   chip(app.view, "open").click();
   assert.equal(range(app.view).textContent, "1–25 of 40");
   assert.equal(keyed(app.view, "data-sort", "asked").parentNode.getAttribute("aria-sort"), "descending", "the filter keeps the order");
+});
+
+test("started and took: spawn to close when closed, counting when open", async () => {
+  const body = project(3);
+  body.tasks[2].closed_at = at(50);
+  const app = await boot(body, "#/p/shop");
+  chip(app.view, "all").click();
+  const cell = (crew, label) => app.view.querySelectorAll(".clickable").find(tr => tr.querySelector("a").textContent === crew)
+    .querySelectorAll("td").find(td => td.getAttribute("data-label") === label);
+
+  assert.equal(cell("task-2", "started").textContent, "10:00", "today shows the clock alone");
+  assert.equal(cell("task-2", "started").getAttribute("title"), "2026-09-28 10:00:02");
+  assert.equal(cell("task-2", "took").textContent, "58s");
+  assert.equal(cell("task-2", "took").getAttribute("title"), "2026-09-28 10:00:02 → 2026-09-28 10:00:50");
+
+  assert.equal(cell("task-0", "took").textContent, "running 1m", "the server's age until the clock ticks");
+  app.advance(60000);
+  assert.equal(cell("task-0", "took").textContent, "running 1m40s", "then it counts from spawn (40s before boot) between polls");
+
+  const old = project(1);
+  old.tasks[0].spawned_at = "2026-09-20T08:05:00.000Z";
+  const later = await boot(old, "#/p/shop");
+  assert.equal(later.view.querySelector(".clickable").querySelectorAll("td").find(td => td.getAttribute("data-label") === "started").textContent,
+    "09-20 08:05", "an earlier day shows its month and day");
+});
+
+test("started and took sort", async () => {
+  const app = await boot(project(6), "#/p/shop");
+  chip(app.view, "all").click();
+  keyed(app.view, "data-sort", "took").click();
+  assert.deepEqual(ids(app.view).slice(0, 2), ["task-0", "task-1"], "the longest first");
+  keyed(app.view, "data-sort", "started").click();
+  assert.deepEqual(ids(app.view).slice(0, 2), ["task-5", "task-4"], "started starts newest");
+  keyed(app.view, "data-sort", "started").click();
+  assert.deepEqual(ids(app.view).slice(0, 2), ["task-0", "task-1"]);
 });
