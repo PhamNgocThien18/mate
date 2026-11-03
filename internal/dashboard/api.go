@@ -33,6 +33,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/board", s.respond(s.handleBoard, false))
 	s.mux.HandleFunc("GET /api/board/day", s.respond(s.handleBoardDay, false))
 	s.mux.HandleFunc("GET /api/news", s.respond(s.handleNews, false))
+	s.mux.HandleFunc("GET /api/work", s.respond(s.handleWork, false))
 	s.mux.HandleFunc("GET /api/projects/{project}/actions", s.respond(s.handleActions, false))
 	s.mux.HandleFunc("GET /api/actions", s.respond(s.handleAllActions, false))
 	s.mux.HandleFunc("POST /api/actions", s.handleAct)

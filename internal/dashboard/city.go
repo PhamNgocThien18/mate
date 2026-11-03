@@ -31,6 +31,9 @@ const (
 	actAssign        = "assign"
 	actAddProject    = "add_project"
 	actRemoveProject = "remove_project"
+	// actOkay is the captain's tick on a done row of the Mate's work board
+	// (CON-158): the one write the board takes from a page.
+	actOkay = "okay"
 )
 
 // talk are the actions that go to the Mate's chat, and can run whenever a
@@ -114,7 +117,10 @@ func (s *Server) mateMore(p query.ProjectNode) []Button {
 		// The console's own question (removeProjectChoice).
 		remove.Confirm = "Remove project " + p.Name + "? This stops its Mate and " + crews + ". Its memory, backlog, crew records and repos stay on disk; `mate project add " + p.Name + "` brings it back."
 	}
-	return []Button{say, remove}
+	// The tick writes the board's log, which needs no Mate: it is offered
+	// wherever the console acts at all.
+	okay := Button{Action: actOkay, Label: "OK", Available: true}
+	return []Button{say, remove, okay}
 }
 
 // mateRunning is whether the Mate can be stopped, the snapshot's own word

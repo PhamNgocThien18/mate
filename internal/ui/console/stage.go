@@ -290,7 +290,7 @@ var ownedKeys = map[string]bool{
 	"home": true, "j": true, "k": true, "l": true, "m": true, "n": true,
 	"o": true, "pgdown": true, "pgup": true, "q": true, "r": true,
 	"s": true, "shift+tab": true, "tab": true, "up": true, "v": true,
-	"y": true,
+	"w": true, "y": true,
 }
 
 // commandHints lists configured project keys with their labels. A crew key

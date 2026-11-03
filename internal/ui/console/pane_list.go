@@ -312,7 +312,20 @@ func (m Model) mateRowLines(r row, p framePlan) []gline {
 		bang = 1
 	}
 	name := kindName(m.g.Mate, proj.Name)
-	return m.agentRowLines(p, name, bang, false, word, mateHarness(mate), m.mateAgent(mate), m.since(mate.Binding.Value.BoundSince))
+	lines := m.agentRowLines(p, name, bang, false, word, mateHarness(mate), m.mateAgent(mate), m.since(mate.Binding.Value.BoundSince))
+	// The wide two-line row has room on its second line for the board's
+	// numbers: "work N·M" is N open rows, M of them for the captain to OK
+	// (CON-158). The narrow rows have none, so they say nothing.
+	if p.tall && p.wide && len(lines) == 2 {
+		if forYou, working, waiting, _ := mate.WorkCounts(); forYou+working+waiting > 0 {
+			tok := tDim
+			if forYou > 0 {
+				tok = tAmber
+			}
+			lines[1] = lines[1].add(" "+m.g.Dot+" ", tDim).add(fmt.Sprintf("work %d%s%d", forYou+working+waiting, m.g.Dot, forYou), tok)
+		}
+	}
+	return lines
 }
 
 func (m Model) crewRowLines(r row, p framePlan) []gline {

@@ -169,6 +169,61 @@ type MateNode struct {
 	// when the Mate never opened one, Known and empty when every news is
 	// closed. Newest first.
 	News Field[[]NewsItem]
+	// Work is the Mate's work board (CON-158): what the captain asked for
+	// and what the Mate proposed, each with where it stands, from
+	// `mate/work.jsonl`. Absent when the Mate never put a row on it.
+	// Okayed rows are kept so the board can show what was ticked off.
+	// Latest move first.
+	Work Field[[]WorkItem]
+}
+
+// WorkItem is one row of a Mate's work board.
+type WorkItem struct {
+	ID int
+	// Kind is assigned (the captain asked) or proposed (the Mate offered).
+	Kind  string
+	Title string
+	// Status is working, waiting, done (for the captain to OK) or okayed.
+	Status string
+	// Topic is the news the row waits on while Status is waiting.
+	Topic int
+	// Last is the Mate's latest line on the row.
+	Last string
+	// At is when the row last moved.
+	At    time.Time
+	Notes []WorkNote
+}
+
+// WorkNote is one update on a work row.
+type WorkNote struct {
+	At    time.Time
+	Op    string
+	Text  string
+	Topic int
+}
+
+// Open reports whether the row is still on the board: not okayed.
+func (w WorkItem) Open() bool { return w.Status != "okayed" }
+
+// WorkCounts is the board in numbers: rows done and for the captain to OK,
+// rows in progress, rows waiting on a topic, rows okayed.
+func (n MateNode) WorkCounts() (forYou, working, waiting, okayed int) {
+	if !n.Work.IsKnown() {
+		return 0, 0, 0, 0
+	}
+	for _, w := range n.Work.Value {
+		switch w.Status {
+		case "done":
+			forYou++
+		case "working":
+			working++
+		case "waiting":
+			waiting++
+		case "okayed":
+			okayed++
+		}
+	}
+	return forYou, working, waiting, okayed
 }
 
 // NewsItem is one open news of a Mate.

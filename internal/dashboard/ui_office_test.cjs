@@ -134,9 +134,14 @@ async function boot(opts = {}) {
     }
   };
   const fail = opts.fail || {};
+  // Timers never fire on their own (a retry after a failed poll must not
+  // keep node up): timeouts are kept, and a test runs them with fire().
+  const timers = [];
   const context = vm.createContext({
-    // Timers never fire: a retry after a failed poll must not keep node up.
-    document: doc, window, setTimeout() { return 0; }, setInterval() { return 0; }, console,
+    document: doc, window, console,
+    setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout(id) { if (timers[id - 1]) timers[id - 1].fn = null; },
+    setInterval() { return 0; }, clearInterval() {},
     fetch(url, init) {
       requests.push({ url, method: init && init.method, headers: init && init.headers, body: init && init.body });
       if (init && init.method === "POST") {
@@ -161,6 +166,7 @@ async function boot(opts = {}) {
       }
       else if (p === "/api/now") body = fx.now;
       else if (p === "/api/news") body = fx.news || { projects: [] };
+      else if (p === "/api/work") body = fx.work || { projects: [] };
       else if (p === "/api/board") body = boardBody(Number(u.searchParams.get("days")));
       else if (p === "/api/board/day") body = boardDayBody(u.searchParams.get("date"));
       else if ((m = /^\/api\/projects\/([^/]+)\/actions$/.exec(p))) body = (opts.actions || {})[m[1]] ||
@@ -189,6 +195,10 @@ async function boot(opts = {}) {
       await flush();
     },
     drawer: () => root.querySelector("#drawer"),
+    // timers lists the timeouts set so far, {fn, ms}, cancelled ones with
+    // fn null; fire runs the ones still armed, as if their time had come.
+    timers,
+    async fire() { for (const t of timers.splice(0)) if (t.fn) t.fn(); await flush(); },
     key(name) { (winListeners.keydown || []).forEach(fn => fn({ key: name })); },
     hash: () => hash,
     async click(node) { assert.ok(node, "the thing to click exists"); node.click(); await flush(); }
@@ -1240,4 +1250,170 @@ test("on a phone the rooms are cards and the drawer is a bottom sheet over a scr
   const stuck = app.root.querySelectorAll(".mc").find(n => n.querySelector(".id").text === "db-migrate");
   assert.ok(stuck.classes.includes("p-blocked"));
   assert.equal(stuck.querySelector(".mw").text, "stuck");
+});
+
+// ------------------------------------------------------------ the Mate's work board (CON-158)
+
+const workTab = app => app.drawer().querySelector('[data-focus="tab:work"]');
+const workSec = (app, label) => app.drawer().querySelector(`section[aria-label="${label}"]`);
+const workRows = sec => sec.querySelectorAll("li.wli");
+const rowOf = (app, title) => app.drawer().querySelectorAll("li.wli").find(li => li.querySelector(".wtt b").text === title);
+
+test("the Mate drawer has a Work tab between Talk and Details, its badge the rows waiting for an OK", async () => {
+  const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS });
+  const tabs = app.drawer().querySelector(".tabs").querySelectorAll("button");
+  assert.deepEqual(tabs.map(b => b.getAttribute("data-focus")), ["tab:talk", "tab:work", "tab:details"]);
+  assert.equal(workTab(app).querySelector(".n").text, "1", "one row waits for the captain's OK");
+  assert.ok(app.requests.some(r => r.url === "/api/work"), "the board is read with the page");
+  await app.click(workTab(app));
+  assert.equal(workTab(app).getAttribute("aria-selected"), "true");
+
+  // Sections in the order the captain reads them, each with its count.
+  const secs = app.drawer().querySelectorAll("section.ds").map(s => s.getAttribute("aria-label")).filter(l => l !== "Actions");
+  assert.deepEqual(secs, ["For you to OK", "In progress", "Waiting on a topic", "Okayed"]);
+  assert.equal(workSec(app, "For you to OK").querySelector(".sh").text, "For you to OK 1");
+  assert.equal(workSec(app, "In progress").querySelector(".sh").text, "In progress 1");
+  assert.match(workSec(app, "Waiting on a topic").text, /Nothing waiting on a topic/);
+  assert.equal(workRows(workSec(app, "Okayed")).length, 1);
+
+  // A row: its title, status chip, kind and the Mate's latest line.
+  const done = rowOf(app, "Cart summary redesign");
+  assert.ok(done.classes.includes("s-done"));
+  assert.equal(done.querySelector(".chip").text, "done · for you");
+  assert.ok(done.querySelector(".chip").classes.includes("t-ok"));
+  assert.equal(done.querySelector(".wkind").text, "proposed");
+  assert.ok(done.querySelector(".wkind").classes.includes("wtag"), "a proposal wears a tag");
+  assert.equal(done.querySelector(".wlast").text, "shipped in PR #40");
+  assert.equal(done.querySelector(".nwa").text, "25m ago");
+  const working = rowOf(app, "Merge api-fix when green");
+  assert.equal(working.querySelector(".chip").text, "working");
+  assert.ok(working.querySelector(".chip").classes.includes("t-info"));
+  assert.equal(working.querySelector(".wkind").text, "assigned");
+  assert.ok(!working.querySelector(".wkind").classes.includes("wtag"));
+  const okayed = rowOf(app, "Healthcheck endpoint");
+  assert.ok(okayed.querySelector(".wrow").classes.includes("struck"), "an okayed title is struck through");
+  assert.equal(okayed.querySelector("input"), null, "an okayed row has no checkbox");
+  assert.equal(okayed.querySelector(".wok").text, "✓");
+
+  // The checkbox is only live on a done row.
+  const box = s => rowOf(app, s).querySelector("input.wck");
+  assert.ok("disabled" in box("Merge api-fix when green").attrs, "a working row cannot be ticked");
+  assert.equal(box("Merge api-fix when green").getAttribute("aria-label"), "Not done yet");
+  assert.ok(!("disabled" in box("Cart summary redesign").attrs), "a done row can be ticked");
+
+  // Clicking the row opens its history.
+  await app.click(done.querySelector(".wrow"));
+  const notes = rowOf(app, "Cart summary redesign").querySelector(".nnotes");
+  assert.ok(notes, "the notes open under the row");
+  assert.equal(notes.querySelectorAll("li").length, 2);
+  assert.match(notes.querySelectorAll("li")[1].text, /done · shipped in PR #40/);
+  await app.click(rowOf(app, "Cart summary redesign").querySelector(".wrow"));
+  assert.equal(rowOf(app, "Cart summary redesign").querySelector(".nnotes"), null, "a second click closes them");
+  assert.equal(posts(app).length, 0, "reading the board writes nothing");
+});
+
+test("ticking a done row waits five seconds for an undo, then sends the OK and re-reads the board", async () => {
+  const pressed = [];
+  const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS, press: b => { pressed.push(b); return { body: { line: "okayed #2" } }; } });
+  await app.click(workTab(app));
+  const armed = () => app.timers.filter(t => t.fn && t.ms === 5000);
+  await app.click(rowOf(app, "Cart summary redesign").querySelector("input.wck"));
+  let row = rowOf(app, "Cart summary redesign");
+  assert.match(row.querySelector(".wundo").text, /^Okaying in 5s · Undo$/);
+  assert.equal(armed().length, 1, "one timer waits out the undo");
+  assert.equal(posts(app).length, 0, "nothing is sent at the click");
+
+  await app.click(row.querySelector('[data-focus="work-undo:shop/2"]'));
+  row = rowOf(app, "Cart summary redesign");
+  assert.equal(row.querySelector(".wundo"), null, "Undo takes the line away");
+  assert.equal(armed().length, 0, "and disarms the timer");
+  assert.ok(!("disabled" in row.querySelector("input.wck").attrs));
+  await app.fire();
+  assert.equal(posts(app).length, 0, "a cancelled tick never sends");
+
+  await app.click(row.querySelector("input.wck"));
+  app.fx.work.projects[0].work[1].status = "okayed";
+  app.fx.work.projects[0].work[1].okayed_at = "2026-10-03T14:32:00.000000000Z";
+  await app.fire();
+  assert.deepEqual(pressed, [{ action: "okay", project: "shop", work: 2 }]);
+  assert.equal(posts(app)[0].url, "/api/actions");
+  assert.ok(rowOf(app, "Cart summary redesign").querySelector(".wrow").classes.includes("struck"), "the board is re-read after the OK");
+  assert.equal(workTab(app).querySelector(".n"), null, "nothing waits for an OK any more");
+});
+
+test("an OK that fails says so under the row and gives the checkbox back", async () => {
+  const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS,
+    press: () => ({ status: 409, body: { error: "okay: row 2 is not done" } }) });
+  await app.click(workTab(app));
+  await app.click(rowOf(app, "Cart summary redesign").querySelector("input.wck"));
+  await app.fire();
+  const row = rowOf(app, "Cart summary redesign");
+  assert.equal(row.querySelector(".wfail").text, "OK did not go through: okay: row 2 is not done");
+  assert.equal(row.querySelector(".wundo"), null);
+  assert.ok(!("disabled" in row.querySelector("input.wck").attrs), "the captain can try again");
+});
+
+test("on a read-only dashboard the board reads but nothing can be ticked", async () => {
+  const app = await boot({ hash: "#mate/shop" });
+  await app.click(workTab(app));
+  const row = rowOf(app, "Cart summary redesign");
+  assert.ok("disabled" in row.querySelector("input.wck").attrs);
+  assert.equal(workSec(app, "For you to OK").querySelector(".why").text, "read-only dashboard");
+  await app.click(row.querySelector("input.wck"));
+  assert.equal(app.timers.filter(t => t.fn && t.ms === 5000).length, 0);
+});
+
+test("a row waiting on a topic opens that news on the captain's desk; okayed rows fold to the latest ten", async () => {
+  const app = await boot({ hash: "#mate/docs-site", actions: SHOP_ACTIONS });
+  await app.click(workTab(app));
+  const waiting = rowOf(app, "Rename the getting-started page");
+  assert.ok(waiting.classes.includes("s-waiting"));
+  const topic = waiting.querySelector(".wtopic");
+  assert.equal(topic.text, "waiting · topic #4");
+  assert.ok(topic.classes.includes("t-wait"));
+  const okayed = workSec(app, "Okayed");
+  assert.equal(workRows(okayed).length, 10, "the latest ten okayed rows");
+  await app.click(okayed.querySelector(".news-more"));
+  assert.equal(workRows(workSec(app, "Okayed")).length, 12, "Show all lists every okayed row");
+
+  await app.click(rowOf(app, "Rename the getting-started page").querySelector(".wtopic"));
+  assert.equal(app.hash(), "#captain", "the topic chip goes to the captain's desk");
+  const opened = app.drawer().querySelectorAll("li.nli.open").find(li => li.querySelector('[data-focus="news:docs-site/4"]'));
+  assert.ok(opened, "with that news opened up");
+});
+
+test("the board is a report, not a question: nothing on it reaches the captain's desk or the needs-you count", async () => {
+  const app = await boot();
+  // Only shop's news is owed; docs-site's done row and waiting row add nothing.
+  assert.equal(app.root.querySelector(".cap .tray b").text, "2");
+  assert.doesNotMatch(app.root.querySelector(".cap").text, /work/);
+  await app.click(app.root.querySelector(".cap"));
+  assert.doesNotMatch(app.drawer().text, /Cart summary redesign|Rename the getting-started page/);
+});
+
+test("the Mate's desk says how much is on its board and how much waits for an OK", async () => {
+  const app = await boot();
+  const plate = roomOf(app.root, "shop").querySelector(".mate .wplate");
+  assert.equal(plate.text, "work 2 · 1 for you", "open rows, not okayed ones");
+  assert.equal(roomOf(app.root, "docs-site").querySelector(".mate .wplate").text, "work 2", "nothing for you: the plate says only what is open");
+  assert.equal(roomOf(app.root, "infra").querySelector(".mate .wplate"), null, "a Mate with no board wears no plate");
+});
+
+test("a Mate with no work log says so, an empty board says so, and a board that cannot be read says why", async () => {
+  const fx = fixture();
+  fx.work.projects[0] = { project: "shop", logged: true, work: [] };
+  fx.work.projects[1] = { project: "docs-site", logged: true, work: [], error: "work.jsonl: permission denied" };
+  const app = await boot({ hash: "#mate/infra", fixture: fx });
+  await app.click(workTab(app));
+  assert.match(app.drawer().text, /This Mate has put nothing on its board\./);
+  assert.equal(workTab(app).querySelector(".n"), null);
+  await app.click(roomOf(app.root, "shop").querySelector(".mate"));
+  assert.match(app.drawer().text, /Nothing on the board yet\./);
+  await app.click(roomOf(app.root, "docs-site").querySelector(".mate"));
+  assert.equal(app.drawer().querySelector('section[aria-label="Work"] .err-note').text, "The board could not be read: work.jsonl: permission denied");
+
+  const broken = await boot({ hash: "#mate/shop", fail: { "/api/work": "work is locked" } });
+  await broken.click(workTab(broken));
+  assert.match(broken.drawer().text, /The board could not be read: work is locked/);
+  assert.equal(roomOf(broken.root, "shop").querySelector(".mate .wplate"), null);
 });

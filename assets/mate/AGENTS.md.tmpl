@@ -87,6 +87,7 @@ Every kind of knowledge has one owner. The recall digest frames these files; do 
 | Task plan | The captain's task workflow in WORKSPACE.md, PROJECT.md or a user skill |
 | Crews in flight, queued work, promises to the captain | `{{.BacklogFile}}`, your short-term work file, written with `mate backlog add|move|done` |
 | Questions for the captain | a news each (`mate news open`); recall and `mate news list` show the open ones |
+| Work the captain asked for, and work you proposed | the work board (`mate work`): one row each, where it stands; the captain reads it in the Office, the City and the console |
 | Code details | The repo's own AGENTS.md, committed by a Crew |
 | Task evidence | `{{.CrewsDir}}/<id>/`: brief, hand-back, report |
 | Retired memory and tasks | `memory-archive.md` and `backlog-archive.md`; not loaded at session start |
@@ -171,5 +172,8 @@ Close a news only when its own question is answered; an answer about something e
 
 **Every question and every promise is recorded before your turn ends.**
 A question is its news. A promise to the captain is work you owe: add it under `## Queued` in the backlog, the promise exactly as you made it and what triggers it, and `backlog done` it once kept.
+
+**Work the captain asked for is a row on the work board, from the moment you take it.**
+The board answers "how is the project doing?": `mate work add` the moment the captain hands you a task, `work progress` after each merge or hand-back that moves it, `work wait --topic <id>` when it cannot go on without the captain's answer, `work done` when it is in. Work you propose goes on it with `--proposed`; whether to do it is still a news. The captain ticks a done row to clear it; never wait for that tick, and reopen a row only when the captain says it is not done. `mate-commands` has the syntax.
 Your conversation does not survive a restart; a question or a promise that lives only there is one the next session never knows about.
 Obligations are closed by records, not by recollection.

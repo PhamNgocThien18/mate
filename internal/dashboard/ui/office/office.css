@@ -594,6 +594,27 @@ svg.fc { position: absolute; left: 17%; top: 17%; width: 66%; height: 66%; fill:
 .news-err { padding: 12px 20px 0; }
 .news-ro { padding: 14px 20px 18px; }
 
+/* The Mate's work board (CON-158): the Work tab's rows and the desk plate. */
+.wplate { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--infoB); color: var(--infoT); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.wr { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: start; gap: 6px; padding: 8px 0; }
+.wck { width: 18px; height: 18px; margin: 3px 0 0 8px; accent-color: var(--okT); cursor: pointer; }
+.wck:disabled { opacity: .35; cursor: default; }
+.wck.wok { display: grid; place-items: center; margin-top: 1px; font-size: 14px; font-weight: 700; color: var(--goneT); }
+.wrow { min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.wtt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wtt b { font-weight: 500; overflow-wrap: anywhere; }
+.wrow.struck .wtt b { text-decoration: line-through; color: var(--ink2); }
+.wtopic { border: 0; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.wtopic:hover { text-decoration: underline; }
+.wmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; font-size: 12px; color: var(--ink2); }
+.wmeta .wlast { overflow-wrap: anywhere; }
+.wtag { padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface2); font-size: 11px; font-weight: 600; }
+.wundo { display: flex; align-items: center; gap: 4px; padding: 0 0 8px 42px; font-size: 12.5px; color: var(--okT); font-weight: 600; }
+.wundo .news-more { margin: 0; color: var(--sel); }
+.wfail { padding: 0 0 8px 42px; }
+.wnb { padding: 0 0 12px 42px; }
+.ds > .why { margin-top: 6px; }
+
 /* ------------------------------------------------------------ phone */
 
 .mtop { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }

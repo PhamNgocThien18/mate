@@ -410,6 +410,11 @@
   var news = null;            // /api/news: {body} | {error}
   var newsOpen = {};          // "<project>/<id>" -> true for each news opened up in the captain drawer
   var newsEarlierAll = false; // the captain drawer lists every closed news, not only the latest
+  var work = null;            // /api/work (CON-158): {body} | {error}
+  var workOpen = {};          // "<project>/<id>" -> true for each work row opened up to its notes
+  var workOkayedAll = {};     // project -> true when the Work tab lists every okayed row
+  var okaying = {};           // "<project>/<id>" -> {timer, until, pressing}: a tick waiting out its undo
+  var workErr = {};           // "<project>/<id>" -> why the last OK did not go through
   var acts = null;            // the open drawer's /api/projects/{p}/actions: {key, body} | {key, error}
   var asking = null;          // {key, name, crew, button}: the destructive action whose question is open
   var running = {};           // drawer key -> the button running there; that drawer's other buttons wait
@@ -521,7 +526,7 @@
         // can only fetch an event twice, never miss one.
         lastEventID = Math.min.apply(null, ids);
         // An open captain drawer reads the news in loadDetail already.
-        return Promise.all([loadDetail(), sel && sel.kind === "captain" ? null : loadNews(), probeActions(wsBody)]);
+        return Promise.all([loadDetail(), sel && sel.kind === "captain" ? null : loadNews(), loadWork(), probeActions(wsBody)]);
       });
     }).then(function () {
       if (token !== pollToken) return;
@@ -594,6 +599,21 @@
     });
   }
 
+  // loadWork reads every Mate's work board (GET /api/work, CON-158) for the
+  // Mate drawer's Work tab and the desk plate. Like the news it is a file
+  // the Mate writes, not an event, so it never fails the page and says
+  // whether it moved.
+  function loadWork() {
+    var before = work ? JSON.stringify(work.body ? work.body.projects : work.error.message) : "";
+    return api("/api/work").then(function (body) {
+      work = { body: body };
+    }, function (err) {
+      work = { error: err };
+    }).then(function () {
+      return JSON.stringify(work.body ? work.body.projects : work.error.message) !== before;
+    });
+  }
+
   // What the last /api/events said about timelines that stopped moving
   // (CON-139): the page answers, but what it draws for them is old.
   var timelineStale = "";
@@ -642,14 +662,14 @@
       }
       markLive();
       if (watching) {
-        loadDetail().then(function () { if (token === pollToken) { draw(); poll(); } });
+        Promise.all([loadDetail(), loadWork()]).then(function () { if (token === pollToken) { draw(); poll(); } });
         return;
       }
-      // News is a file the REPL writes, not an event: a quiet poll reads
-      // it again, and redraws only when it moved.
-      loadNews().then(function (changed) {
+      // News and the work board are files the REPL writes, not events: a
+      // quiet poll reads them again, and redraws only when one moved.
+      Promise.all([loadNews(), loadWork()]).then(function (changed) {
         if (token !== pollToken) return;
-        if (changed || staleMoved) draw(); else drawLive();
+        if (changed[0] || changed[1] || staleMoved) draw(); else drawLive();
         poll();
       });
     }, function (err) {
@@ -1112,7 +1132,7 @@
         el("span", { class: "m-plate", text: "Mate · " + name }),
         present && m.state === "deciding" ? el("span", { class: "think" }, [el("i"), el("i"), el("i")]) : null
       ]),
-      el("span", { class: "mmeta" }, [chip(s), htag(h), el("span", { class: "tok", text: tok(m.tokens_today) + " today" })])
+      el("span", { class: "mmeta" }, [chip(s), htag(h), el("span", { class: "tok", text: tok(m.tokens_today) + " today" }), workPlate(name)])
     ]);
     return pickable(btn, key);
   }
@@ -1439,6 +1459,7 @@
     var talk = chatOf(name);
     var top = [head, actionsSection(name, ""), mateTabs(name, talk.list ? talk.list.length : null)];
     if (mateTab === "talk") return top.concat([talkSection(name), composer(name)]);
+    if (mateTab === "work") return top.concat(workTab(name));
     var nodes = top.concat([
       usageSection({
         tokens: b ? m.tokens : null, cost: b ? m.cost : null, updated: b ? b.generated_at : null,
@@ -1793,7 +1814,9 @@
       b.addEventListener("click", function () { mateTab = id; draw(); });
       return b;
     };
-    return el("div", { class: "tabs", role: "tablist", "aria-label": "Mate of " + name }, [tab("talk", "Talk", n), tab("details", "Details", null)]);
+    var done = workCounts(name).done;
+    return el("div", { class: "tabs", role: "tablist", "aria-label": "Mate of " + name },
+      [tab("talk", "Talk", n), tab("work", "Work", done || null), tab("details", "Details", null)]);
   }
 
   function chatOf(name) {
@@ -2307,6 +2330,214 @@
     var btns = aside.querySelector(".dbtns");
     if (btns) aside.insertBefore(btns, btns.parentNode);
     return aside;
+  }
+
+  // ------------------------------------------------------------ the Mate's work board
+
+  // The board (CON-158): what the captain asked the Mate for and what the
+  // Mate proposed, with where each stands. It is a report, never a
+  // question: nothing on it is news, goes to the captain's desk or counts
+  // as "needs you". The captain ticks a done row to take it off the board.
+  var WORK_STATES = {
+    working: { word: "working", tone: "t-info", icon: "working" },
+    waiting: { word: "waiting", tone: "t-wait", icon: "ask" },
+    done: { word: "done · for you", tone: "t-ok", icon: "done" },
+    okayed: { word: "okayed", tone: "t-gone", icon: "done" }
+  };
+  function workState(status) {
+    return WORK_STATES[status] || { word: status ? String(status) : "unknown", tone: "t-gone", icon: "unknown" };
+  }
+  var OKAYED_SHOWN = 10;
+  var OKAY_UNDO_MS = 5000;
+
+  // workOf is one project's board, {logged, rows, error}, or null before
+  // /api/work answered.
+  function workOf(name) {
+    if (!work || !work.body) return null;
+    var list = work.body.projects || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].project === name) return { logged: !!list[i].logged, rows: list[i].work || [], error: list[i].error || "" };
+    }
+    return { logged: false, rows: [], error: "" };
+  }
+
+  function workCounts(name) {
+    var w = workOf(name);
+    var c = { open: 0, done: 0 };
+    if (!w) return c;
+    w.rows.forEach(function (r) {
+      if (r.status !== "okayed") c.open++;
+      if (r.status === "done") c.done++;
+    });
+    return c;
+  }
+
+  // workPlate is the small line on the Mate's desk: rows still on the
+  // board and how many wait for the captain's OK. It is not a pin.
+  function workPlate(name) {
+    var c = workCounts(name);
+    if (!c.open) return null;
+    return el("span", { class: "wplate", text: "work " + c.open + (c.done ? " · " + c.done + " for you" : "") });
+  }
+
+  function workNote(cls, text) {
+    return [el("section", { class: "ds", "aria-label": "Work" }, el("p", { class: cls, text: text }))];
+  }
+
+  function workTab(name) {
+    var w = workOf(name);
+    if (!w) {
+      if (work && work.error) return workNote("err-note", "The board could not be read: " + (work.error.reason || work.error.message));
+      return workNote("loading-note", "loading…");
+    }
+    if (w.error) return workNote("err-note", "The board could not be read: " + w.error);
+    if (!w.logged) return workNote("loading-note", "This Mate has put nothing on its board.");
+    if (!w.rows.length) return workNote("loading-note", "Nothing on the board yet.");
+    var by = { done: [], working: [], waiting: [], okayed: [] };
+    w.rows.forEach(function (r) { (by[r.status] || (by[r.status] = [])).push(r); });
+    var nodes = [];
+    var done = workSection(name, "For you to OK", by.done, "Nothing waits for your OK.");
+    if (by.done.length && wsReadOnly) done.appendChild(el("small", { class: "why", text: "read-only dashboard" }));
+    nodes.push(done);
+    nodes.push(workSection(name, "In progress", by.working, "Nothing in progress."));
+    nodes.push(workSection(name, "Waiting on a topic", by.waiting, "Nothing waiting on a topic."));
+    if (by.okayed.length) {
+      var shown = workOkayedAll[name] ? by.okayed : by.okayed.slice(0, OKAYED_SHOWN);
+      var sec = workSection(name, "Okayed", shown);
+      if (by.okayed.length > shown.length) {
+        var more = el("button", { class: "link news-more", type: "button", "data-focus": "work-more" }, "Show all " + by.okayed.length);
+        more.addEventListener("click", function () { workOkayedAll[name] = true; draw(); });
+        sec.appendChild(more);
+      }
+      nodes.push(sec);
+    }
+    return nodes;
+  }
+
+  function workSection(name, title, list, empty) {
+    return el("section", { class: "ds", "aria-label": title }, [
+      el("h3", { class: "sh" }, [title + " ", el("span", { text: list.length ? String(list.length) : "" })]),
+      list.length ? el("ul", { class: "nl wl" }, list.map(function (r) { return workRow(name, r); })) : el("p", { class: "loading-note", text: empty || "" })
+    ]);
+  }
+
+  function workRow(name, r) {
+    var key = name + "/" + r.id;
+    var st = workState(r.status);
+    var open = !!workOpen[key];
+    var pending = okaying[key];
+    var okayed = r.status === "okayed";
+    var canTick = r.status === "done" && !wsReadOnly && !pending;
+
+    var tick;
+    if (okayed) {
+      tick = el("span", { class: "wck wok", "aria-hidden": "true", text: "✓" });
+    } else {
+      tick = el("input", { type: "checkbox", class: "wck", disabled: !canTick, checked: !!pending,
+        "aria-label": r.status === "done" ? (pending ? "Okaying " + r.title : "OK " + r.title) : "Not done yet", "data-focus": "work-ok:" + key });
+      tick.addEventListener("click", function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (!canTick) return;
+        tickWork(name, r);
+      });
+    }
+
+    var stateChip;
+    if (r.status === "waiting" && r.topic) {
+      stateChip = el("button", { class: "chip " + st.tone + " wtopic", type: "button", title: "Open topic #" + r.topic, "data-focus": "work-topic:" + key },
+        [icon(st.icon), "waiting · topic #" + r.topic]);
+      stateChip.addEventListener("click", function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        openTopic(name, r.topic);
+      });
+    } else {
+      stateChip = chip(st);
+    }
+
+    var meta = [el("span", { class: "wkind" + (r.kind === "proposed" ? " wtag" : ""), text: r.kind === "proposed" ? "proposed" : "assigned" })];
+    if (r.last) meta.push(el("span", { class: "wlast", text: r.last }));
+    var body = el("button", { class: "wrow" + (okayed ? " struck" : ""), type: "button", "aria-expanded": open ? "true" : "false",
+      "aria-label": r.title + ", " + st.word + ", " + (r.kind === "proposed" ? "proposed" : "assigned"), "data-focus": "work:" + key }, [
+      el("span", { class: "wtt" }, [el("b", { text: r.title }), stateChip]),
+      el("small", { class: "wmeta" }, meta)
+    ]);
+    body.addEventListener("click", function () {
+      if (open) delete workOpen[key]; else workOpen[key] = true;
+      draw();
+    });
+    var when = okayed ? r.okayed_at || r.at : r.status === "done" ? r.done_at || r.at : r.at;
+    var row = el("div", { class: "wr" }, [tick, body, el("span", { class: "nwa", title: when || null, text: age(when) + " ago" })]);
+
+    var extra = [];
+    if (pending) {
+      var left = Math.max(0, Math.ceil((pending.until - Date.now()) / 1000));
+      var undo = el("button", { class: "link news-more", type: "button", "data-focus": "work-undo:" + key }, "Undo");
+      undo.addEventListener("click", function (e) { if (e && e.stopPropagation) e.stopPropagation(); undoWork(key); });
+      extra.push(el("div", { class: "wundo", role: "status" },
+        pending.pressing ? [el("span", { text: "Okaying…" })] : [el("span", { text: "Okaying in " + left + "s · " }), undo]));
+    }
+    if (workErr[key]) extra.push(el("p", { class: "err-note wfail", text: "OK did not go through: " + workErr[key] }));
+    if (open) extra.push(workNotes(r));
+    return el("li", { class: "nli wli s-" + (r.status || "unknown") + (open ? " open" : "") }, [row].concat(extra));
+  }
+
+  function workNotes(r) {
+    var notes = r.notes || [];
+    if (!notes.length) return el("p", { class: "loading-note wnb", text: "No notes on this row." });
+    return el("ul", { class: "nnotes wnb", "aria-label": "History of " + r.title }, notes.map(function (x) {
+      var what = (x.op || "?") + (x.topic ? " · topic #" + x.topic : "") + (x.text ? " · " + x.text : "");
+      return el("li", null, [el("span", { class: "mono", title: x.at || null, text: x.at ? clock(x.at) : "?" }), el("span", { text: what })]);
+    }));
+  }
+
+  // openTopic opens the captain's drawer on the news a waiting row waits
+  // for, opened up when it is there.
+  function openTopic(name, topic) {
+    newsOpen[name + "/" + topic] = true;
+    if (sel && sel.kind === "captain") draw(); else select("captain");
+  }
+
+  // tickWork starts the undo window: the OK is sent when it runs out, not
+  // at the click. A second timer redraws the countdown while any is open.
+  var okayTick = 0;
+  function tickWork(name, r) {
+    var key = name + "/" + r.id;
+    if (okaying[key]) return;
+    delete workErr[key];
+    okaying[key] = { until: Date.now() + OKAY_UNDO_MS, pressing: false, timer: setTimeout(function () { okayNow(name, r.id); }, OKAY_UNDO_MS) };
+    if (!okayTick) {
+      okayTick = setInterval(function () {
+        if (Object.keys(okaying).length) { draw(); return; }
+        clearInterval(okayTick);
+        okayTick = 0;
+      }, 1000);
+    }
+    draw();
+  }
+
+  function undoWork(key) {
+    var o = okaying[key];
+    if (!o || o.pressing) return;
+    clearTimeout(o.timer);
+    delete okaying[key];
+    draw();
+    focusOn("work-ok:" + key);
+  }
+
+  function okayNow(name, id) {
+    var key = name + "/" + id;
+    var o = okaying[key];
+    if (!o) return;
+    o.pressing = true;
+    draw();
+    return press({ action: "okay", project: name, work: id }).then(function () {
+      delete workErr[key];
+    }, function (err) {
+      workErr[key] = err.reason || err.message;
+    }).then(function () {
+      delete okaying[key];
+      return loadWork();
+    }).then(draw);
   }
 
   // ------------------------------------------------------------ the captain's news

@@ -35,7 +35,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		dir, err := findWorkspaceDir("")
 		if err != nil {
-			return newUsageError("usage: mate <workspace-dir> | mate <init|project|mate|crew|brief|remember|memory|recall|send|news|peek|state|diff|report|review|merge|backlog|checkpoint|pr|events|reindex|usage|gc|dashboard|console|migrate|plugin|--version> ...")
+			return newUsageError("usage: mate <workspace-dir> | mate <init|project|mate|crew|brief|remember|memory|recall|send|news|work|peek|state|diff|report|review|merge|backlog|checkpoint|pr|events|reindex|usage|gc|dashboard|console|migrate|plugin|--version> ...")
 		}
 		return cmdConsole(dir, stdout, stderr)
 	}
@@ -72,6 +72,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdNotifications(args[1:], stdout, stderr)
 	case "news":
 		return cmdNews(args[1:], stdout, stderr)
+	case "work":
+		return cmdWork(args[1:], stdout, stderr)
 	case "peek":
 		return cmdPeek(args[1:], stdout, stderr)
 	case "state":
