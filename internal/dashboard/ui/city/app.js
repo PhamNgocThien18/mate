@@ -307,13 +307,17 @@ function refreshNews() {
 }
 
 // Every news as a topic: waiting on the captain (`new`, `waiting`), the Mate
-// on it (`working`), or earlier (`done`, `dropped`).
+// on it (`working`), or earlier (`done`, `dropped`). Archiving hides an
+// answered news; one still waiting on the captain stays, as in the REPL.
 const GROUP = { new: 'waiting', waiting: 'waiting', working: 'on_it', done: 'earlier', dropped: 'earlier' };
 function topics() {
   const out = [];
   for (const [project, list] of S.news) {
     if (!projectOf(project)) continue;
-    for (const n of list) if (!n.archived) out.push({ ...n, project, key: topicKey(project, n.id), group: GROUP[n.status] ?? 'earlier' });
+    for (const n of list) {
+      const group = GROUP[n.status] ?? 'earlier';
+      if (!n.archived || group === 'waiting') out.push({ ...n, project, key: topicKey(project, n.id), group });
+    }
   }
   return out.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
 }
@@ -375,18 +379,11 @@ function refreshOpen() {
 
 // ---- What needs the captain ---------------------------------------------------------
 //
-// Three kinds earn a pin and a row in the rail, and only these: a topic
-// waiting on the captain, a crew ready to merge, an incident. A crew's
-// question to its Mate is the Mate's to answer; it shows only when the
-// project is manual and nobody handed it over (then the captain is the only
-// one who can), and as a quiet pin. One pin per thing; the most urgent wins.
-
-const KINDS = {
-  incident: { glyph: '!', rank: 0 },
-  topic: { glyph: '?', rank: 1 },
-  merge: { glyph: '⇢', rank: 2 },
-  decision: { glyph: '◆', rank: 3 },
-};
+// On the web only a topic needs the captain (CON-154): a news the Mate
+// opened and the captain has not answered, as Office's captain desk counts
+// it. An incident, a crew ready to merge or a crew asking its Mate belongs
+// to its tent: Crews here says it, and the Mate in the tent opens its chat
+// and inbox.
 
 // What the page and the buttons say about one open crew.
 function crewFacts(project, t) {
@@ -404,32 +401,19 @@ function crewFacts(project, t) {
 }
 
 function attention() {
-  const out = [];
-  for (const tp of topics().filter((x) => x.group === 'waiting')) {
-    out.push({ kind: 'topic', anchor: 'hall', title: tp.question || tp.title, sub: `${tp.project} · the Mate asks you · ${ago(tp.opened_at)}`, open: () => select({ kind: 'hall', tab: 'topics', topic: tp.key }) });
-  }
-  for (const p of S.ws?.projects ?? []) {
-    for (const x of (S.inbox.get(p.name) ?? []).filter((i) => i.kind === 'incident' && !i.crew)) {
-      out.push({ kind: 'incident', anchor: `mate:${p.name}`, title: `Mate · ${p.name}: ${x.verb || 'incident'}`, sub: x.text, short: x.verb || 'incident', open: () => select({ kind: 'mate', project: p.name, tab: 'inbox' }) });
-    }
-    for (const t of openCrews(p.name)) {
-      const f = crewFacts(p.name, t);
-      const anchor = `crew:${p.name}/${t.crew}`;
-      if (f.incident) out.push({ kind: 'incident', anchor, title: `${t.crew} ${f.incident.verb || 'incident'} ${ago(f.incident.at)}`, sub: `${p.name} · ${f.incident.text}`, short: f.incident.verb || 'incident', open: () => select({ kind: 'crew', project: p.name, crew: t.crew, tab: 'peek' }) });
-      if (f.ready) out.push({ kind: 'merge', anchor, title: `${t.crew} ready to merge`, sub: `${p.name} · ${t.branch ?? '?'}`, short: 'merge', open: () => select({ kind: 'crew', project: p.name, crew: t.crew }) });
-      if (f.status?.verb === 'needs-decision' && p.mode !== 'auto' && f.open) out.push({ kind: 'decision', anchor, title: `${t.crew} asks its Mate`, sub: `${p.name} is manual · nobody handed it over`, short: 'asks', open: () => select({ kind: 'crew', project: p.name, crew: t.crew, tab: 'status' }) });
-    }
-  }
-  return out.sort((a, b) => KINDS[a.kind].rank - KINDS[b.kind].rank);
+  return topics().filter((x) => x.group === 'waiting').map((tp) => ({
+    title: tp.question || tp.title,
+    sub: `${tp.project} · the Mate asks you · ${ago(tp.opened_at)}`,
+    open: () => select({ kind: 'hall', tab: 'topics', topic: tp.key }),
+  }));
 }
 
 function renderRail(items) {
-  const top = items.filter((x) => x.kind !== 'decision');
-  $('#needs-n').textContent = top.length ? `Needs you · ${top.length}` : 'Nothing needs you';
-  $('#needs').dataset.tone = top.length ? 'need' : 'ok';
-  $('#rail').replaceChildren(h('h2', {}, top.length ? `Needs you · ${top.length}` : 'Needs you'),
-    ...(items.length ? items.map((x) => h('button', { type: 'button', class: `k-${x.kind}`, onclick: x.open },
-      h('span', { class: 'g', 'aria-hidden': 'true' }, KINDS[x.kind].glyph), h('b', {}, x.title), h('small', {}, x.sub))) : [h('p', { class: 'empty' }, 'Nothing waits on you.')]));
+  $('#needs-n').textContent = items.length ? `Needs you · ${items.length}` : 'Nothing needs you';
+  $('#needs').dataset.tone = items.length ? 'need' : 'ok';
+  $('#rail').replaceChildren(h('h2', {}, items.length ? `Needs you · ${items.length}` : 'Needs you'),
+    ...(items.length ? items.map((x) => h('button', { type: 'button', class: 'k-topic', onclick: x.open },
+      h('span', { class: 'g', 'aria-hidden': 'true' }, '?'), h('b', {}, x.title), h('small', {}, x.sub))) : [h('p', { class: 'empty' }, 'Nothing waits on you.')]));
 }
 
 // ---- Pins ---------------------------------------------------------------------------
@@ -472,10 +456,8 @@ function wantedPins() {
     const have = pins.get(anchor);
     if (!have || pin.rank < have.rank) pins.set(anchor, pin);
   };
-  const items = attention();
-  const waiting = items.filter((x) => x.kind === 'topic').length;
+  const waiting = attention().length;
   if (waiting) put('hall', { kind: 'topic', rank: 1, glyph: '?', long: `${waiting} waiting on you`, short: String(waiting), label: `City Hall: ${waiting} topic${waiting === 1 ? '' : 's'} waiting on you`, open: () => select({ kind: 'hall', tab: 'topics' }) });
-  for (const x of items) if (x.anchor !== 'hall') put(x.anchor, { kind: x.kind, rank: KINDS[x.kind].rank + 1, glyph: KINDS[x.kind].glyph, long: x.title, short: x.short, label: x.title, open: x.open });
   for (const p of S.ws?.projects ?? []) {
     if (!hasMate(p)) put(`mate:${p.name}`, { kind: 'empty', rank: 5, glyph: '+', long: 'No Mate yet', short: 'no Mate', label: `${p.name} has no Mate yet`, open: () => select({ kind: 'mate', project: p.name }) });
   }
@@ -576,7 +558,7 @@ const dbody = $('#dbody');
 let lastFocus = null;
 
 function select(sel, { fly: doFly = true } = {}) {
-  if (room && sel.kind !== 'crew' && sel.kind !== 'tent') leaveRoom();
+  if (room && sel.kind !== 'crew' && sel.kind !== 'tent' && sel.back?.kind !== 'tent') leaveRoom();
   if (!S.sel) lastFocus = document.activeElement;
   // Chatter never talks over the thing you are working with.
   for (const m of city?.mascots.values() ?? []) if (m.chatAt === Infinity) m.chatAt = undefined;
@@ -599,7 +581,7 @@ function select(sel, { fly: doFly = true } = {}) {
 }
 
 function closeDock() {
-  if (room && S.sel?.kind === 'crew' && S.sel.back) return select(S.sel.back);
+  if (room && S.sel?.back?.kind === 'tent') return select(S.sel.back);
   if (room) return leaveRoom();
   if (S.sel?.back) return select(S.sel.back);
   for (const m of city?.mascots.values() ?? []) if (m.chatAt === Infinity) m.chatAt = undefined;
@@ -846,10 +828,11 @@ VIEWS.mate = () => {
   const inbox = S.inbox.get(p.name) ?? [];
   const tab = S.sel.tab ?? 'chat';
   const state = !hasMate(p) ? stateEl('', ['+', 'no Mate yet', 'off']) : m.running ? stateEl(m.state) : stateEl('', ['◌', 'stopped', 'off']);
+  const tent = S.sel.back?.kind === 'tent' ? S.sel.back : null;
   return {
-    crumbs: [{ text: 'City' }, { text: p.name, go: () => select({ kind: 'block', project: p.name }) }],
+    crumbs: [{ text: 'City' }, { text: p.name, go: () => select({ kind: 'block', project: p.name }) }, ...(tent ? [{ text: `tent ${tent.repo}`, go: () => select(tent) }] : [])],
     title: `Mate · ${p.name}`,
-    sub: hasMate(p) ? `${harnessName(m.harness)} · plaza of ${p.name}` : 'This block has a plaza but no Mate',
+    sub: hasMate(p) ? `${harnessName(m.harness)} · ${tent ? `in tent ${tent.repo}` : `plaza of ${p.name}`}` : 'This block has a plaza but no Mate',
     body: [
       ...bands(),
       facts([
@@ -1108,7 +1091,7 @@ VIEWS.crew = () => {
   ].filter(Boolean);
   const replay = room && mode !== 'live';
   return {
-    crumbs: [{ text: project, go: () => select({ kind: 'mate', project }) }, ...(S.sel.back?.kind === 'tent' ? [{ text: `tent ${S.sel.back.repo}`, go: () => select(S.sel.back) }] : []), { text: 'crew' }],
+    crumbs: [{ text: project, go: () => select({ kind: 'mate', project, back: S.sel.back?.kind === 'tent' ? S.sel.back : null }) }, ...(S.sel.back?.kind === 'tent' ? [{ text: `tent ${S.sel.back.repo}`, go: () => select(S.sel.back) }] : []), { text: 'crew' }],
     title: `${crew} · ${t.role}`,
     sub: t.text,
     body: [
@@ -1467,7 +1450,7 @@ $('#sys').addEventListener('click', () => select({ kind: 'system' }));
 VIEWS.goto = () => {
   const q = (S.drafts.get('goto-q') ?? '').toLowerCase();
   const items = [
-    ...attention().map((x) => ({ g: KINDS[x.kind].glyph, k: x.kind, title: x.title, sub: x.sub, go: x.open })),
+    ...attention().map((x) => ({ g: '?', k: 'topic', title: x.title, sub: x.sub, go: x.open })),
     { g: '⌂', title: 'City Hall', sub: 'topics · projects', go: () => select({ kind: 'hall' }) },
     ...(S.ws?.projects ?? []).flatMap((p) => [
       { g: '◎', title: `Mate · ${p.name}`, sub: hasMate(p) ? harnessName(p.mate.harness) : 'no Mate yet', go: () => select({ kind: 'mate', project: p.name }) },
@@ -1509,18 +1492,35 @@ VIEWS.tent = () => {
   const p = projectOf(project);
   const crews = p ? openCrews(project).filter(onTent(p, repo)) : [];
   const open = (t) => select({ kind: 'crew', project, crew: t.crew, back: { ...S.sel } });
+  const inbox = (S.inbox.get(project) ?? []).length;
+  const talk = (e) => (e.preventDefault(), select({ kind: 'mate', project, back: { ...S.sel } }));
   return {
     crumbs: [{ text: project, go: () => (leaveRoom(), select({ kind: 'block', project })) }, { text: 'tent' }],
     title: repo,
     sub: room ? `${project} · ${room.summary}` : `${project} · ${S.sel.error || 'loading…'}`,
     body: [
       ...bands(mode !== 'live' ? [h('div', { class: 'band replay' }, h('span', { class: 'g' }, '⏸'), h('span', {}, `Replaying ${$('#when').textContent}. Crews and actions below are now. `), h('button', { type: 'button', class: 'btn', style: 'min-height:32px', onclick: goLive }, 'Go Live'))] : []),
+      p && hasMate(p) ? h('div', { class: 'links' }, h('a', { href: '#', onclick: talk }, `Talk to the Mate${inbox ? ` · ${inbox} in its inbox` : ''}`)) : null,
       tabs([['feed', 'Playback'], ['crews', 'Crews here', crews.length]], tab, (id) => ((S.sel = { ...S.sel, tab: id }), render())),
-      tab === 'feed' ? feedEl : h('ul', { class: 'list' }, crews.length ? crews.map((t) => h('li', { class: 'click', tabindex: '0', role: 'button', onclick: () => open(t), onkeydown: (e) => e.key === 'Enter' && open(t) },
-        h('span', { class: 'g' }, crewFacts(project, t).incident ? '!' : STATE[t.state]?.[0] ?? '·'), h('b', {}, `${t.crew} · ${t.role}`), h('small', {}, stateWord(t.state)))) : h('li', {}, h('span', { class: 'g' }, '○'), h('b', {}, 'Nobody is working here now'))),
+      tab === 'feed' ? feedEl : h('ul', { class: 'list' }, crews.length ? crews.map((t) => {
+        const [g, words, k] = crewNote(project, t);
+        return h('li', { class: `click${k ? ` k-${k}` : ''}`, tabindex: '0', role: 'button', onclick: () => open(t), onkeydown: (e) => e.key === 'Enter' && open(t) },
+          h('span', { class: 'g' }, g), h('b', {}, `${t.crew} · ${t.role}`), h('small', {}, words));
+      }) : h('li', {}, h('span', { class: 'g' }, '○'), h('b', {}, 'Nobody is working here now'))),
     ],
   };
 };
+
+// A crew in the tent's list: what it wants seen first - an incident, its
+// work ready to merge, a question to its Mate - else its state.
+function crewNote(project, t) {
+  const f = crewFacts(project, t);
+  const state = stateWord(t.state);
+  if (f.incident) return ['!', `${f.incident.verb || 'incident'} ${ago(f.incident.at)} · ${state}`, 'incident'];
+  if (f.ready && t.role !== 'review') return ['⇢', `ready to merge · ${t.branch ?? '?'}`, 'merge'];
+  if (f.status?.verb === 'needs-decision') return ['◆', `asks its Mate · ${state}`, 'decision'];
+  return [STATE[t.state]?.[0] ?? '·', state, ''];
+}
 
 // Histories read so far, by tent: kept while the project's task rows are the
 // same ones, so a second visit, or a click after a hover, opens at once.
@@ -1806,8 +1806,10 @@ canvas.addEventListener('click', (e) => {
   if (tg.lot) return select({ kind: 'lot', at: tg.lot });
   const s = (room ? room.seats : city.seats).get(tg.mascot);
   if (!s) return;
-  if (s.kind === 'mate') return room ? null : select({ kind: 'mate', project: s.project });
-  select({ kind: 'crew', project: s.project, crew: s.crew, back: room ? { ...S.sel, kind: 'tent' } : null }, { fly: !room });
+  // In a tent, the panel opened keeps the tent behind it to go back to.
+  const back = room ? (S.sel?.kind === 'tent' ? { ...S.sel } : S.sel?.back?.kind === 'tent' ? S.sel.back : { kind: 'tent', project: room.project, repo: room.repo, tab: 'feed' }) : null;
+  if (s.kind === 'mate') return select({ kind: 'mate', project: s.project, back }, { fly: !room });
+  select({ kind: 'crew', project: s.project, crew: s.crew, back }, { fly: !room });
 });
 
 // ---- Keyboard -----------------------------------------------------------------------------

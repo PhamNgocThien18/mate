@@ -307,7 +307,9 @@ test("a crew with a question stands in the hallway, and its empty desk shows it 
   const desk = deskOf(app.root, "ui-polish");
   assert.ok(desk.classes.includes("away"));
   assert.equal(desk.querySelector(".a-head"), null, "nobody sits at the desk of a crew at the door");
-  assert.match(app.root.querySelector(".cap").text, /1 question waiting/);
+  // The question is its Mate's, in the room's inbox; the captain's desk
+  // counts only the news owed (CON-154).
+  assert.doesNotMatch(app.root.querySelector(".cap").text, /question/);
 });
 
 test("a stuck crew looks stuck: alert, outlined desk, the word and why", async () => {
@@ -646,7 +648,9 @@ const newsRow = (d, title) => d.querySelectorAll("button.nw").find(b => b.queryS
 test("the captain's desk says how much news is unread and opens the news from every Mate", async () => {
   const app = await boot();
   const desk = app.root.querySelector(".cap");
-  assert.match(desk.text, /1 question waiting.*1 news unread/);
+  assert.match(desk.text, /1 news unread/);
+  assert.doesNotMatch(desk.text, /inbox|question/, "a crew's question is its Mate's, not the captain's");
+  assert.equal(desk.querySelector(".tray b").text, "2", "the tray holds every news owed: unread and to answer");
   await app.click(desk);
   assert.equal(app.hash(), "#captain");
   const d = app.drawer();

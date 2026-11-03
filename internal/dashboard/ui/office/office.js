@@ -947,31 +947,11 @@
     ]);
   }
 
-  // inboxSummary reads every project's inbox: the things waiting on a
-  // decision, which is the captain's tray.
-  function inboxSummary() {
-    var items = [];
-    var known = true;
-    projectNames().forEach(function (n) {
-      var b = body(n);
-      if (b) items = items.concat(b.inbox || []);
-      else known = false;
-    });
-    var questions = items.filter(function (i) { return i.kind === "status" && (i.verb === "needs-decision" || i.verb === "blocked"); }).length;
-    return { n: items.length, questions: questions, known: known };
-  }
-
-  // short is the phone's wording, as the design's bottom-sheet board has it.
-  function inboxWords(s, short) {
-    if (!s.known && s.n === 0) return "inbox ?";
-    if (s.n === 0) return "inbox empty";
-    if (s.questions === s.n) return plural(s.n, "question", "questions") + (short ? "" : " waiting");
-    return s.n + (short ? " in the inbox" : " waiting in the inbox");
-  }
-
   // newsSummary counts every Mate's news by what the captain owes it:
   // unread (new), read but not answered (waiting), answered and with the
-  // Mate (working). known is false until /api/news has answered.
+  // Mate (working). known is false until /api/news has answered. The news
+  // owed are all that waits on the captain on the web (CON-154), as City's
+  // Needs you counts them; a room's inbox is its Mate's.
   function newsSummary() {
     var s = { known: false, unread: 0, waiting: 0, working: 0, closed: 0 };
     if (!news || !news.body) return s;
@@ -996,19 +976,18 @@
   }
 
   function captainDesk() {
-    var s = inboxSummary();
     var ns = newsSummary();
+    var owed = ns.unread + ns.waiting;
     var btn = el("button", { class: "cap" + (sel && sel.kind === "captain" ? " sel" : ""), type: "button",
-      "aria-label": "Captain's desk: " + inboxWords(s) + ", " + newsWords(ns) }, [
+      "aria-label": "Captain's desk: " + newsWords(ns) }, [
       el("span", { class: "mart", "aria-hidden": "true" }, [
         el("span", { class: "m-chair" }), el("span", { class: "m-head" }), el("span", { class: "c-hat" }),
         el("span", { class: "m-body", style: "background:#46566B" }), el("span", { class: "m-desk" }),
         el("span", { class: "m-mon m1" }),
-        el("span", { class: "tray" }, s.n > 0 ? el("b", { text: String(s.n) }) : null),
+        el("span", { class: "tray" }, owed > 0 ? el("b", { text: String(owed) }) : null),
         el("span", { class: "m-plate", text: "Captain · you" })
       ]),
-      el("span", { class: "capq" + (s.n > 0 ? "" : " none") }, [icon("ask"), inboxWords(s)]),
-      el("span", { class: "capq capn" + (ns.unread || ns.waiting ? "" : " none") }, [icon("mail"), newsWords(ns)])
+      el("span", { class: "capq capn" + (owed ? "" : " none") }, [icon("mail"), newsWords(ns)])
     ]);
     return pickable(btn, "captain");
   }
@@ -1241,7 +1220,6 @@
   }
 
   function mobileHall() {
-    var s = inboxSummary();
     var ns = newsSummary();
     var figs = [];
     projectNames().forEach(function (n) {
@@ -1249,10 +1227,9 @@
     });
     return el("section", { class: "mhall", "aria-label": "Hallway" }, [
       pickable(el("button", { class: "mcap" + (sel && sel.kind === "captain" ? " sel" : ""), type: "button",
-        "aria-label": "Captain's desk: " + inboxWords(s) + ", " + newsWords(ns) }, [
+        "aria-label": "Captain's desk: " + newsWords(ns) }, [
         el("span", { class: "cav", "aria-hidden": "true" }, [el("span", { class: "c-b" }), el("span", { class: "c-h" }), el("span", { class: "c-hat2" })]),
         el("span", { class: "mct" }, [el("b", { text: "Captain · you" }),
-          el("span", { class: "capq" + (s.n > 0 ? "" : " none") }, [icon("ask"), inboxWords(s, true)]),
           el("span", { class: "capq capn" + (ns.unread || ns.waiting ? "" : " none") }, [icon("mail"), newsWords(ns)])])
       ]), "captain"),
       figs.length ? el("div", { class: "mfigs" }, figs) : null,
