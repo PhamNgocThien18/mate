@@ -70,9 +70,10 @@ workflow:
     read: docs/harness/workflows/learn.md
   - step: Handback có dòng Learning
     handback: ^Learning:
+    since: "2026-10-27"   # repo bắt đầu đòi bước này từ ngày đó
 ```
 
-Một bước là xong khi có một bằng chứng khớp: `command` khớp lệnh Bash trong `executions`, `read` khớp path của Read/cat/head, `skill` khớp tên trong `skills`, `handback` khớp một dòng trong handback.md. Mọi mẫu là regex Go. `files` (thay cho `when: ui` ở bản nháp) là regex trên danh sách file crew đã đổi: không khớp file nào → "n/a"; không đọc được danh sách (nhánh đã xoá, `.meta` không có merge_commit) → "unknown". Project không khai `workflow` thì khối ẩn.
+Một bước là xong khi có một bằng chứng khớp: `command` khớp lệnh Bash trong `executions`, `read` khớp path của Read/cat/head, `skill` khớp tên trong `skills`, `handback` khớp một dòng trong handback.md. Mọi mẫu là regex Go. `files` (thay cho `when: ui` ở bản nháp) là regex trên danh sách file crew đã đổi: không khớp file nào → "n/a"; không đọc được danh sách (nhánh đã xoá, `.meta` không có merge_commit) → "unknown". Project không khai `workflow` thì khối ẩn. `since` (CON-157) là ngày repo bắt đầu đòi bước đó: task spawn trước ngày ấy có bước là "n/a", không bị chấm "missed" theo luật ra sau. Lệnh Bash được ghi dưới dạng JSON input của tool; mẫu `command`/`read` khớp trên dòng lệnh đã bóc, nên `^make shot` dùng được. Bước không có gì để soi (không có lệnh nào được ghi, không có handback) là "unknown"; bước "missed" nói đã soi ở đâu ("nothing matches in: 45 commands the crew ran · its hand-back"). Mỗi bước trả `rule` (crew phải làm gì để được tính), trang vẽ dưới tên bước, kèm một đoạn giải thích và chú giải bốn trạng thái.
 Kết quả tính ở server (`journey.workflow[]`), vì UI không đọc project.yaml. Đợt đầu mate chép sẵn danh sách này cho mihuv2 khi onboard; sau này kit harness tự sinh.
 
 Trên hu-246 (31/10) khối này cho ra: crew đi 4/9 bước (đọc mate.md, gate hai lần, handback đủ tiêu chí và dòng Learning, `gh pr create`), bỏ 5 (agent-start, gate-plan, `make shot` thay bằng xcodebuild tự chế, ios-ui-verify dù đổi UI, learn.md), nạp 0 skill. Crew theo brief và AGENTS.md, phần nào brief chép thì làm, phần nào brief chỉ trỏ tới file thì bỏ.

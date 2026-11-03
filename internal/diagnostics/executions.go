@@ -473,6 +473,10 @@ func executionLabel(e Execution) string {
 	return short(command, 88)
 }
 
+// ShellCommand is the command line an execution ran: a tool's JSON input
+// ({"command": "…"}) unwrapped, anything else as recorded.
+func ShellCommand(e Execution) string { return executionCommand(e) }
+
 func executionCommand(e Execution) string {
 	if e.IsWrapper {
 		return displayCommand(e.Command)

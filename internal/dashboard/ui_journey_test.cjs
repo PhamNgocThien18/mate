@@ -42,7 +42,7 @@ const journey = () => ({
   ],
   workflow: [
     { step: "Read docs/harness/mate.md", state: "done", evidence: "cat docs/harness/mate.md | head -40", at: at(1) },
-    { step: "Screenshots with make shot", state: "missed" },
+    { step: "Screenshots with make shot", state: "missed", evidence: "nothing matches in: 4 commands the crew ran", rule: "runs a command matching make shot" },
     { step: "ios-ui-verify after a UI change", state: "missed" },
     { step: "android verify", state: "n/a", evidence: "no changed file matches \\.kt$" }
   ],
@@ -216,6 +216,12 @@ test("the repo workflow lists the declared steps with the crew's evidence, and c
   assert.deepEqual(rows.map(tr => tr.getAttribute("data-workflow")), ["done", "missed", "missed", "n/a"]);
   assert.match(rows[0].textContent, /Read docs\/harness\/mate\.md✓ done10:00:01 cat docs\/harness\/mate\.md \| head -40/);
   assert.match(rows[3].textContent, /– n\/ano changed file matches/);
+  assert.equal(rows[1].querySelector(".rule").textContent, "counts when the crew runs a command matching make shot", "each step says what would have counted");
+  assert.match(rows[1].textContent, /✗ missednothing matches in: 4 commands the crew ran/, "a missed step says where it was looked for");
+  assert.equal(rows[2].querySelector(".rule"), null, "a body from an older server has no rule and draws none");
+  const legend = app.view.querySelector(".workflow-legend");
+  assert.deepEqual(legend.querySelectorAll("li").map(li => li.getAttribute("data-state")), ["done", "missed", "n/a", "unknown"]);
+  assert.match(legend.textContent, /n\/a: does not apply to this task/);
   assert.match(table.querySelector(".total").textContent, /taken1 \/ 3of the steps that apply/);
 
   const body = closedCrew();
