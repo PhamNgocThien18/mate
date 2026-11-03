@@ -454,6 +454,13 @@ tbody tr.clickable { cursor: pointer; }
 tbody tr.clickable:hover { background: var(--surface-2); }
 
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A sortable header is a button that reads as the header it replaces. */
+th button.sort { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+th button.sort:hover, th[aria-sort] button.sort { color: var(--ink); }
+th button.sort .arrow { display: inline-block; min-width: 1.2em; font-size: 9px; text-align: center; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.pager .range { font-variant-numeric: tabular-nums; }
+.chip:disabled { opacity: 0.4; cursor: default; }
 /* The task text is the column that gives: it is prose and wraps cleanly,
    while a branch name broken mid-word is a branch name nobody can read. */
 td.task-text { min-width: 10em; }

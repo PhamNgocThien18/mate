@@ -334,6 +334,9 @@
   var data = null;             // the current page's body
   var lastEventID = 0;
   var filter = "open";         // the task table's state filter
+  var NEWEST_FIRST = { key: "started", dir: "desc" };
+  var taskSort = NEWEST_FIRST; // the task table's sort column, {key, dir}
+  var taskPage = 0;            // the task table's page, from 0
   var expanded = Object.create(null);   // turn id -> true
   var turnCache = Object.create(null);  // turn id -> body | {error}
   var mateVisibleExchanges = 20;
@@ -659,7 +662,7 @@
     chips.forEach(function (c) {
       var pressed = filter === c.key;
       var b = el("button", { class: "chip", type: "button", "aria-pressed": pressed ? "true" : "false",
-        onclick: function () { filter = c.key; draw(); } });
+        onclick: function () { filter = c.key; taskPage = 0; draw(); } });
       if (c.state !== undefined) {
         var info = stateInfo(c.state);
         b.appendChild(el("span", { class: "glyph", "aria-hidden": "true",
@@ -683,17 +686,78 @@
     return tasks;
   }
 
-  var TASK_COLUMNS = ["id", "task", "state", "age", "tokens", "cost", "asked", "waited", "branch"];
+  // The task table's columns, each sorted by the value it shows. A number
+  // column sorts high first on its first click and a word column A first;
+  // a value the page does not know sorts last either way.
+  var TASK_COLUMNS = [
+    { key: "id", value: function (t) { return t.crew || null; } },
+    { key: "task", value: function (t) { return t.text || null; } },
+    { key: "state", value: function (t) { return stateInfo(t.state).word; } },
+    { key: "started", numeric: true, value: function (t) { return timestamp(t.spawned_at); } },
+    { key: "took", numeric: true, value: function (t) { return t.age_ms; } },
+    { key: "tokens", numeric: true, value: function (t) { return t.tokens ? t.tokens.total : null; } },
+    { key: "cost", numeric: true, value: function (t) { return t.cost; } },
+    { key: "asked", numeric: true, value: function (t) { return t.question_count || 0; } },
+    { key: "waited", numeric: true, value: function (t) { return t.waited_ms || 0; } },
+    { key: "branch", value: function (t) { return t.branch || null; } }
+  ];
+  var TASK_PAGE_SIZE = 25;
+
+  function sortTasksBy(col) {
+    var on = taskSort.key === col.key;
+    taskSort = { key: col.key, dir: on ? (taskSort.dir === "asc" ? "desc" : "asc") : (col.numeric ? "desc" : "asc") };
+    taskPage = 0;
+    draw();
+  }
+
+  // sortedTasks orders the rows by the chosen column. Ties keep the
+  // server's order.
+  function sortedTasks(rows) {
+    var col = TASK_COLUMNS.filter(function (c) { return c.key === taskSort.key; })[0];
+    var dir = taskSort.dir === "asc" ? 1 : -1;
+    var keyed = rows.map(function (t, i) { return { t: t, i: i, v: col.value(t) }; });
+    keyed.sort(function (a, b) {
+      if (a.v == null || b.v == null) return a.v == null && b.v == null ? a.i - b.i : a.v == null ? 1 : -1;
+      var c = typeof a.v === "string" ? a.v.localeCompare(b.v) : a.v - b.v;
+      return c * dir || a.i - b.i;
+    });
+    return keyed.map(function (k) { return k.t; });
+  }
+
+  function taskHead(c) {
+    var on = taskSort.key === c.key;
+    var asc = on && taskSort.dir === "asc";
+    return el("th", { class: c.numeric ? "n" : null, "aria-sort": on ? (asc ? "ascending" : "descending") : null }, [
+      el("button", { class: "sort", type: "button", "data-sort": c.key, "data-focus": "task-sort:" + c.key,
+        onclick: function () { sortTasksBy(c); } }, [
+        txt(c.key),
+        el("span", { class: "arrow", "aria-hidden": "true", text: on ? (asc ? "▲" : "▼") : "" })
+      ])
+    ]);
+  }
+
+  function taskPager(page, pages, from, to, total) {
+    var go = function (n) { return function () { taskPage = n; draw(); }; };
+    return el("nav", { class: "pager", "aria-label": "task pages" }, [
+      el("button", { class: "chip", type: "button", "data-page": "prev", "data-focus": "task-page:prev",
+        disabled: page === 0, onclick: go(page - 1) }, "‹ prev"),
+      el("span", { class: "range", text: from + "–" + to + " of " + total }),
+      el("button", { class: "chip", type: "button", "data-page": "next", "data-focus": "task-page:next",
+        disabled: page >= pages - 1, onclick: go(page + 1) }, "next ›")
+    ]);
+  }
 
   function taskTable(project, tasks) {
-    var rows = filteredTasks(tasks);
-    if (!rows.length) {
+    var all = sortedTasks(filteredTasks(tasks));
+    if (!all.length) {
       return el("p", { class: "empty", text: "no task matches this filter" });
     }
-    var thead = el("thead", {}, [el("tr", {}, TASK_COLUMNS.map(function (c) {
-      var numeric = c === "age" || c === "tokens" || c === "cost" || c === "asked" || c === "waited";
-      return el("th", { class: numeric ? "n" : null, text: c });
-    }))]);
+    // A poll can shrink the list under the page the reader is on.
+    var pages = Math.ceil(all.length / TASK_PAGE_SIZE);
+    taskPage = Math.max(0, Math.min(taskPage, pages - 1));
+    var start = taskPage * TASK_PAGE_SIZE;
+    var rows = all.slice(start, start + TASK_PAGE_SIZE);
+    var thead = el("thead", {}, [el("tr", {}, TASK_COLUMNS.map(taskHead))]);
     var tbody = el("tbody");
     rows.forEach(function (t) {
       var href = link("/p/" + encodeURIComponent(project) + "/t/" + encodeURIComponent(t.crew));
@@ -709,7 +773,8 @@
         stateSpan(t.state),
         t.closed ? el("span", { class: "muted", text: " · " + (t.close_state || "closed") }) : null
       ]));
-      tr.appendChild(el("td", { "data-label": "age", class: "n", title: t.spawned_at || "", text: fmtMs(t.age_ms) }));
+      tr.appendChild(el("td", { "data-label": "started", class: "n", title: day(t.spawned_at), text: shortDay(t.spawned_at) || "?" }));
+      tr.appendChild(tookCell(t));
       tr.appendChild(el("td", { "data-label": "tokens", class: "n", text: fmtTokens(t.tokens && t.tokens.total) }));
       tr.appendChild(el("td", { "data-label": "cost", class: "n", text: fmtCost(t.cost) }));
       tr.appendChild(el("td", { "data-label": "asked", class: "n", text: String(t.question_count || 0) }));
@@ -717,7 +782,30 @@
       tr.appendChild(el("td", { "data-label": "branch", class: "mono branch", text: t.branch || "–" }));
       tbody.appendChild(tr);
     });
-    return el("div", { class: "table-wrap" }, [el("table", {}, [thead, tbody])]);
+    var table = el("div", { class: "table-wrap" }, [el("table", {}, [thead, tbody])]);
+    if (pages < 2) return table;
+    return el("div", {}, [table, taskPager(taskPage, pages, start + 1, start + rows.length, all.length)]);
+  }
+
+  // shortDay is a spawn time small enough for a table column: the clock
+  // alone today, the month and day before it otherwise.
+  function shortDay(ts) {
+    var d = ts ? new Date(ts) : null;
+    if (!d || isNaN(d.getTime())) return "";
+    var hm = pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return d.toDateString() === new Date(Date.now()).toDateString() ? hm : pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hm;
+  }
+
+  // tookCell is how long the task lived: spawn to close for a closed task,
+  // spawn to now, counting, for an open one.
+  function tookCell(t) {
+    if (t.closed) {
+      return el("td", { "data-label": "took", class: "n", title: day(t.spawned_at) + " → " + day(t.closed_at), text: fmtMs(t.age_ms) });
+    }
+    return el("td", { "data-label": "took", class: "n", title: "still running · spawned " + day(t.spawned_at) }, [
+      el("span", { class: "muted", text: "running " }),
+      el("span", { "data-elapsed-start": t.spawned_at || null, text: fmtMs(t.age_ms) })
+    ]);
   }
 
   function inboxList(body) {
@@ -1514,7 +1602,11 @@
       task().reset();
       trace().reset();
     }
-    if (next.tier !== route.tier || next.project !== route.project) filter = "open";
+    if (next.tier !== route.tier || next.project !== route.project) {
+      filter = "open";
+      taskSort = NEWEST_FIRST;
+      taskPage = 0;
+    }
     route = next;
     revealUsage = !!next.usage;
     // /usage is the trace tab, scrolled to the header the two tabs share.

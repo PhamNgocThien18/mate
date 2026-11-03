@@ -9,8 +9,9 @@ import (
 )
 
 // TestAdminUIBehaviour runs the admin page's node tests against app.js and
-// task.js: ui_observability_test.cjs for the Trace tab and
-// ui_journey_test.cjs for the Journey tab (docs/design/task-page.md). As
+// task.js: ui_observability_test.cjs for the Trace tab,
+// ui_journey_test.cjs for the Journey tab (docs/design/task-page.md) and
+// ui_tasks_test.cjs for the project page's task table. As
 // with TestOfficeBehaviour, node is not a dependency of this repository, so
 // the subtests are skipped where it is absent rather than failing the build.
 func TestAdminUIBehaviour(t *testing.T) {
@@ -19,7 +20,7 @@ func TestAdminUIBehaviour(t *testing.T) {
 		t.Log("no node on PATH, so the admin UI node tests are not run here")
 		return
 	}
-	for _, file := range []string{"ui_observability_test.cjs", "ui_journey_test.cjs"} {
+	for _, file := range []string{"ui_observability_test.cjs", "ui_journey_test.cjs", "ui_tasks_test.cjs"} {
 		t.Run(file, func(t *testing.T) {
 			cmd := exec.Command(node, "--test", "--test-timeout=30000", path.Join(".", file))
 			cmd.Env = append(os.Environ(), "TZ=UTC")
