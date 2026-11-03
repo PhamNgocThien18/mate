@@ -962,11 +962,11 @@ test("a crew drawer can copy the crew's id even when the clipboard is out of rea
 
 test("a read-only dashboard says so in a band under the top bar", async () => {
   const app = await boot();
-  const band = app.root.querySelector(".bn.ro");
+  const band = app.root.querySelector(".band.ro");
   assert.ok(band, "the band is drawn");
   assert.match(band.textContent, /read-only/);
   const acting = await boot({ actions: SHOP_ACTIONS });
-  assert.equal(acting.root.querySelector(".bn.ro"), null, "a dashboard that can act draws no band");
+  assert.equal(acting.root.querySelector(".band.ro"), null, "a dashboard that can act draws no band");
 });
 
 test("the Mate drawer's Talk tab is the conversation: the captain's messages and the Mate's replies, the last one open", async () => {
