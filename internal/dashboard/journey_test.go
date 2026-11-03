@@ -87,11 +87,17 @@ func TestCheckWorkflowTicksStepsFromTheRecording(t *testing.T) {
 		{Step: "learning line", Handback: `^- Learning:`},
 		{Step: "bad", Command: `(`},
 	}
-	got := checkWorkflow(steps, p, fixtureHandback, []string{"ios/Sources/NoteEditorView.swift", "docs/x.md"})
+	got := checkWorkflow(steps, p, fixtureHandback, []string{"ios/Sources/NoteEditorView.swift", "docs/x.md"}, "2026-10-30T17:59:00Z")
+	if got[4].Rule != `loads a skill matching ^ios-ui-verify$; only when a changed file matches \.swift$` {
+		t.Errorf("rule = %q", got[4].Rule)
+	}
+	for i := range got {
+		got[i].Rule = ""
+	}
 	want := []WorkflowCheck{
 		{Step: "read mate.md", State: WorkflowDone, Evidence: "cat docs/harness/mate.md | head -40", At: "2026-10-30T18:02:15Z"},
 		{Step: "gate", State: WorkflowDone, Evidence: "cd x; make pre-merge E=E2", At: "2026-10-30T18:09:31Z"},
-		{Step: "shot", State: WorkflowMissed},
+		{Step: "shot", State: WorkflowMissed, Evidence: "nothing matches in: 3 commands the crew ran"},
 		{Step: "learn", State: WorkflowDone, Evidence: "/repo/docs/harness/workflows/learn.md", At: "2026-10-30T18:14:00Z"},
 		{Step: "verify ui", State: WorkflowDone, Evidence: "skill ios-ui-verify", At: "2026-10-30T18:12:00Z"},
 		{Step: "verify android", State: WorkflowNA, Evidence: `no changed file matches \.kt$`},
@@ -111,9 +117,53 @@ func TestCheckWorkflowTicksStepsFromTheRecording(t *testing.T) {
 
 	// Without the changed files a step with `files` that was not taken is
 	// unknown, not missed and not n/a; a step taken anyway is still done.
-	got = checkWorkflow(steps[4:6], p, "", nil)
+	got = checkWorkflow(steps[4:6], p, "", nil, "")
 	if got[0].State != WorkflowDone || got[1].State != WorkflowUnknown {
 		t.Errorf("without changed files: %+v", got)
+	}
+}
+
+// A task that started before the repo asked for a step has it as n/a; a
+// step whose evidence was never recorded is unknown, not missed; a missed
+// step names every source it was looked for in.
+func TestCheckWorkflowSinceAndUnrecordedEvidence(t *testing.T) {
+	steps := []store.WorkflowStep{
+		{Step: "gate plan", Command: `make gate-plan`, Since: "2026-10-28"},
+		{Step: "pre-merge", Command: `^make pre-merge`, Since: "2026-10-20"},
+		{Step: "learning", Handback: `Learning:`},
+		{Step: "verify", Skill: `ios-ui-verify`, Handback: `verified`},
+		{Step: "bad since", Command: `x`, Since: "last week"},
+	}
+	// Bash calls are recorded as their JSON input; an anchored pattern
+	// still sees the command line, and so does the evidence.
+	recorded := diagnostics.Performance{Executions: []diagnostics.Execution{{ID: "1", Tool: "Bash", Command: `{"command":"make pre-merge E=E1","description":"gate"}`, StartedAt: "2026-10-23T17:30:00Z"}}}
+	got := checkWorkflow(steps, recorded, "", nil, "2026-10-23T17:21:51Z")
+	want := []struct{ state, evidence string }{
+		{WorkflowNA, "added to the workflow on 2026-10-28, after this task started"},
+		{WorkflowDone, "make pre-merge E=E1"},
+		{WorkflowUnknown, "no hand-back to check"},
+		{WorkflowMissed, "nothing matches in: 0 skills it loaded"},
+		{WorkflowUnknown, "bad pattern · since: last week is not a date"},
+	}
+	for i, w := range want {
+		if got[i].State != w.state || got[i].Evidence != w.evidence {
+			t.Errorf("%s: got %s %q, want %s %q", steps[i].Step, got[i].State, got[i].Evidence, w.state, w.evidence)
+		}
+	}
+	if got[0].Rule != "runs a command matching make gate-plan; asked since 2026-10-28" {
+		t.Errorf("rule = %q", got[0].Rule)
+	}
+
+	got = checkWorkflow(steps[1:4], diagnostics.Performance{}, "Closes HU-36\n", nil, "")
+	want = []struct{ state, evidence string }{
+		{WorkflowUnknown, "no command recorded to check"},
+		{WorkflowMissed, "nothing matches in: its hand-back"},
+		{WorkflowMissed, "nothing matches in: its hand-back"},
+	}
+	for i, w := range want {
+		if got[i].State != w.state || got[i].Evidence != w.evidence {
+			t.Errorf("unrecorded %s: got %s %q, want %s %q", steps[i+1].Step, got[i].State, got[i].Evidence, w.state, w.evidence)
+		}
 	}
 }
 

@@ -65,7 +65,9 @@ type ProjectConfig struct {
 // read (a file tool's target, or a command naming the path), Skill against
 // a skill it loaded, Handback against a line of its hand-back. Files, when
 // set, says which changed files make the step apply at all: a crew whose
-// diff matches none of them has the step as "n/a", not "missed".
+// diff matches none of them has the step as "n/a", not "missed". Since,
+// when set, is the day the repo started asking for the step (2026-10-28,
+// or an RFC 3339 time): a task spawned before it has the step as "n/a".
 type WorkflowStep struct {
 	Step     string `yaml:"step"`
 	Command  string `yaml:"command,omitempty"`
@@ -73,6 +75,7 @@ type WorkflowStep struct {
 	Skill    string `yaml:"skill,omitempty"`
 	Handback string `yaml:"handback,omitempty"`
 	Files    string `yaml:"files,omitempty"`
+	Since    string `yaml:"since,omitempty"`
 }
 
 // The values of ProjectConfig.Review.

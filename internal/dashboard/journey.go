@@ -5,8 +5,10 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief"
 	"github.com/nguyenngocanh94/mate/internal/diagnostics"
@@ -109,14 +111,18 @@ type JourneyIncident struct {
 // WorkflowCheck is one declared step and whether the crew took it.
 type WorkflowCheck struct {
 	Step string `json:"step"`
-	// State is "done", "missed", "n/a" (the step's `files` matched nothing
-	// the crew changed) or "unknown" (the pattern is bad, or `files` could
-	// not be checked because the changed files are unknown).
+	// State is "done", "missed" (looked for and not found), "n/a" (the
+	// step's `files` matched nothing the crew changed, or the repo added
+	// the step after the task started) or "unknown" (the pattern is bad,
+	// nothing the step reads was recorded, or `files` could not be checked
+	// because the changed files are unknown).
 	State string `json:"state"`
 	// Evidence is the command, path, skill or hand-back line that matched,
 	// or why the state is not known.
 	Evidence string `json:"evidence,omitempty"`
 	At       string `json:"at,omitempty"`
+	// Rule is what would have ticked the step, built from its patterns.
+	Rule string `json:"rule"`
 }
 
 const (
@@ -190,7 +196,7 @@ func (s *Server) journey(ctx context.Context, project, crew string, ledger Task,
 		missing("changed files")
 	}
 	if cfgErr == nil && len(cfg.Workflow) > 0 {
-		out.Workflow = checkWorkflow(cfg.Workflow, performance, handback, out.ChangedFiles)
+		out.Workflow = checkWorkflow(cfg.Workflow, performance, handback, out.ChangedFiles, ledger.SpawnedAt)
 	}
 	return out
 }
@@ -350,12 +356,18 @@ func tableCells(line string) []string {
 
 // checkWorkflow ticks each declared step from the recording: `command`
 // against the commands the crew ran, `read` against the paths it read (a
-// file tool's target or a shell command naming the path), `skill` against
+// file tool's target or a shell command naming the path; a command is
+// matched as its command line, not the tool's JSON input), `skill` against
 // the skills it loaded, `handback` against the hand-back's lines. A step
 // with `files` applies only when the crew's changed files match it: n/a
 // when they do not, unknown when they could not be read and the step was
-// not taken anyway. A bad pattern is unknown and says so.
-func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handback string, changed []string) []WorkflowCheck {
+// not taken anyway. A step the repo added after the task started (`since`)
+// is n/a: the crew could not have been asked for it. A step not taken
+// whose evidence was never recorded (no commands, no hand-back) is
+// unknown, and a missed step says where it was looked for. A bad pattern
+// is unknown and says so. Every check carries its Rule, so the page can
+// say what would have counted.
+func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handback string, changed []string, started string) []WorkflowCheck {
 	out := make([]WorkflowCheck, 0, len(steps))
 	execs := make([]diagnostics.Execution, 0, len(p.Executions))
 	for _, e := range p.Executions {
@@ -365,8 +377,15 @@ func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handba
 		execs = append(execs, e)
 	}
 	sort.SliceStable(execs, func(i, j int) bool { return execs[i].StartedAt < execs[j].StartedAt })
+	// A Bash call is recorded as its JSON input; patterns are written
+	// against the command line, so `^make shot` must see "make shot …".
+	commands := make([]string, len(execs))
+	for i, e := range execs {
+		commands[i] = diagnostics.ShellCommand(e)
+	}
+	startedAt, startedOK := parseWhen(started)
 	for _, step := range steps {
-		check := WorkflowCheck{Step: step.Step, State: WorkflowMissed}
+		check := WorkflowCheck{Step: step.Step, State: WorkflowMissed, Rule: workflowRule(step)}
 		patterns := []struct{ field, pattern string }{{"command", step.Command}, {"read", step.Read}, {"skill", step.Skill}, {"handback", step.Handback}, {"files", step.Files}}
 		bad := ""
 		compiled := map[string]*regexp.Regexp{}
@@ -381,27 +400,36 @@ func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handba
 			}
 			compiled[pt.field] = re
 		}
+		since, sinceOK := parseWhen(step.Since)
+		if bad == "" && step.Since != "" && !sinceOK {
+			bad = "since: " + step.Since + " is not a date"
+		}
 		if bad != "" {
 			check.State, check.Evidence = WorkflowUnknown, "bad pattern · "+bad
 			out = append(out, check)
 			continue
 		}
+		if step.Since != "" && startedOK && startedAt.Before(since) {
+			check.State, check.Evidence = WorkflowNA, "added to the workflow on "+step.Since+", after this task started"
+			out = append(out, check)
+			continue
+		}
 		if re := compiled["command"]; re != nil {
-			for _, e := range execs {
-				if loc := re.FindStringIndex(e.Command); loc != nil {
-					check.State, check.Evidence, check.At = WorkflowDone, excerptAround(e.Command, loc[0]), e.StartedAt
+			for i, e := range execs {
+				if loc := re.FindStringIndex(commands[i]); loc != nil {
+					check.State, check.Evidence, check.At = WorkflowDone, excerptAround(commands[i], loc[0]), e.StartedAt
 					break
 				}
 			}
 		}
 		if re := compiled["read"]; re != nil && check.State != WorkflowDone {
-			for _, e := range execs {
+			for i, e := range execs {
 				if e.Target != "" && re.MatchString(e.Target) {
 					check.State, check.Evidence, check.At = WorkflowDone, e.Target, e.StartedAt
 					break
 				}
-				if loc := re.FindStringIndex(e.Command); loc != nil {
-					check.State, check.Evidence, check.At = WorkflowDone, excerptAround(e.Command, loc[0]), e.StartedAt
+				if loc := re.FindStringIndex(commands[i]); loc != nil {
+					check.State, check.Evidence, check.At = WorkflowDone, excerptAround(commands[i], loc[0]), e.StartedAt
 					break
 				}
 			}
@@ -425,6 +453,9 @@ func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handba
 				}
 			}
 		}
+		if check.State == WorkflowMissed {
+			check.State, check.Evidence = missedWhy(compiled, len(execs), len(p.Skills), handback != "")
+		}
 		if re := compiled["files"]; re != nil {
 			switch {
 			case changed == nil && check.State != WorkflowDone:
@@ -445,6 +476,82 @@ func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handba
 		out = append(out, check)
 	}
 	return out
+}
+
+// workflowRule is what would have ticked a step, as what the crew does:
+// the page reads it after "counts when the crew".
+func workflowRule(step store.WorkflowStep) string {
+	var any []string
+	if step.Command != "" {
+		any = append(any, "runs a command matching "+step.Command)
+	}
+	if step.Read != "" {
+		any = append(any, "reads a file matching "+step.Read)
+	}
+	if step.Skill != "" {
+		any = append(any, "loads a skill matching "+step.Skill)
+	}
+	if step.Handback != "" {
+		any = append(any, "writes a hand-back line matching "+step.Handback)
+	}
+	rule := strings.Join(any, ", or ")
+	if step.Files != "" {
+		rule += "; only when a changed file matches " + step.Files
+	}
+	if step.Since != "" {
+		rule += "; asked since " + step.Since
+	}
+	return rule
+}
+
+// missedWhy is a step no evidence ticked: missed, with where it was
+// looked for, when something was there to look in; unknown when every
+// source the step reads was never recorded.
+func missedWhy(compiled map[string]*regexp.Regexp, execs, skills int, haveHandback bool) (string, string) {
+	var looked, absent []string
+	if compiled["command"] != nil || compiled["read"] != nil {
+		if execs > 0 {
+			looked = append(looked, countWord(execs, "command")+" the crew ran")
+		} else {
+			absent = append(absent, "no command recorded")
+		}
+	}
+	if compiled["skill"] != nil {
+		if execs > 0 || skills > 0 {
+			looked = append(looked, countWord(skills, "skill")+" it loaded")
+		} else {
+			absent = append(absent, "no skill recorded")
+		}
+	}
+	if compiled["handback"] != nil {
+		if haveHandback {
+			looked = append(looked, "its hand-back")
+		} else {
+			absent = append(absent, "no hand-back")
+		}
+	}
+	if len(looked) == 0 {
+		return WorkflowUnknown, strings.Join(absent, ", ") + " to check"
+	}
+	return WorkflowMissed, "nothing matches in: " + strings.Join(looked, " · ")
+}
+
+func countWord(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return strconv.Itoa(n) + " " + word + "s"
+}
+
+// parseWhen reads a date (2026-10-28) or an RFC 3339 time.
+func parseWhen(s string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
 }
 
 // excerptAround is the piece of a command around the match: a long shell

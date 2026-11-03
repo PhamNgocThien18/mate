@@ -170,8 +170,11 @@ function mateTaskView(h) {
       stepsTable(body, j)
     ]));
     if (j.journey.workflow) out.appendChild(h.el("section", { class: "section", "aria-label": "The project's workflow" }, [
-      h.el("h2", {}, [h.txt("Repo workflow"), h.el("small", { text: "the steps project.yaml declares, ticked from what the crew ran, read and loaded" })]),
-      workflowTable(j.journey.workflow)
+      h.el("h2", {}, [h.txt("Repo workflow"), h.el("small", { text: "the steps this repo asks every crew to take" })]),
+      h.el("p", { class: "workflow-about muted", text: "The steps come from the workflow list in the project's project.yaml. Each one is ticked from the crew's recording: " +
+        "a command it ran, a file it read, a skill it loaded, or a line of its hand-back. Under each step is what would have counted." }),
+      workflowTable(j.journey.workflow),
+      workflowLegend()
     ]));
     out.appendChild(h.el("section", { class: "section", "aria-label": "The task at a glance" }, [
       h.el("h2", { text: "At a glance" }),
@@ -188,7 +191,8 @@ function mateTaskView(h) {
     table.appendChild(h.el("tr", {}, [h.el("th", { text: "step the repo asks for" }), h.el("th", { text: "crew" }), h.el("th", { text: "evidence" })]));
     checks.forEach(function (c) {
       table.appendChild(h.el("tr", { "data-workflow": c.state }, [
-        h.el("td", { class: "step", text: c.step }),
+        h.el("td", { class: "step" }, [h.el("span", { class: "what", text: c.step }),
+          c.rule ? h.el("span", { class: "sub rule", text: "counts when the crew " + c.rule }) : null]),
         h.el("td", { class: "st", "data-state": c.state }, [h.el("span", { class: "glyph", "aria-hidden": "true", text: WORKFLOW_GLYPH[c.state] || "?" }), h.txt(" " + c.state)]),
         h.el("td", { class: "ev" }, [c.at ? h.el("span", { class: "n num", text: h.clock(c.at) + " " }) : null, h.txt(c.evidence || "")])
       ]));
@@ -197,6 +201,20 @@ function mateTaskView(h) {
     var applicable = checks.filter(function (c) { return c.state === "done" || c.state === "missed"; }).length;
     table.appendChild(h.el("tr", { class: "total" }, [h.el("td", { text: "taken" }), h.el("td", { class: "st num", text: done + " / " + applicable }), h.el("td", { class: "ev muted", text: "of the steps that apply" })]));
     return table;
+  }
+
+  var WORKFLOW_MEANS = [
+    ["done", "found in the recording"],
+    ["missed", "looked for and not found"],
+    ["n/a", "does not apply to this task: no changed file it is about, or the repo added it after the task started"],
+    ["unknown", "could not be checked: nothing recorded to look in, or a bad pattern"]
+  ];
+
+  function workflowLegend() {
+    return h.el("ul", { class: "workflow-legend", "aria-label": "what the states mean" }, WORKFLOW_MEANS.map(function (m) {
+      return h.el("li", { "data-state": m[0] }, [h.el("span", { class: "glyph", "aria-hidden": "true", text: WORKFLOW_GLYPH[m[0]] }),
+        h.el("b", { text: " " + m[0] }), h.txt(": " + m[1])]);
+    }));
   }
 
   // journey builds the view-model once from the body: the time span, the

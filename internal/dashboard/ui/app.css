@@ -1027,6 +1027,12 @@ button.overview-stage:hover { border-color: var(--accent); color: var(--ink); }
 .journey-steps.workflow td.st[data-state="n/a"] .glyph, .journey-steps.workflow td.st[data-state="unknown"] .glyph { color: var(--muted); }
 .journey-steps td.st { white-space: nowrap; font-weight: 600; color: var(--ink); }
 .journey-steps td.ev { font-size: 12px; overflow-wrap: anywhere; }
+.journey-steps.workflow td.step .rule { font-family: var(--mono); font-size: 11px; }
+.workflow-about { margin: 0 0 10px; font-size: 13px; max-width: 70em; }
+.workflow-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.workflow-legend b { color: var(--ink-2); font-weight: 600; }
+.workflow-legend [data-state="done"] .glyph { color: var(--good); }
+.workflow-legend [data-state="missed"] .glyph { color: var(--critical); }
 .journey-steps tr.total td { color: var(--muted); border-bottom: 0; }
 .journey-steps.criteria tr[data-pass="false"] td.st { color: var(--critical); }
 .journey-details { margin-top: 4px; font-size: 12.5px; }
