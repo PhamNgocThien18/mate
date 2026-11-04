@@ -14,8 +14,8 @@ import (
 // Quitting during an in-flight action must not abandon it silently. q still
 // quits - it always has - but the context an ActionFunc runs under is a
 // cancellable child of the program's own (WithContext), and quitting while
-// actionBusy cancels it and records what was abandoned, which cmd/mate tells
-// the operator once the terminal is back.
+// it runs (actionMenu.busy) cancels it and records what was abandoned, which
+// cmd/mate tells the operator once the terminal is back.
 
 // blockingAction reports the context it was called with on started, then
 // blocks until release - a saga still running when the operator leaves.
@@ -40,8 +40,8 @@ func confirmAndRunStop(t *testing.T, action ActionFunc) (Model, tea.Cmd) {
 	m, _ = send(t, m, key("a"))
 	m, _ = send(t, m, key("x"))
 	m, cmd := send(t, m, key("x")) // confirmed; runAction's Cmd
-	if cmd == nil || !m.actionBusy {
-		t.Fatalf("confirmed stop did not start running: cmd=%v busy=%v", cmd != nil, m.actionBusy)
+	if cmd == nil || !m.actions.busy {
+		t.Fatalf("confirmed stop did not start running: cmd=%v busy=%v", cmd != nil, m.actions.busy)
 	}
 	return m, cmd
 }
@@ -116,8 +116,8 @@ func TestKeysOtherThanQuitWaitWhileAnActionRuns(t *testing.T) {
 	<-started
 	for _, k := range []string{"a", "x", "enter", "s", "m", "n"} {
 		next, c := send(t, m, key(k))
-		if c != nil || next.actions || next.confirm != nil || next.actionInputMode {
-			t.Fatalf("%q acted while an action was running: cmd=%v sheet=%v confirm=%v input=%v", k, c != nil, next.actions, next.confirm != nil, next.actionInputMode)
+		if c != nil || next.actions.open || next.actions.confirm != nil || next.actions.inputMode {
+			t.Fatalf("%q acted while an action was running: cmd=%v sheet=%v confirm=%v input=%v", k, c != nil, next.actions.open, next.actions.confirm != nil, next.actions.inputMode)
 		}
 		m = next
 	}
@@ -199,7 +199,7 @@ func TestRunningActionShowsElapsedTime(t *testing.T) {
 	if !strings.HasSuffix(m.msg.text, m.g.Ellipsis) {
 		t.Fatalf("initial running line = %q, want it unchanged until the first tick", m.msg.text)
 	}
-	m, _ = send(t, m, treeTickMsg{gen: m.treeGen, at: m.actionStartedAt.Add(12*time.Second + 400*time.Millisecond)})
+	m, _ = send(t, m, treeTickMsg{gen: m.treeGen, at: m.actions.startedAt.Add(12*time.Second + 400*time.Millisecond)})
 	if !strings.HasPrefix(m.msg.text, "12s "+m.g.Dot+" Running stop") {
 		t.Fatalf("running line after 12.4s = %q, want it to lead with the elapsed 12s", m.msg.text)
 	}
@@ -209,7 +209,7 @@ func TestRunningActionShowsElapsedTime(t *testing.T) {
 	close(release)
 	m, _ = send(t, m, <-result)
 	after := m.msg
-	m, _ = send(t, m, treeTickMsg{gen: m.treeGen, at: m.actionStartedAt.Add(time.Minute)})
+	m, _ = send(t, m, treeTickMsg{gen: m.treeGen, at: m.actions.startedAt.Add(time.Minute)})
 	if m.msg != after {
 		t.Fatalf("a tick after the action finished rewrote the line to %q", m.msg.text)
 	}

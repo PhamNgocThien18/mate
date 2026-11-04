@@ -131,7 +131,7 @@ func TestASnapshotLandingWhileAnActionRunsLeavesItRunning(t *testing.T) {
 	moved := sampleTree()
 	moved.Projects[0].Crews[1].Task = "Add idempotency-key index, rebased"
 	spy.tree = moved
-	m, next := send(t, m, treeTickMsg{gen: m.treeGen, at: m.actionStartedAt.Add(3*time.Second + 200*time.Millisecond)})
+	m, next := send(t, m, treeTickMsg{gen: m.treeGen, at: m.actions.startedAt.Add(3*time.Second + 200*time.Millisecond)})
 	runningAt3s := "3s " + m.g.Dot + " Running stop"
 	if !strings.HasPrefix(m.msg.text, runningAt3s) {
 		t.Fatalf("running line after the tick = %q, want it to lead with 3s", m.msg.text)
@@ -344,5 +344,143 @@ func TestASnapshotUnderTheHarnessPickerKeepsTheCursorAndReadsTheNewCatalog(t *te
 	_, _ = send(t, m, cmd())
 	if len(*got) != 1 || (*got)[0].Harness != query.HarnessKind("claude") {
 		t.Fatalf("requests = %+v, want one create carrying claude, the second row on screen", *got)
+	}
+}
+
+// ---------- the menu on its own ----------
+
+// The menu takes a key without a Model, and what it cannot do itself comes
+// back as an intent: a disabled entry asks nothing, a dangerous action opens
+// its confirmation, any other action asks to run, and an entry that is not
+// an action asks Model to carry it out on the row the sheet was built for.
+func TestTheMenuAsksTheConsoleForWhatItCannotDo(t *testing.T) {
+	r := row{kind: rowCrew, id: "crew_a"}
+	stop := actionChoice{action: ActionStop, enabled: true, dangerous: true, req: ActionRequest{Action: ActionStop, Crew: "crew_a"}}
+	diff := actionChoice{action: ActionDiff, enabled: true, req: ActionRequest{Action: ActionDiff, Crew: "crew_a"}}
+	sheet := actionMenu{}.openSheet(r, []menuEntry{
+		{key: "enter", label: "Show in next pane", kind: entryShow, enabled: true},
+		{key: "x", label: "Stop crew…", kind: entryAction, choice: stop, enabled: true},
+		{key: "p", label: "Repair binding…", kind: entryAction, reason: "no repair"},
+		{key: "d", label: "Diff", kind: entryAction, choice: diff, enabled: true},
+	})
+	press := func(a actionMenu, keys ...string) (actionMenu, menuIntent) {
+		var do menuIntent
+		for _, k := range keys {
+			a, do = a.update(key(k), menuFacts{})
+		}
+		return a, do
+	}
+
+	if a, do := press(sheet, "enter"); a.sheet() != sheetNone || do.entry == nil || do.entry.kind != entryShow || do.row != r || do.run != nil {
+		t.Fatalf("enter on show: sheet=%v intent=%+v, want the sheet closed and the show handed over for %+v", a.sheet(), do, r)
+	}
+	if a, do := press(sheet, "p"); a.sheet() != sheetActions || do != (menuIntent{}) {
+		t.Fatalf("p on a disabled entry: sheet=%v intent=%+v, want nothing", a.sheet(), do)
+	}
+	if a, do := press(sheet, "d"); a.sheet() != sheetNone || do.run == nil || *do.run != diff {
+		t.Fatalf("d: sheet=%v intent=%+v, want the sheet closed and the diff asked to run", a.sheet(), do)
+	}
+	a, do := press(sheet, "x")
+	if a.sheet() != sheetConfirm || do != (menuIntent{}) || a.confirm.key != "x" || a.confirm.label != "Stop crew…" {
+		t.Fatalf("x: sheet=%v intent=%+v confirm=%+v, want the stop's own confirmation and nothing run", a.sheet(), do, a.confirm)
+	}
+	if back, do := press(a, "esc"); back.sheet() != sheetActions || do != (menuIntent{}) {
+		t.Fatalf("esc on the confirmation: sheet=%v intent=%+v, want the sheet back", back.sheet(), do)
+	}
+	if cancelled, do := press(a, "enter"); cancelled.sheet() != sheetNone || do != (menuIntent{}) {
+		t.Fatalf("enter on the confirmation: sheet=%v intent=%+v, want it cancelled", cancelled.sheet(), do)
+	}
+	if ran, do := press(a, "x"); ran.sheet() != sheetNone || do.run == nil || *do.run != stop {
+		t.Fatalf("x on the confirmation: sheet=%v intent=%+v, want the stop asked to run", ran.sheet(), do)
+	}
+}
+
+// The menu keeps nothing of the tree: the picker's rows and the names a new
+// Project must not repeat are whatever the facts of the key say.
+func TestTheMenuReadsTheTreeOnlyFromItsFacts(t *testing.T) {
+	create := actionChoice{action: ActionOnboard, enabled: true, req: ActionRequest{Action: ActionOnboard, TargetKind: "project-mate"}}
+	claude, codex := query.HarnessKind("claude"), query.HarnessKind("codex")
+	picker := actionMenu{}.openPicker(create, 0)
+	if a, _ := picker.update(key("down"), menuFacts{harnesses: []query.HarnessKind{claude}}); a.harnessIndex != 0 {
+		t.Fatalf("down past the one harness listed moved the cursor to %d", a.harnessIndex)
+	}
+	picker, _ = picker.update(key("down"), menuFacts{harnesses: []query.HarnessKind{claude, codex}})
+	a, do := picker.update(key("enter"), menuFacts{harnesses: []query.HarnessKind{codex, claude}})
+	if a.sheet() != sheetNone || do.run == nil || do.run.req.Harness != claude {
+		t.Fatalf("enter on the second row: sheet=%v intent=%+v, want claude, the second row of these facts", a.sheet(), do)
+	}
+
+	form := actionMenu{}.openForm(actionChoice{action: ActionOnboard, enabled: true, req: ActionRequest{Action: ActionOnboard, TargetKind: "workspace"}})
+	for _, r := range "ledger" {
+		form, _ = form.update(key(string(r)), menuFacts{})
+	}
+	taken := menuFacts{projects: []query.ProjectNode{{ProjectID: "ledger", Name: "ledger"}}}
+	if a, do := form.update(key("enter"), taken); a.field != fieldName || do != (menuIntent{}) {
+		t.Fatalf("enter on a taken name: field=%v intent=%+v, want it refused in place", a.field, do)
+	}
+	form, do = form.update(key("enter"), menuFacts{})
+	if form.field != fieldRepo || do.note == nil || *do.note != (footerMsg{}) {
+		t.Fatalf("enter on a free name: field=%v intent=%+v, want the repo field and the line cleared", form.field, do)
+	}
+	if _, do = form.update(key("enter"), menuFacts{}); do.run == nil || do.run.req.Input != "ledger" || do.run.req.Repo != "" {
+		t.Fatalf("enter on an empty repo: intent=%+v, want an onboard of ledger with no repo", do)
+	}
+}
+
+// The running action is the menu's too: start hands back the Cmd that calls
+// the ActionFunc and closes done when it returns, the running line counts
+// from the start, finish ends it, and abandon cancels its context and names
+// it.
+func TestTheMenuRunsAndAbandonsItsAction(t *testing.T) {
+	diff := actionChoice{action: ActionDiff, enabled: true, req: ActionRequest{Action: ActionDiff, Target: "p", Crew: "crew_a"}}
+	var seen context.Context
+	a, run := actionMenu{}.start(diff, func(ctx context.Context, req ActionRequest) (string, error) {
+		seen = ctx
+		return "the patch", nil
+	}, context.Background())
+	if !a.busy || run == nil {
+		t.Fatalf("start: busy=%v cmd=%v, want an action running", a.busy, run != nil)
+	}
+	if line, ok := a.runningAt(a.startedAt.Add(2*time.Second), unicodeGlyphs); !ok || line.text != "2s · Running diff crew_a …" {
+		t.Fatalf("running line at 2s = %q (%v)", line.text, ok)
+	}
+	if done, ok := run().(actionDoneMsg); !ok || done.text != "the patch" || done.choice != diff {
+		t.Fatalf("the Cmd returned %#v, want the diff's actionDoneMsg", done)
+	}
+	select {
+	case <-a.done:
+	default:
+		t.Fatal("done is still open after the ActionFunc returned")
+	}
+	if seen == nil || seen.Err() != nil {
+		t.Fatal("the ActionFunc ran under no context, or a cancelled one")
+	}
+	if a = a.finish(); a.busy || a.cancel != nil {
+		t.Fatalf("finish left busy=%v cancel=%v", a.busy, a.cancel != nil)
+	}
+	if _, ok := a.runningAt(time.Now(), unicodeGlyphs); ok {
+		t.Fatal("a finished menu still has a running line")
+	}
+
+	started := make(chan context.Context, 1)
+	a, run = actionMenu{}.start(diff, func(ctx context.Context, _ ActionRequest) (string, error) {
+		started <- ctx
+		<-ctx.Done()
+		return "", ctx.Err()
+	}, context.Background())
+	go run()
+	ctx := <-started
+	if a = a.abandon(); a.abandoned != "diff crew_a" {
+		t.Fatalf("abandoned = %q, want the action's own name", a.abandoned)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("abandon did not cancel the running action's context")
+	}
+	select {
+	case <-a.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("done never closed after the abandoned action returned")
 	}
 }

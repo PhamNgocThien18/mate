@@ -208,13 +208,14 @@ func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) 
 		}
 	case sheetActions:
 		if wheel {
-			m.actionIndex = clampInt(m.actionIndex+delta, 0, max0(len(m.menu)-1))
+			m.actions = m.actions.scroll(delta)
 			return m, nil
 		}
 		top, _ := sl.body()
-		if i := y - top; i >= 0 && i < len(m.menu) {
-			m.actionIndex = i
-			return m.runEntry(i)
+		if i := y - top; i >= 0 && i < len(m.actions.entries) {
+			var do menuIntent
+			m.actions, do = m.actions.click(i)
+			return m.carryOut(do)
 		}
 	case sheetWork:
 		rows := m.workVisible()
@@ -234,15 +235,17 @@ func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) 
 			return m, nil
 		}
 	case sheetHarness:
+		f := m.menuFacts()
 		if wheel {
-			m.harnessIndex = clampInt(m.harnessIndex+delta, 0, len(m.harnessOrder())-1)
+			m.actions = m.actions.scrollPicker(delta, f)
 			return m, nil
 		}
 		// A click on a harness row is Enter on it, like every other row.
 		top, _ := sl.body()
-		if i := y - top; i >= 0 && i < len(m.harnessOrder()) {
-			m.harnessIndex = i
-			return m.onHarnessKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if i := y - top; i >= 0 && i < len(f.harnesses) {
+			var do menuIntent
+			m.actions, do = m.actions.clickPicker(i, f)
+			return m.carryOut(do)
 		}
 	}
 	return m, nil

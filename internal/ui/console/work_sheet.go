@@ -106,7 +106,7 @@ func (m Model) onWorkOpened(msg workOpenedMsg) (Model, tea.Cmd) {
 
 // openWorkSheet is the board of project in the console's own sheet.
 func (m Model) openWorkSheet(project string) Model {
-	m = m.closeActions()
+	m.actions = m.actions.closeSheets()
 	m.work = workSheet{open: true, project: project, expanded: map[int]bool{}}
 	m.msg = footerMsg{}
 	return m.relayout()

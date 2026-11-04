@@ -38,7 +38,7 @@ func toMergeableCrew(t *testing.T, m Model) Model {
 }
 
 func hasMerge(m Model) bool {
-	for _, e := range m.menu {
+	for _, e := range m.actions.entries {
 		if e.key == "M" || e.choice.action == ActionMerge {
 			return true
 		}
@@ -73,8 +73,8 @@ func TestMergeRunsOnlyOnAWaitMateCrew(t *testing.T) {
 				calls := 0
 				m.action = func(context.Context, ActionRequest) (string, error) { calls++; return "", nil }
 				m, cmd := send(t, m, key("M"))
-				if cmd != nil || calls != 0 || m.confirm != nil {
-					t.Fatalf("M on a %s crew acted: cmd=%v calls=%d confirm=%v", tc.status, cmd != nil, calls, m.confirm != nil)
+				if cmd != nil || calls != 0 || m.actions.confirm != nil {
+					t.Fatalf("M on a %s crew acted: cmd=%v calls=%d confirm=%v", tc.status, cmd != nil, calls, m.actions.confirm != nil)
 				}
 			}
 		})
@@ -108,7 +108,7 @@ func TestMergeNamesTheBranchesAndRunsOnlyOnItsOwnKey(t *testing.T) {
 		t.Fatalf("merge entry = %+v, want enabled and confirming", e)
 	}
 	// Walk the cursor onto it: the reader sees what it moves before asking.
-	for m.menu[m.actionIndex].key != "M" {
+	for m.actions.entries[m.actions.index].key != "M" {
 		m, _ = send(t, m, key("down"))
 	}
 	crew := sampleTree().Projects[0].Crews[1]
@@ -120,8 +120,8 @@ func TestMergeNamesTheBranchesAndRunsOnlyOnItsOwnKey(t *testing.T) {
 	}
 
 	m, cmd := send(t, m, key("enter"))
-	if cmd != nil || m.confirm == nil || len(*got) != 0 {
-		t.Fatalf("merge ran without a confirmation: cmd=%v confirm=%v calls=%d", cmd != nil, m.confirm != nil, len(*got))
+	if cmd != nil || m.actions.confirm == nil || len(*got) != 0 {
+		t.Fatalf("merge ran without a confirmation: cmd=%v confirm=%v calls=%d", cmd != nil, m.actions.confirm != nil, len(*got))
 	}
 	view := renderFrame(t, m)
 	for _, want := range []string{"merge?", "object", "scope", "effect", "M      merge"} {
@@ -158,12 +158,12 @@ func TestMergeCancelledFromTheConfirmationRunsNothing(t *testing.T) {
 			m = toMergeableCrew(t, m)
 			m, _ = send(t, m, key("a"))
 			m, _ = send(t, m, key("M"))
-			if m.confirm == nil {
+			if m.actions.confirm == nil {
 				t.Fatal("no confirmation to cancel")
 			}
 			m, cmd := send(t, m, key(cancel))
-			if cmd != nil || len(*got) != 0 || m.confirm != nil {
-				t.Fatalf("%s on the confirmation ran the merge or stayed: cmd=%v calls=%d confirm=%v", cancel, cmd != nil, len(*got), m.confirm != nil)
+			if cmd != nil || len(*got) != 0 || m.actions.confirm != nil {
+				t.Fatalf("%s on the confirmation ran the merge or stayed: cmd=%v calls=%d confirm=%v", cancel, cmd != nil, len(*got), m.actions.confirm != nil)
 			}
 		})
 	}

@@ -41,8 +41,8 @@ func actFillRepo(t *testing.T, m Model, path string) Model {
 	if cmd != nil {
 		t.Fatal("enter on the name dispatched before a repo was asked")
 	}
-	if m.actionField != fieldRepo {
-		t.Fatalf("enter on the name left the cursor on field %d, want the repo", m.actionField)
+	if m.actions.field != fieldRepo {
+		t.Fatalf("enter on the name left the cursor on field %d, want the repo", m.actions.field)
 	}
 	return actType(t, m, path)
 }
@@ -51,8 +51,8 @@ func TestNewProjectKeyOpensTheSheetDirectly(t *testing.T) {
 	for _, tree := range []query.Snapshot{actEmptyWorkspace(), sampleTree()} {
 		m := loaded(t, tree, nil)
 		m, cmd := send(t, m, key("n"))
-		if cmd != nil || !m.actionInputMode || m.actions {
-			t.Fatalf("n: cmd=%v input=%v sheet=%v, want the new-project sheet and no actions sheet", cmd != nil, m.actionInputMode, m.actions)
+		if cmd != nil || !m.actions.inputMode || m.actions.open {
+			t.Fatalf("n: cmd=%v input=%v sheet=%v, want the new-project sheet and no actions sheet", cmd != nil, m.actions.inputMode, m.actions.open)
 		}
 		view := renderFrame(t, m)
 		for _, want := range []string{"new project", "name", "repo · optional", "leave blank to add later", "no mate is started", "esc"} {
@@ -68,8 +68,8 @@ func TestNewProjectTypesANameAndDispatchesOnboardOnce(t *testing.T) {
 	m, _ = send(t, m, key("n"))
 	// The name has an n in it: once the sheet is open, n is a character.
 	m = actType(t, m, "payments-api")
-	if m.actionInput != "payments-api" {
-		t.Fatalf("typed name = %q, want payments-api", m.actionInput)
+	if m.actions.input != "payments-api" {
+		t.Fatalf("typed name = %q, want payments-api", m.actions.input)
 	}
 	if !strings.Contains(renderFrame(t, m), "create payments-api") {
 		t.Fatalf("the sheet does not say what Enter creates:\n%s", renderFrame(t, m))
@@ -99,11 +99,11 @@ func TestNewProjectEscapeClosesWithoutOpeningTheSheet(t *testing.T) {
 	if cmd != nil || len(*got) != 0 {
 		t.Fatalf("esc ran something: cmd=%v calls=%d", cmd != nil, len(*got))
 	}
-	if m.actionInputMode || m.actions {
-		t.Fatalf("esc left input=%v sheet=%v open", m.actionInputMode, m.actions)
+	if m.actions.inputMode || m.actions.open {
+		t.Fatalf("esc left input=%v sheet=%v open", m.actions.inputMode, m.actions.open)
 	}
-	if m.actionInput != "" {
-		t.Fatalf("esc kept the abandoned draft %q", m.actionInput)
+	if m.actions.input != "" {
+		t.Fatalf("esc kept the abandoned draft %q", m.actions.input)
 	}
 }
 
@@ -111,8 +111,8 @@ func TestNewProjectBelowTheWorkspaceIsARefusalThatStartsNothing(t *testing.T) {
 	m, got := actRunner(t, sampleTree(), "must not run", nil)
 	m, _ = send(t, m, key("enter")) // into the first Project
 	m, cmd := send(t, m, key("n"))
-	if cmd != nil || len(*got) != 0 || m.actionInputMode || m.actions {
-		t.Fatalf("n below the workspace acted: cmd=%v calls=%d input=%v sheet=%v", cmd != nil, len(*got), m.actionInputMode, m.actions)
+	if cmd != nil || len(*got) != 0 || m.actions.inputMode || m.actions.open {
+		t.Fatalf("n below the workspace acted: cmd=%v calls=%d input=%v sheet=%v", cmd != nil, len(*got), m.actions.inputMode, m.actions.open)
 	}
 	if m.msg.tone != toneError || !strings.Contains(m.msg.text, "nothing started") || !strings.Contains(m.msg.text, "workspace") {
 		t.Fatalf("refusal = %+v, want a refusal that says where a Project is created", m.msg)
@@ -126,8 +126,8 @@ func TestNewProjectHonoursTheSnapshotsOwnCapability(t *testing.T) {
 	tree.Actions = []query.ActionAvailability{{Action: "onboard", Available: false, Reason: "workspace record is unreadable"}}
 	m, got := actRunner(t, tree, "must not run", nil)
 	m, cmd := send(t, m, key("n"))
-	if cmd != nil || len(*got) != 0 || m.actionInputMode {
-		t.Fatalf("n opened or ran despite a refused capability: cmd=%v calls=%d input=%v", cmd != nil, len(*got), m.actionInputMode)
+	if cmd != nil || len(*got) != 0 || m.actions.inputMode {
+		t.Fatalf("n opened or ran despite a refused capability: cmd=%v calls=%d input=%v", cmd != nil, len(*got), m.actions.inputMode)
 	}
 	if m.msg.tone != toneError || !strings.Contains(m.msg.text, "workspace record is unreadable") {
 		t.Fatalf("refusal = %+v, want the snapshot's own reason", m.msg)
@@ -154,7 +154,7 @@ func TestWorkspaceNewProjectIsNotRefusedByASelectedProjectsOwnMate(t *testing.T)
 	}
 	m, _ = send(t, m, key("esc"))
 	m, _ = send(t, m, key("n"))
-	if !m.actionInputMode {
+	if !m.actions.inputMode {
 		t.Fatal("n was refused at a workspace whose selected Project already has a Mate")
 	}
 	m = actType(t, m, "ledger")
@@ -180,7 +180,7 @@ func TestNewProjectRefusesAnEmptyNameWithoutCallingTheService(t *testing.T) {
 	if m.msg.tone != toneError || !strings.Contains(m.msg.text, "project name is required") {
 		t.Fatalf("refusal = %+v", m.msg)
 	}
-	if !m.actionInputMode {
+	if !m.actions.inputMode {
 		t.Fatal("the refusal closed the sheet; there is nowhere left to type the name")
 	}
 }
@@ -197,8 +197,8 @@ func TestNewProjectNameCanContainQ(t *testing.T) {
 		}
 		m = next
 	}
-	if m.actionInput != "queue-sqlite" {
-		t.Fatalf("typed name = %q, want queue-sqlite", m.actionInput)
+	if m.actions.input != "queue-sqlite" {
+		t.Fatalf("typed name = %q, want queue-sqlite", m.actions.input)
 	}
 	if strings.Contains(renderFrame(t, m), "q quit") {
 		t.Fatalf("the frame offers q as quit while q types a character:\n%s", renderFrame(t, m))
@@ -255,14 +255,14 @@ func TestNewProjectFieldsAreEditedIndependently(t *testing.T) {
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m = actType(t, m, "ab")
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if m.actionInput != "led" || m.actionRepo != "a" {
-		t.Fatalf("fields = name %q repo %q, want led and a", m.actionInput, m.actionRepo)
+	if m.actions.input != "led" || m.actions.repo != "a" {
+		t.Fatalf("fields = name %q repo %q, want led and a", m.actions.input, m.actions.repo)
 	}
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if !m.actionInputMode || m.actionField != fieldName || m.actionInput != "led" {
+	if !m.actions.inputMode || m.actions.field != fieldName || m.actions.input != "led" {
 		t.Fatalf("backspace on an empty repo: input=%v field=%d name=%q, want back on the kept name",
-			m.actionInputMode, m.actionField, m.actionInput)
+			m.actions.inputMode, m.actions.field, m.actions.input)
 	}
 	// The field with the cursor is the one drawn with it.
 	view := renderFrame(t, m)
@@ -292,7 +292,7 @@ func TestNewProjectNameStopsAtItsLimit(t *testing.T) {
 	m := loaded(t, actEmptyWorkspace(), nil)
 	m, _ = send(t, m, key("n"))
 	m = actType(t, m, strings.Repeat("a", onboardNameLimit+3))
-	if n := len([]rune(m.actionInput)); n != onboardNameLimit {
+	if n := len([]rune(m.actions.input)); n != onboardNameLimit {
 		t.Fatalf("typed name length = %d, want the %d limit", n, onboardNameLimit)
 	}
 	if !strings.Contains(m.msg.text, "limit reached") {

@@ -32,7 +32,9 @@ func (m Model) diffBranch(crewID string) string {
 func (m Model) openDiff(crew, branch, text string) Model {
 	m.diff = diffFlow{open: true, crew: crew, branch: branch, text: text}
 	m.msg = footerMsg{}
-	m.actionAfterRead = nil
+	// The diff takes the message line: an earlier action's re-read must not
+	// put that action's outcome back under it.
+	m.actions, _ = m.actions.takeAfterRead()
 	return m
 }
 

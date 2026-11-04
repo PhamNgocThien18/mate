@@ -364,63 +364,17 @@ type Model struct {
 	// for the Console's run only, and it defaults to off - the box exists to
 	// show what somebody still has to decide on, and a filter a reader has to
 	// re-apply on every start is a filter that is not the default.
-	boxAll  bool
-	actions bool
-	// menu is the open actions sheet (menu.go).
-	menu []menuEntry
-	// actionRow is the row the menu was built for. It is kept because the
-	// sheet can be opened for a row the list's cursor is not on (the box's
-	// `o`), and the sheet's title names it.
-	actionRow       row
-	actionIndex     int
-	confirm         *actionConfirmation
-	actionInput     string
-	actionInputMode bool
-	// actionRepo is the new-project form's second field, the repository
-	// path; actionField is which of the two fields the keyboard types into.
-	actionRepo  string
-	actionField onboardField
-	// pendingChoice is the action the currently open sub-modal will run -
-	// the name input or the harness picker. It is kept here rather than read
-	// back off the menu cursor because 'n', 's' and 'h' all open a modal
-	// with no menu behind it at all.
-	pendingChoice actionChoice
-	// harnessPick is the two-entry claude/codex chooser. It is its own flag
-	// rather than a mode of the text input: one takes free text, the other a
-	// bounded choice, and only the second can be confirmed afterwards.
-	harnessPick  bool
-	harnessIndex int
-	actionBusy   bool
-	// actionRunningDesc names the in-flight action ("stop crew_xyz") for the
-	// one message that can still be shown if it is abandoned - see
-	// actionAbandoned and onKey's actionBusy branch.
-	actionRunningDesc string
-	// actionCancel cancels the context the in-flight ActionFunc is running
-	// under. Bubble Tea 1.2.4 cannot stop that goroutine itself (tea.go:
-	// "we'll have to leak the goroutine until Cmd returns"), so this is the
-	// one signal quitting mid-action can still send it.
-	actionCancel context.CancelFunc
-	// actionDone is closed when the in-flight ActionFunc returns, whether
-	// it finished or was cancelled. A quit mid-action hands it to cmd/mate
-	// (AbandonedActionDone) so the process waits for the action's own
-	// cleanup instead of exiting under it.
-	actionDone chan struct{}
+	boxAll bool
+	// actions is the action menu (action_menu.go, CON-174): the actions
+	// sheet, its confirmation, the new-project form, the harness picker,
+	// and the one action that may be running.
+	actions actionMenu
 	// clipboard is WithClipboard's writer; nil means y has nowhere to copy.
 	clipboard ClipboardFunc
-	// actionStartedAt is when the in-flight action began; the refresh tick
-	// shows the time since then on the running line (runningLine).
-	actionStartedAt time.Time
-	// actionAbandoned is set when the operator quits while actionBusy: the
-	// description of what was abandoned, surfaced to cmd/mate via
-	// AbandonedAction so it can tell the operator plainly after the
-	// terminal is restored, since the Console itself has nothing left to
-	// draw by then.
-	actionAbandoned string
 
-	msg             footerMsg
-	actionAfterRead *footerMsg
-	g               glyphSet
-	p               palette
+	msg footerMsg
+	g   glyphSet
+	p   palette
 
 	// TODO(task 18): the health tick chain and the workspace incident
 	// overlay lived on the Model here. mvp.md defers the observer that
@@ -508,17 +462,17 @@ func (m Model) baseCtx() context.Context {
 // tea.Program.Run returns and tells the operator plainly - the Console's own
 // screen is gone by then, so this is the one place left to say it.
 func (m Model) AbandonedAction() (string, bool) {
-	return m.actionAbandoned, m.actionAbandoned != ""
+	return m.actions.abandoned, m.actions.abandoned != ""
 }
 
 // AbandonedActionDone is closed once the abandoned action has returned -
 // after its context was cancelled and it has undone what it had started.
 // Nil when no action was abandoned.
 func (m Model) AbandonedActionDone() <-chan struct{} {
-	if m.actionAbandoned == "" {
+	if m.actions.abandoned == "" {
 		return nil
 	}
-	return m.actionDone
+	return m.actions.done
 }
 
 // New builds the initial Console model. load must be non-nil in

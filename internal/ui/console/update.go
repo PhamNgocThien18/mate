@@ -61,9 +61,9 @@ func (m Model) onTreeLoaded(msg treeLoadedMsg) Model {
 			// last successful load said until another one succeeds, so the
 			// header keeps saying so for exactly as long as that is true.
 			m.lastLoadErr = msg.err
-			if m.actionAfterRead != nil {
-				m.msg = *m.actionAfterRead
-				m.actionAfterRead = nil
+			var outcome *footerMsg
+			if m.actions, outcome = m.actions.takeAfterRead(); outcome != nil {
+				m.msg = *outcome
 				m.msg.text += " " + m.g.Dot + " snapshot re-read failed; r retries"
 				return m
 			}
@@ -122,8 +122,8 @@ func (m Model) onTreeTick(msg treeTickMsg) (Model, tea.Cmd) {
 	if msg.gen != m.treeGen {
 		return m, nil
 	}
-	if m.actionBusy && !m.actionStartedAt.IsZero() && !msg.at.IsZero() {
-		m.msg = m.runningLine(msg.at.Sub(m.actionStartedAt))
+	if line, ok := m.actions.runningAt(msg.at, m.g); ok {
+		m.msg = line
 	}
 	next := treeTickCmd(m.treeTickInterval(), m.treeGen)
 	if m.treeLoadInFlight {
@@ -133,33 +133,13 @@ func (m Model) onTreeTick(msg treeTickMsg) (Model, tea.Cmd) {
 	return m, tea.Batch(load, next)
 }
 
+// applyActionAfterRead puts the last action's outcome back on the message
+// line once the read it asked for has landed (actionMenu.takeAfterRead).
 func (m Model) applyActionAfterRead() Model {
-	if m.actionAfterRead == nil {
-		return m
+	var outcome *footerMsg
+	if m.actions, outcome = m.actions.takeAfterRead(); outcome != nil {
+		m.msg = *outcome
 	}
-	m.msg = *m.actionAfterRead
-	m.actionAfterRead = nil
-	return m
-}
-
-// onBusyQuit is what q/ctrl+c do while an action's ActionFunc is still
-// running (actionBusy): it cancels the context that action is running under
-// - the one signal available, since Bubble Tea leaks the goroutine rather
-// than stopping it - and records what was abandoned so cmd/mate can tell the
-// operator plainly once the terminal is back (see AbandonedAction). The
-// Console has nothing left to draw once tea.Quit takes effect, which is why
-// the message cannot just be m.msg: this is the one thing that survives
-// past View returning empty.
-func (m Model) onBusyQuit() Model {
-	if m.actionCancel != nil {
-		m.actionCancel()
-	}
-	desc := m.actionRunningDesc
-	if desc == "" {
-		desc = "an action"
-	}
-	m.actionAbandoned = desc
-	m.quitting = true
 	return m
 }
 

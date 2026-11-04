@@ -53,12 +53,12 @@ func bxCrewMenu(t *testing.T, tree query.Snapshot, act *bxAction) Model {
 
 func bxDiffEntry(t *testing.T, m Model) menuEntry {
 	t.Helper()
-	for _, e := range m.menu {
+	for _, e := range m.actions.entries {
 		if e.key == "d" {
 			return e
 		}
 	}
-	t.Fatalf("the crew's actions offer no diff: %+v", m.menu)
+	t.Fatalf("the crew's actions offer no diff: %+v", m.actions.entries)
 	return menuEntry{}
 }
 
@@ -177,8 +177,8 @@ func TestDiffSheetSwallowsTheKeysBehindIt(t *testing.T) {
 	for _, k := range []string{"a", "r", "tab", "m", "s", "n", "?"} {
 		m, _ = send(t, m, key(k))
 	}
-	if !m.diff.open || m.actions || m.actionInputMode || m.harnessPick || m.keysOpen {
-		t.Fatalf("a key behind the diff changed the surface: diff=%v actions=%v", m.diff.open, m.actions)
+	if !m.diff.open || m.actions.open || m.actions.inputMode || m.actions.harnessPick || m.keysOpen {
+		t.Fatalf("a key behind the diff changed the surface: diff=%v actions=%v", m.diff.open, m.actions.open)
 	}
 	if after, _ := m.selectedRow(); after != before {
 		t.Fatalf("selection moved behind the diff: %+v -> %+v", before, after)

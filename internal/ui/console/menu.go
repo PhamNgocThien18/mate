@@ -57,20 +57,20 @@ func (m Model) menuFor(r row, ok bool) []menuEntry {
 		return m.withNoticeEntry(r, []menuEntry{
 			m.showEntry(r),
 			m.startMateEntry(r),
-			m.choiceEntry("x", "Stop mate…", m.stopChoice(r)),
-			m.restartEntry(),
+			m.choiceEntry(r, "x", "Stop mate…", m.stopChoice(r)),
+			m.restartEntry(r),
 			m.modeEntry(m.currentProject().ProjectID),
-			m.clearComposerEntry(),
+			m.clearComposerEntry(r),
 			m.copyEntry(r),
 		})
 	case rowCrew:
 		return m.withNoticeEntry(r, []menuEntry{
 			m.showEntry(r),
-			m.choiceEntry("x", "Stop crew…", m.stopChoice(r)),
-			m.choiceEntry("p", "Repair binding…", m.repairChoice(r)),
-			m.choiceEntry("R", "Restart crew…", m.restartCrewChoice(r)),
+			m.choiceEntry(r, "x", "Stop crew…", m.stopChoice(r)),
+			m.choiceEntry(r, "p", "Repair binding…", m.repairChoice(r)),
+			m.choiceEntry(r, "R", "Restart crew…", m.restartCrewChoice(r)),
 			m.mergeEntry(r),
-			m.choiceEntry("d", "Diff", m.diffChoice(r)),
+			m.choiceEntry(r, "d", "Diff", m.diffChoice(r)),
 			m.copyEntry(r),
 		})
 	case rowProject:
@@ -80,7 +80,7 @@ func (m Model) menuFor(r row, ok bool) []menuEntry {
 			m.startMateEntry(r),
 			m.modeEntry(r.id),
 			m.newProjectEntry(),
-			m.choiceEntry("x", "Remove project…", m.removeProjectChoice(r)),
+			m.choiceEntry(r, "x", "Remove project…", m.removeProjectChoice(r)),
 		}
 	case rowCompletedGroup:
 		label := "Show completed"
@@ -100,12 +100,12 @@ func (m Model) menuFor(r row, ok bool) []menuEntry {
 	return nil
 }
 
-// choiceEntry wraps one of actions.go's choices, keeping its availability
-// and the query layer's override (actionChoicesForRow's rule).
-func (m Model) choiceEntry(key, label string, c actionChoice) menuEntry {
-	r, _ := m.selectedRow()
-	if m.actionRow.id != "" {
-		r = m.actionRow
+// choiceEntry wraps one of actions.go's choices for row r, keeping its
+// availability and the query layer's override (actionChoicesForRow's rule).
+// A row with no id stands for the selected one.
+func (m Model) choiceEntry(r row, key, label string, c actionChoice) menuEntry {
+	if r.id == "" {
+		r, _ = m.selectedRow()
 	}
 	if available, reason, found := m.actionCapability(r, c); found {
 		c.enabled = available
@@ -179,10 +179,10 @@ func (m Model) startMateEntry(r row) menuEntry {
 	return e
 }
 
-func (m Model) restartEntry() menuEntry {
+func (m Model) restartEntry(r row) menuEntry {
 	project := m.currentProject().ProjectID
 	c := restartMateChoice(project)
-	e := m.choiceEntry("R", "Restart mate…", c)
+	e := m.choiceEntry(r, "R", "Restart mate…", c)
 	if st := mateWord(m.currentProject().Mate); st != string(query.MateRunning) {
 		e.enabled, e.choice.enabled = false, false
 		e.reason = "not running"
@@ -191,8 +191,8 @@ func (m Model) restartEntry() menuEntry {
 	return e
 }
 
-func (m Model) clearComposerEntry() menuEntry {
-	e := m.choiceEntry("C", "Clear composer", clearComposerChoice(m.currentProject().ProjectID))
+func (m Model) clearComposerEntry(r row) menuEntry {
+	e := m.choiceEntry(r, "C", "Clear composer", clearComposerChoice(m.currentProject().ProjectID))
 	e.about = "Clears whatever is typed in the Mate's composer, so a queued line can reach it."
 	if st := mateWord(m.currentProject().Mate); st != string(query.MateRunning) {
 		e.enabled, e.choice.enabled = false, false
@@ -218,7 +218,7 @@ func (m Model) modeEntry(project string) menuEntry {
 
 func (m Model) mergeEntry(r row) menuEntry {
 	if c, ok := m.mergeChoice(r); ok {
-		return m.choiceEntry("M", "Merge…", c)
+		return m.choiceEntry(r, "M", "Merge…", c)
 	}
 	return menuEntry{key: "M", label: "Merge…", kind: entryAction, reason: "not waiting on merge",
 		about: "A crew can be merged once it reports wait-mate."}
@@ -272,109 +272,80 @@ func (m Model) rowCopyValue(r row) (string, bool) {
 // beginActions is `a`: the sheet for the selected row.
 func (m Model) beginActions() Model {
 	r, ok := m.selectedRow()
-	m = m.closeActions()
-	m.actionRow = r
-	m.menu = m.menuFor(r, ok)
-	if len(m.menu) == 0 {
+	m.actions = m.actions.openSheet(r, m.menuFor(r, ok))
+	if !m.actions.open {
 		return m
 	}
-	m.actions = true
 	m.msg = footerMsg{}
 	return m
 }
 
-// onMenuKey is a key while the actions sheet is open.
-func (m Model) onMenuKey(key string) (Model, tea.Cmd) {
-	switch key {
-	case "esc", "backspace":
-		return m.closeActions(), nil
-	case "up", "k":
-		m.actionIndex = clampInt(m.actionIndex-1, 0, len(m.menu)-1)
-		return m, nil
-	case "down", "j":
-		m.actionIndex = clampInt(m.actionIndex+1, 0, len(m.menu)-1)
-		return m, nil
-	case "enter":
-		return m.runEntry(m.actionIndex)
+// onMenuKey is a key while one of the action menu's sheets is open: the
+// menu takes it against the tree on screen, and Model carries out what it
+// asks.
+func (m Model) onMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	var do menuIntent
+	m.actions, do = m.actions.update(msg, m.menuFacts())
+	return m.carryOut(do)
+}
+
+// carryOut does what the action menu asked (menuIntent): put a note on the
+// message line, start an action, or carry out an entry of the actions
+// sheet.
+func (m Model) carryOut(do menuIntent) (Model, tea.Cmd) {
+	if do.note != nil {
+		m.msg = *do.note
 	}
-	for i, e := range m.menu {
-		if e.key == key {
-			m.actionIndex = i
-			return m.runEntry(i)
-		}
+	switch {
+	case do.run != nil:
+		return m.runAction(*do.run)
+	case do.entry != nil:
+		return m.carryOutEntry(*do.entry, do.row)
 	}
 	return m, nil
 }
 
-// runEntry runs one entry of the open sheet. An entry that cannot run does
-// nothing: its reason is already on the row.
-func (m Model) runEntry(i int) (Model, tea.Cmd) {
-	if i < 0 || i >= len(m.menu) {
-		return m, nil
-	}
-	e := m.menu[i]
-	if !e.enabled {
-		return m, nil
-	}
-	r := m.actionRow
+// carryOutEntry carries out an entry of the actions sheet that is not an
+// action, for row r: show it in the next pane, open it, copy its id, or
+// begin one of the flows that have a key of their own. The menu has closed
+// the sheet already.
+func (m Model) carryOutEntry(e menuEntry, r row) (Model, tea.Cmd) {
 	switch e.kind {
 	case entryShow:
-		m = m.closeActions()
 		return m.stageRow(r)
 	case entryOpen:
-		m = m.closeActions()
 		model, cmd := m.onEnter()
 		return model.(Model), cmd
 	case entryCopy:
-		m = m.closeActions()
 		id, _ := m.rowCopyValue(r)
 		return m.copyText(id)
 	case entryNewProject:
-		m = m.closeActions()
 		return m.beginNewProject(), nil
 	case entryStartMate:
-		m = m.closeActions()
 		return m.beginMateStart()
 	case entryMode:
 		project := m.currentProject().ProjectID
 		if r.kind == rowProject {
 			project = r.id
 		}
-		m = m.closeActions()
 		return m.beginModeToggle(project)
 	}
-	if e.confirms() {
-		key := e.key
-		if e.choice.confirmKey != "" {
-			key = e.choice.confirmKey
-		}
-		m.confirm = &actionConfirmation{choice: e.choice, key: key, label: e.label}
-		return m, nil
-	}
-	m = m.closeActions()
-	return m.runAction(e.choice)
+	return m, nil
 }
 
-// onConfirmKey is a key while the confirm sheet is open: Enter cancels,
-// the key that asked runs, Esc goes back to the actions (design G).
-func (m Model) onConfirmKey(key string) (Model, tea.Cmd) {
-	c := m.confirm
-	switch key {
-	case "enter":
-		return m.closeActions(), nil
-	case "esc", "backspace":
-		m.confirm = nil
-		if len(m.menu) == 0 {
-			return m.closeActions(), nil
-		}
-		return m, nil
+// menuFacts is what the action menu reads of the tree on screen, built
+// afresh for every key and every frame (see menuFacts).
+func (m Model) menuFacts() menuFacts {
+	return menuFacts{
+		g:         m.g,
+		harnesses: m.harnessOrder(),
+		catalog:   m.tree.Harnesses,
+		projects:  m.tree.Projects,
+		object:    m.actionObjectTitle(),
+		objectSub: m.confirmObjectSub(m.actions.row),
+		recorded:  m.recordedHarness(),
+		project:   m.currentProject().Name,
 	}
-	if key == c.key {
-		choice := c.choice
-		m = m.closeActions()
-		return m.runAction(choice)
-	}
-	return m, nil
 }
 
 // copyText writes text to the terminal's clipboard and says so.

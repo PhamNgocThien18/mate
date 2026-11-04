@@ -24,7 +24,7 @@ func TestNoticeIsOptInAndOpensAdvisoryWithoutChangingTree(t *testing.T) {
 		t.Fatal("notice disabled for live crew")
 	}
 	m, cmd := send(t, m, key("e"))
-	if cmd == nil || len(*calls) != 0 || m.confirm != nil {
+	if cmd == nil || len(*calls) != 0 || m.actions.confirm != nil {
 		t.Fatal("action must be queued once")
 	}
 	m, _ = send(t, m, cmd())
@@ -56,7 +56,7 @@ func TestNoticeOnMateAndFailure(t *testing.T) {
 	if len(*calls) != 1 || (*calls)[0].TargetKind != "mate" || (*calls)[0].Crew != "" {
 		t.Fatal("invalid Mate target")
 	}
-	if m.diff.open || m.actionBusy || !strings.Contains(m.msg.text, "Jev notice unavailable") {
+	if m.diff.open || m.actions.busy || !strings.Contains(m.msg.text, "Jev notice unavailable") {
 		t.Fatal("error left console busy or opened a result")
 	}
 	_ = renderFrame(t, m)

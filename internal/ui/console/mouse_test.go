@@ -196,8 +196,8 @@ func TestClicksAboveAnOpenSheetDoNothing(t *testing.T) {
 	m, _ = send(t, m, key("a"))
 	before := m.cur().sel
 	m, cmd := send(t, m, press(6, bxRowLine(t, m, 1)))
-	if cmd != nil || m.cur().sel != before || !m.actions || len(spy.calls) != 0 {
-		t.Fatalf("a click above the sheet acted: sel %d->%d actions=%v", before, m.cur().sel, m.actions)
+	if cmd != nil || m.cur().sel != before || !m.actions.open || len(spy.calls) != 0 {
+		t.Fatalf("a click above the sheet acted: sel %d->%d actions=%v", before, m.cur().sel, m.actions.open)
 	}
 }
 
@@ -242,7 +242,7 @@ func TestClickOnAHarnessRowPicksIt(t *testing.T) {
 	m, _ = send(t, m, m.Init()())
 	m, _ = send(t, m, key("enter")) // the project; its Mate row
 	m, _ = send(t, m, key("s"))     // create: the harness picker
-	if !m.harnessPick {
+	if !m.actions.harnessPick {
 		t.Fatal("setup: s did not open the harness picker")
 	}
 	sl, ok := m.plan().slot(slotSheet)

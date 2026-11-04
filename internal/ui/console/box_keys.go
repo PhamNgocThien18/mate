@@ -113,10 +113,7 @@ func (m Model) beginBoxActions() Model {
 		return m
 	}
 	r := row{kind: rowMate, id: mateRowID(m.currentProject().Mate)}
-	m = m.closeActions()
-	m.actionRow = r
-	m.menu = m.menuFor(r, true)
-	m.actions = len(m.menu) > 0
+	m.actions = m.actions.openSheet(r, m.menuFor(r, true))
 	return m
 }
 
@@ -133,7 +130,7 @@ func (m Model) beginBoxAssign(it boxItem) (Model, tea.Cmd) {
 		m.msg = errMsg("Assign refused: a " + string(it.e.Kind) + " entry holds no question " + m.g.Dot + " nothing was sent")
 		return m, nil
 	}
-	if m.actionBusy {
+	if m.actions.busy {
 		return m, nil
 	}
 	return m.runAction(boxAssignChoice(it.project, it.e))

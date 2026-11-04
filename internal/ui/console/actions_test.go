@@ -32,12 +32,12 @@ func actRunner(t *testing.T, tree query.Snapshot, reply string, err error) (Mode
 // actEntry is the open sheet's entry with key k.
 func actEntry(t *testing.T, m Model, k string) menuEntry {
 	t.Helper()
-	for _, e := range m.menu {
+	for _, e := range m.actions.entries {
 		if e.key == k {
 			return e
 		}
 	}
-	t.Fatalf("the actions sheet has no %q entry: %+v", k, m.menu)
+	t.Fatalf("the actions sheet has no %q entry: %+v", k, m.actions.entries)
 	return menuEntry{}
 }
 
@@ -49,12 +49,12 @@ func TestDangerousActionAsksBeforeTheRunnerAndEnterCancels(t *testing.T) {
 	m, got := actRunner(t, sampleTree(), "stop confirmed", nil)
 	m = toRunningAttempt(t, m)
 	m, _ = send(t, m, key("a"))
-	if !m.actions || actEntry(t, m, "x").label != "Stop crew…" {
-		t.Fatalf("a did not open the crew's sheet with its stop entry: %+v", m.menu)
+	if !m.actions.open || actEntry(t, m, "x").label != "Stop crew…" {
+		t.Fatalf("a did not open the crew's sheet with its stop entry: %+v", m.actions.entries)
 	}
 	m, cmd := send(t, m, key("x"))
-	if cmd != nil || m.confirm == nil || len(*got) != 0 {
-		t.Fatalf("x must open the confirmation without running: cmd=%v confirm=%v calls=%d", cmd != nil, m.confirm != nil, len(*got))
+	if cmd != nil || m.actions.confirm == nil || len(*got) != 0 {
+		t.Fatalf("x must open the confirmation without running: cmd=%v confirm=%v calls=%d", cmd != nil, m.actions.confirm != nil, len(*got))
 	}
 	view := renderFrame(t, m)
 	for _, want := range []string{"stop crew?", "object", "scope", "effect", "cancel", "x      stop crew", "worktree and branch"} {
@@ -64,8 +64,8 @@ func TestDangerousActionAsksBeforeTheRunnerAndEnterCancels(t *testing.T) {
 	}
 	// Enter is the safe default: it cancels.
 	m, cmd = send(t, m, key("enter"))
-	if cmd != nil || m.confirm != nil || len(*got) != 0 {
-		t.Fatalf("Enter on the confirmation ran or stayed: cmd=%v confirm=%v calls=%d", cmd != nil, m.confirm != nil, len(*got))
+	if cmd != nil || m.actions.confirm != nil || len(*got) != 0 {
+		t.Fatalf("Enter on the confirmation ran or stayed: cmd=%v confirm=%v calls=%d", cmd != nil, m.actions.confirm != nil, len(*got))
 	}
 
 	m, _ = send(t, m, key("a"))
@@ -94,23 +94,23 @@ func TestOnlyTheAskingKeyConfirmsAndEscGoesBackToTheSheet(t *testing.T) {
 	m, _ = send(t, m, key("a"))
 	// Arrows and Enter reach the same entry the key does.
 	m, _ = send(t, m, key("down"))
-	if m.menu[m.actionIndex].key != "x" {
-		t.Fatalf("second entry = %+v, want stop", m.menu[m.actionIndex])
+	if m.actions.entries[m.actions.index].key != "x" {
+		t.Fatalf("second entry = %+v, want stop", m.actions.entries[m.actions.index])
 	}
 	m, _ = send(t, m, key("enter"))
-	if m.confirm == nil || m.confirm.key != "x" {
-		t.Fatalf("Enter on stop did not ask with x: %+v", m.confirm)
+	if m.actions.confirm == nil || m.actions.confirm.key != "x" {
+		t.Fatalf("Enter on stop did not ask with x: %+v", m.actions.confirm)
 	}
 	for _, k := range []string{"y", "p", "s", "M"} {
 		var cmd tea.Cmd
 		m, cmd = send(t, m, key(k))
-		if cmd != nil || m.confirm == nil || len(*got) != 0 {
-			t.Fatalf("%q confirmed a stop that x asked for: cmd=%v confirm=%v calls=%d", k, cmd != nil, m.confirm != nil, len(*got))
+		if cmd != nil || m.actions.confirm == nil || len(*got) != 0 {
+			t.Fatalf("%q confirmed a stop that x asked for: cmd=%v confirm=%v calls=%d", k, cmd != nil, m.actions.confirm != nil, len(*got))
 		}
 	}
 	m, cmd := send(t, m, key("esc"))
-	if cmd != nil || m.confirm != nil || !m.actions || len(*got) != 0 {
-		t.Fatalf("Esc must return to the sheet: cmd=%v confirm=%v sheet=%v calls=%d", cmd != nil, m.confirm != nil, m.actions, len(*got))
+	if cmd != nil || m.actions.confirm != nil || !m.actions.open || len(*got) != 0 {
+		t.Fatalf("Esc must return to the sheet: cmd=%v confirm=%v sheet=%v calls=%d", cmd != nil, m.actions.confirm != nil, m.actions.open, len(*got))
 	}
 }
 
@@ -180,8 +180,8 @@ func TestWorkspaceNewProjectAddsAProjectWhenEmptyAndWhenNotEmpty(t *testing.T) {
 			for _, k := range tc.open {
 				m, cmd = send(t, m, key(k))
 			}
-			if cmd != nil || !m.actionInputMode {
-				t.Fatalf("new project must open the name field, not dispatch: cmd=%v input=%v", cmd != nil, m.actionInputMode)
+			if cmd != nil || !m.actions.inputMode {
+				t.Fatalf("new project must open the name field, not dispatch: cmd=%v input=%v", cmd != nil, m.actions.inputMode)
 			}
 			m = actType(t, m, "new-project")
 			m, _ = send(t, m, key("enter")) // on to the repo field
@@ -218,17 +218,17 @@ func TestUnavailableEntryStaysInPlaceAndDoesNotRun(t *testing.T) {
 	for _, k := range []string{"p"} {
 		var cmd tea.Cmd
 		m, cmd = send(t, m, key(k))
-		if cmd != nil || len(*got) != 0 || m.confirm != nil {
-			t.Fatalf("unavailable %s ran: cmd=%v calls=%d confirm=%v", k, cmd != nil, len(*got), m.confirm != nil)
+		if cmd != nil || len(*got) != 0 || m.actions.confirm != nil {
+			t.Fatalf("unavailable %s ran: cmd=%v calls=%d confirm=%v", k, cmd != nil, len(*got), m.actions.confirm != nil)
 		}
 	}
 	// Enter on it does nothing either.
-	for m.menu[m.actionIndex].key != "p" {
+	for m.actions.entries[m.actions.index].key != "p" {
 		m, _ = send(t, m, key("down"))
 	}
 	m, cmd := send(t, m, key("enter"))
-	if cmd != nil || len(*got) != 0 || m.confirm != nil || !m.actions {
-		t.Fatalf("Enter on a disabled entry acted: cmd=%v calls=%d confirm=%v sheet=%v", cmd != nil, len(*got), m.confirm != nil, m.actions)
+	if cmd != nil || len(*got) != 0 || m.actions.confirm != nil || !m.actions.open {
+		t.Fatalf("Enter on a disabled entry acted: cmd=%v calls=%d confirm=%v sheet=%v", cmd != nil, len(*got), m.actions.confirm != nil, m.actions.open)
 	}
 }
 
@@ -298,8 +298,8 @@ func TestTheMateRowSheetCarriesTheRecoveryActions(t *testing.T) {
 		t.Fatalf("restart entry = %+v, want enabled and confirming", e)
 	}
 	m, cmd := send(t, m, key("R"))
-	if cmd != nil || m.confirm == nil {
-		t.Fatalf("restart ran without its confirmation (cmd=%v confirm=%v)", cmd != nil, m.confirm != nil)
+	if cmd != nil || m.actions.confirm == nil {
+		t.Fatalf("restart ran without its confirmation (cmd=%v confirm=%v)", cmd != nil, m.actions.confirm != nil)
 	}
 	if !strings.Contains(renderFrame(t, m), "restart mate?") {
 		t.Fatalf("the confirmation does not ask to restart:\n%s", renderFrame(t, m))
@@ -321,7 +321,7 @@ func TestACrewRowSheetHasNoMateRecoveryActions(t *testing.T) {
 	m := toRunningAttempt(t, loaded(t, sampleTree(), nil))
 	m, _ = send(t, m, key("a"))
 	sawCrewRestart := false
-	for _, e := range m.menu {
+	for _, e := range m.actions.entries {
 		if e.choice.action == ActionRestartMate || e.choice.action == ActionClearComposer {
 			t.Fatalf("a crew row's sheet offers %+v", e)
 		}
@@ -350,8 +350,8 @@ func TestTheCrewRowSheetRestartsTheCrew(t *testing.T) {
 		t.Fatalf("restart crew entry = %+v, want enabled and confirming", e)
 	}
 	m, cmd := send(t, m, key("R"))
-	if cmd != nil || m.confirm == nil {
-		t.Fatalf("restart crew ran without its confirmation (cmd=%v confirm=%v)", cmd != nil, m.confirm != nil)
+	if cmd != nil || m.actions.confirm == nil {
+		t.Fatalf("restart crew ran without its confirmation (cmd=%v confirm=%v)", cmd != nil, m.actions.confirm != nil)
 	}
 	m, cmd = send(t, m, key("R"))
 	if cmd == nil {
@@ -391,7 +391,7 @@ func TestRestartCrewIsUnavailableForAClosedCrew(t *testing.T) {
 func TestTheSheetOrderIsFixedPerKind(t *testing.T) {
 	keys := func(m Model) string {
 		var ks []string
-		for _, e := range m.menu {
+		for _, e := range m.actions.entries {
 			ks = append(ks, e.key)
 		}
 		return strings.Join(ks, " ")
