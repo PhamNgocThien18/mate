@@ -92,6 +92,8 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 			return openNewsAction(ws, req)
 		case console.ActionOkayWork:
 			return okayWorkAction(ws, req)
+		case console.ActionOpenWork:
+			return openWorkAction(ws, req)
 		default:
 			return "", observability.NewError(observability.CodeUsage,
 				fmt.Sprintf("%s is not wired in this build", req.Action))
@@ -344,6 +346,25 @@ func openNewsAction(ws *store.Workspace, req console.ActionRequest) (string, err
 		return "", err
 	}
 	return fmt.Sprintf("news #%d opened in the Mate", id), nil
+}
+
+// openWorkAction is `w` on a Mate or Project row (CON-198): the Mate's
+// REPL shows its work board as a page. A Mate that does not run headless
+// has no REPL to ask, and the console shows its own sheet.
+func openWorkAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+	if req.Target == "" {
+		return "", observability.NewError(observability.CodeUsage, "open work needs a Project")
+	}
+	if err := requireProject(ws, req.Target); err != nil {
+		return "", err
+	}
+	if !ws.MateHeadless(req.Target) {
+		return "", console.ErrNoMateREPL
+	}
+	if err := matehost.RequestWorkFocus(ws.MateDir(req.Target), time.Now()); err != nil {
+		return "", err
+	}
+	return "work board opened in the Mate", nil
 }
 
 // okayWorkAction is the captain's tick on a done row of the work board

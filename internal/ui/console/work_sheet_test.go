@@ -25,6 +25,21 @@ func bxWork(t *testing.T) (Model, *bxAction) {
 	return m, act
 }
 
+// bxOpenSheet is `w` for a Mate with no REPL: the open-work request is
+// refused with ErrNoMateREPL and the console shows its own sheet. The
+// request is not kept in act.
+func bxOpenSheet(t *testing.T, m Model, act *bxAction) Model {
+	t.Helper()
+	act.err = ErrNoMateREPL
+	m, cmd := send(t, m, key("w"))
+	if cmd == nil {
+		t.Fatal("w sent no open-work request")
+	}
+	m, _ = send(t, m, cmd())
+	act.err, act.reqs = nil, nil
+	return m
+}
+
 // bxSheet is the open sheet's rendered lines, trimmed.
 func bxSheet(t *testing.T, m Model) string {
 	t.Helper()
@@ -39,8 +54,8 @@ func bxSheet(t *testing.T, m Model) string {
 // `w` on the Mate row opens the board grouped by where each row stands;
 // the proposed row carries its tag and the waiting one its topic.
 func TestWOpensTheWorkBoard(t *testing.T) {
-	m, _ := bxWork(t)
-	m, _ = send(t, m, key("w"))
+	m, act := bxWork(t)
+	m = bxOpenSheet(t, m, act)
 	if m.sheetOpen() != sheetWork || m.work.project != "payments-api" {
 		t.Fatalf("w opened %v for %q, want the work sheet of payments-api", m.sheetOpen(), m.work.project)
 	}
@@ -67,7 +82,7 @@ func TestWOpensTheWorkBoard(t *testing.T) {
 // working row it only says why not. Enter shows a row's history.
 func TestSpaceTicksADoneRow(t *testing.T) {
 	m, act := bxWork(t)
-	m, _ = send(t, m, key("w"))
+	m = bxOpenSheet(t, m, act)
 	m, cmd := send(t, m, key(" "))
 	if cmd == nil || !m.actionBusy {
 		t.Fatalf("Space on the done row ran nothing: busy %v, note %q", m.actionBusy, m.work.note)
@@ -102,12 +117,12 @@ func TestSpaceTicksADoneRow(t *testing.T) {
 
 // `w` on a Project row on the workspace level opens its Mate's board.
 func TestWOnAProjectRowOpensItsMatesBoard(t *testing.T) {
-	m, _ := bxWork(t)
+	m, act := bxWork(t)
 	m, _ = send(t, m, key("esc"))
 	if m.cur().kind != frameWorkspace {
 		t.Fatalf("setup: not on the workspace: %+v", m.cur())
 	}
-	m, _ = send(t, m, key("w"))
+	m = bxOpenSheet(t, m, act)
 	if m.sheetOpen() != sheetWork || m.work.project != "payments-api" {
 		t.Fatalf("w opened %v for %q", m.sheetOpen(), m.work.project)
 	}
@@ -159,7 +174,7 @@ func bxMateWork(t *testing.T, work query.Field[[]query.WorkItem]) Model {
 // a wrapped board is taller than the pane under the list.
 func bxLongWork(t *testing.T, w, h int) Model {
 	t.Helper()
-	m, _, _ := bxPayments(t, w, h)
+	m, act, _ := bxPayments(t, w, h)
 	items := []query.WorkItem{
 		{ID: 1, Kind: "assigned", Status: "done", At: bxAt(17, 0),
 			Title: "HU-387 khay trang trí trong màn soạn (HU-388..394)",
@@ -171,8 +186,33 @@ func bxLongWork(t *testing.T, w, h int) Model {
 			Title: "việc cũ số " + strings.Repeat("x", i) + " đã xong từ trước", Last: "đã merge"})
 	}
 	m.tree.Projects[7].Mate.Work = query.KnownField(items)
-	m, _ = send(t, m, key("w"))
-	return m
+	return bxOpenSheet(t, m, act)
+}
+
+// `w` on a headless Mate asks its REPL for the Work page and shows the
+// Mate in the next pane; the console opens no sheet of its own.
+func TestWAsksAHeadlessMateForTheWorkPage(t *testing.T) {
+	m, act := bxWork(t)
+	m, cmd := send(t, m, key("w"))
+	if cmd == nil {
+		t.Fatal("w sent no open-work request")
+	}
+	if len(act.reqs) != 0 {
+		t.Fatalf("w ran %+v before its command", act.reqs)
+	}
+	m, stage := send(t, m, cmd())
+	if len(act.reqs) != 1 || act.reqs[0].Action != ActionOpenWork || act.reqs[0].Target != "payments-api" {
+		t.Fatalf("requests = %+v, want open_work of payments-api", act.reqs)
+	}
+	if m.sheetOpen() != sheetNone {
+		t.Fatalf("w opened the sheet %v for a headless Mate", m.sheetOpen())
+	}
+	if stage == nil {
+		t.Fatal("the Mate row was not shown in the next pane")
+	}
+	if !strings.Contains(m.msg.text, "work board opened in the Mate's pane") {
+		t.Fatalf("footer = %q", m.msg.text)
+	}
 }
 
 // Nothing on the board is cut: the title and the Mate's last line wrap,

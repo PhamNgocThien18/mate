@@ -46,6 +46,10 @@ func (m Model) View() string {
 		view, _ := m.topicView(w, m.topicRows())
 		out = append(out, view...)
 		out = append(out, m.topicBelow(w)...)
+	} else if m.mode == viewWork && !m.help {
+		view, _ := m.workView(w, m.topicRows())
+		out = append(out, view...)
+		out = append(out, m.topicBelow(w)...)
 	} else {
 		out = append(out, m.chatView(w)...)
 		out = append(out, m.below(w)...)
@@ -130,8 +134,11 @@ func (m Model) header(w int) []string {
 		return m.sessionHeader(w)
 	}
 	left := " " + styleBold.Inherit(styleAccent).Render("mate") + styleMuted.Render(" · "+m.cfg.Project)
-	if m.mode == viewTopics {
+	switch m.mode {
+	case viewTopics:
 		left += styleMuted.Render(" › ") + styleBold.Inherit(styleAttention).Render("Topic")
+	case viewWork:
+		left += styleMuted.Render(" › ") + styleBold.Inherit(styleAccent).Render("Work")
 	}
 	var right []string
 	if m.crews >= 0 {
@@ -188,13 +195,15 @@ func (m Model) footer(w int) []string {
 		hints = []keyHint{{"↑↓", "chọn"}, {"Enter", "mở/thu gọn"}, {"1–9", "nhảy"}, {"^N", "chưa trả lời tiếp"}, {"Esc", "về chat"}}
 	case m.mode == viewTopics:
 		hints = []keyHint{{"↑↓", "chọn"}, {"Enter", "mở/thu"}, {"Esc", "về chat"}}
+	case m.mode == viewWork:
+		hints = []keyHint{{"↑↓", "chọn"}, {"Space", "OK việc xong"}, {"Enter", "lịch sử"}, {"t", "mở topic"}, {"a", "xem hết đã OK"}, {"Esc", "về chat"}}
 	case m.state.Busy:
 		hints = []keyHint{{"Enter", "xếp hàng"}, {"^X", "bỏ tin cuối"}, {"^C", "ngắt"}, {"?", "phím tắt"}}
 		if len(m.input) > 0 {
 			hints = append(hints[:1], append([]keyHint{{"^U", "xoá ô"}}, hints[1:]...)...)
 		}
 	default:
-		hints = []keyHint{{"Enter", "gửi"}, {"^J", "xuống dòng"}, {"^T", "topic"}, {"↑↓ PgUp", "cuộn"}, {"?", "phím tắt"}}
+		hints = []keyHint{{"Enter", "gửi"}, {"^J", "xuống dòng"}, {"^T", "topic"}, {"^L", "việc"}, {"↑↓ PgUp", "cuộn"}, {"?", "phím tắt"}}
 		if len(m.input) > 0 {
 			hints = append(hints[:2], append([]keyHint{{"^U", "xoá ô"}}, hints[2:]...)...)
 		}
@@ -514,6 +523,9 @@ func helpLines() []string {
 		{"^O (Topic)", "mở/thu gọn lượt cũ trong khung"},
 		{"^T", "trang Topic: mỗi câu hỏi một khung"},
 		{"^N", "mở topic chưa trả lời tiếp theo"},
+		{"^L", "trang Work: bảng việc của Mate"},
+		{"Space · t (Work)", "OK việc xong · mở topic dòng đang chờ"},
+		{"Enter · a (Work)", "lịch sử dòng · xem hết việc đã OK"},
 		{"#3 …", "trả lời topic #3 ngay từ chat"},
 		{"↑↓ · j k (Topic)", "dời con trỏ · Enter/Space mở, thu"},
 		{"1–9 (Topic)", "nhảy tới khung thứ n và mở"},

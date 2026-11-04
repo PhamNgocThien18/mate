@@ -117,6 +117,11 @@ const (
 	// The tick is final (matehost.OkayWork), and it asks nothing: a done
 	// row leaving the board is the whole of its effect.
 	ActionOkayWork Action = "okay_work"
+	// ActionOpenWork asks a Project's headless Mate REPL to show its work
+	// board as a page (CON-198): `w` on a Mate or Project row. A Mate with
+	// no REPL refuses with ErrNoMateREPL, and the console shows its own
+	// sheet instead.
+	ActionOpenWork Action = "open_work"
 	// TODO: v1 also had retry, discard and switch_harness. mate has no
 	// retry (a Crew runs once), and no discard action: throwing work away
 	// is `mate crew stop --discard`, on the captain's explicit word.

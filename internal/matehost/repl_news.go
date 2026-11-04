@@ -42,6 +42,8 @@ const (
 	viewTopics
 	// viewSession shows the session of the news openID (repl_session.go).
 	viewSession
+	// viewWork shows the Mate's work board (repl_work.go).
+	viewWork
 )
 
 // pendingAnswer is an answer waiting out its undo delay.
@@ -316,6 +318,13 @@ func (m Model) newsKey(k tea.KeyMsg) (Model, bool) {
 	case tea.KeyCtrlN:
 		m.nextOwed()
 		return m, true
+	case tea.KeyCtrlL:
+		if m.mode == viewWork {
+			m.switchTo(viewChat, 0)
+		} else {
+			m.showWork()
+		}
+		return m, true
 	}
 	if m.pending != nil && k.Type == tea.KeyRunes && string(k.Runes) == "u" && !m.typing && (m.mode == viewTopics || len(m.input) == 0) {
 		m.undo()
@@ -323,6 +332,9 @@ func (m Model) newsKey(k tea.KeyMsg) (Model, bool) {
 	}
 	if m.mode == viewSession {
 		return m.sessionKey(k)
+	}
+	if m.mode == viewWork {
+		return m.workKey(k)
 	}
 	if m.mode != viewTopics {
 		return m, false

@@ -132,6 +132,38 @@ func RequestNewsFocus(mateDir string, id int, now time.Time) error {
 	return os.Rename(tmp, path)
 }
 
+// WorkFocusName is where the console asks the REPL to show the work
+// board: the captain pressed `w` on the Mate (CON-198).
+const WorkFocusName = "work.focus"
+
+// RequestWorkFocus asks the REPL of the Mate in mateDir to show its work
+// board.
+func RequestWorkFocus(mateDir string, now time.Time) error {
+	data, err := json.Marshal(newsFocus{At: now})
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(mateDir, WorkFocusName)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// readFocusAt is when the last request in path was made.
+func readFocusAt(path string) (time.Time, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var f newsFocus
+	if json.Unmarshal(data, &f) != nil || f.At.IsZero() {
+		return time.Time{}, false
+	}
+	return f.At, true
+}
+
 // readNewsFocus is the news the last request named, with when it was made.
 func readNewsFocus(path string) (newsFocus, bool) {
 	data, err := os.ReadFile(path)

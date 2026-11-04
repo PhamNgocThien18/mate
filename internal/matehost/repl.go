@@ -86,6 +86,14 @@ type Model struct {
 	sessions     []SessionInfo
 	sessSeen     map[int]int
 	editProposal bool
+
+	// work is the Mate's work board (repl_work.go); workSel the row under
+	// the cursor on the Work page, workOpen the rows whose history shows,
+	// workAll whether every okayed row is listed.
+	work     []Work
+	workSel  int
+	workOpen map[int]bool
+	workAll  bool
 }
 
 // NewModel shows history (oldest first) and then what the host does.
@@ -163,19 +171,26 @@ func (m *Model) mouse(msg tea.MouseMsg) {
 	case tea.MouseButtonWheelDown:
 		m.wheel(-1)
 	case tea.MouseButtonLeft:
-		if m.mode == viewTopics {
+		switch m.mode {
+		case viewTopics:
 			m.clickTopic(msg.Y)
-		} else {
+		case viewWork:
+			m.clickWork(msg.Y)
+		default:
 			m.clickChat(msg.Y)
 		}
 	}
 }
 
-// wheel moves what is shown by one notch: up is n > 0. On the Topic page
-// it moves the cursor; else it scrolls the chat.
+// wheel moves what is shown by one notch: up is n > 0. On the Topic and
+// Work pages it moves the cursor; else it scrolls the chat.
 func (m *Model) wheel(n int) {
-	if m.mode == viewTopics {
+	switch m.mode {
+	case viewTopics:
 		m.moveCursor(-n)
+		return
+	case viewWork:
+		m.moveWork(-n)
 		return
 	}
 	m.scrollBy(n * wheelLines)
@@ -200,6 +215,7 @@ func (m *Model) applyEvent(ev Event) {
 	m.state = ev.State
 	m.queue = ev.Queue
 	m.news = ev.News
+	m.work = ev.Work
 	m.sessions = ev.Sessions
 	if m.mode == viewSession {
 		if s, ok := m.findSession(m.openID); ok {
@@ -218,6 +234,10 @@ func (m *Model) applyEvent(ev Event) {
 	if ev.Focus > 0 {
 		m.help = false
 		m.openTopic(ev.Focus)
+	}
+	if ev.FocusWork {
+		m.help = false
+		m.showWork()
 	}
 	it := ev.Item
 	if it == nil {

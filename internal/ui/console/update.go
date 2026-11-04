@@ -28,6 +28,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onActionDone(msg)
 	case stageDoneMsg:
 		return m.onStageDone(msg), nil
+	case workOpenedMsg:
+		return m.onWorkOpened(msg)
 	case newsOpenedMsg:
 		if msg.err != nil {
 			m.msg = errMsg("Open news refused: " + msg.err.Error())

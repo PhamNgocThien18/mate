@@ -95,6 +95,10 @@ type Event struct {
 	Note string
 	// Focus is a news the console asked the REPL to open.
 	Focus int
+	// Work is the Mate's work board, oldest row first (CON-158).
+	Work []Work
+	// FocusWork is set when the console asked the REPL to show the board.
+	FocusWork bool
 	// Sessions are the open topic sessions, by news.
 	Sessions []SessionInfo
 	// State is the host's state after the event.
@@ -123,6 +127,8 @@ type Host struct {
 	newsPath string
 	news     []News
 	newsSeen time.Time
+	work     []Work
+	workSeen time.Time
 	draft    string
 	stopping bool
 	idle     chan struct{}
@@ -633,7 +639,7 @@ func paragraph(reply string) string {
 // eventLocked is an event carrying a copy of item (which may be nil), the
 // queue and the state.
 func (h *Host) eventLocked(item *Item) Event {
-	ev := Event{State: h.stateLocked(), News: h.news, Sessions: h.sessionsLocked()}
+	ev := Event{State: h.stateLocked(), News: h.news, Work: h.work, Sessions: h.sessionsLocked()}
 	for _, q := range h.queue {
 		text := q.Text
 		if q.News != 0 {
@@ -669,13 +675,53 @@ func (h *Host) RefreshNews() {
 	h.emit(ev)
 }
 
-// WatchNews reads the news log whenever it changes - the Mate writes it
-// with `mate news` - until ctx ends.
+// RefreshWork reads the work board again and tells the REPL when it
+// changed. The board lives beside the news log.
+func (h *Host) RefreshWork() {
+	if h.newsPath == "" {
+		return
+	}
+	path := WorkPath(filepath.Dir(h.newsPath))
+	fi, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	list, err := LoadWork(path)
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	h.work, h.workSeen = list, fi.ModTime()
+	ev := h.eventLocked(nil)
+	h.mu.Unlock()
+	h.emit(ev)
+}
+
+// OkayWork is the captain's tick on a done row of the board, from the
+// REPL's Work page.
+func (h *Host) OkayWork(id int) error {
+	if h.newsPath == "" {
+		return ErrNoWork
+	}
+	if err := OkayWork(WorkPath(filepath.Dir(h.newsPath)), id, h.now()); err != nil {
+		return err
+	}
+	h.RefreshWork()
+	return nil
+}
+
+// WatchNews reads the news log and the work board whenever they change -
+// the Mate writes them with `mate news` and `mate work` - until ctx ends.
 func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 	h.RefreshNews()
-	focusPath := filepath.Join(filepath.Dir(h.newsPath), NewsFocusName)
+	h.RefreshWork()
+	dir := filepath.Dir(h.newsPath)
+	focusPath := filepath.Join(dir, NewsFocusName)
+	workFocusPath := filepath.Join(dir, WorkFocusName)
+	workPath := WorkPath(dir)
 	// A request made before this REPL started is not the captain's now.
 	asked, _ := readNewsFocus(focusPath)
+	askedWork, _ := readFocusAt(workFocusPath)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -691,6 +737,22 @@ func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 		h.mu.Unlock()
 		if err == nil && !fi.ModTime().Equal(seen) {
 			h.RefreshNews()
+		}
+		if fi, err := os.Stat(workPath); err == nil && h.newsPath != "" {
+			h.mu.Lock()
+			seen := h.workSeen
+			h.mu.Unlock()
+			if !fi.ModTime().Equal(seen) {
+				h.RefreshWork()
+			}
+		}
+		if at, ok := readFocusAt(workFocusPath); ok && h.newsPath != "" && at.After(askedWork) {
+			askedWork = at
+			h.mu.Lock()
+			ev := h.eventLocked(nil)
+			h.mu.Unlock()
+			ev.FocusWork = true
+			h.emit(ev)
 		}
 		if f, ok := readNewsFocus(focusPath); ok && h.newsPath != "" && f.At.After(asked.At) {
 			asked = f

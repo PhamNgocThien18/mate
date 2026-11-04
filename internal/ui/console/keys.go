@@ -123,7 +123,7 @@ func (m Model) onListKey(key string) (tea.Model, tea.Cmd) {
 	case "o":
 		return m.beginBoxActions(), nil
 	case "w":
-		return m.beginWork(), nil
+		return m.beginWork()
 	case "esc", "backspace":
 		return m.onBack(), nil
 	case "up", "k":
@@ -175,7 +175,7 @@ func (m Model) onDetailKey(key string) (tea.Model, tea.Cmd) {
 	case "a":
 		return m.beginActions(), nil
 	case "w":
-		return m.beginWork(), nil
+		return m.beginWork()
 	case "esc", "backspace":
 		return m.setFocus(paneList), nil
 	case "enter":
