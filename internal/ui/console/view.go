@@ -52,6 +52,9 @@ func (m Model) slotBody(sl slot, p framePlan) []gline {
 	case slotBox:
 		return m.boxWindow(p, h)
 	case slotSheet:
+		if m.sheetOpen() == sheetWork {
+			return m.workWindow(p, h)
+		}
 		return m.sheetLines(p)
 	}
 	return nil

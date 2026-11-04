@@ -225,8 +225,8 @@ func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) 
 		// A click on a row selects it; a second click on the selected row
 		// is Space on it (the tick, when it is done).
 		_, rowAt := m.workSheetLines(p)
-		top, _ := sl.body()
-		if i := y - top; i >= 0 && i < len(rowAt) && rowAt[i] >= 0 {
+		top, h := sl.body()
+		if i := y - top + m.workTop(rowAt, h); y >= top && i < len(rowAt) && rowAt[i] >= 0 {
 			if rowAt[i] == m.work.sel {
 				return m.okayWork()
 			}

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -150,4 +152,104 @@ func bxMateWork(t *testing.T, work query.Field[[]query.WorkItem]) Model {
 	}
 	m, _ = send(t, m, key("enter"))
 	return m
+}
+
+// bxLongWork is the board captain saw cut on 2026-11-04 (CON-163): a long
+// title and a long last line in a 40-column console, plus enough rows that
+// a wrapped board is taller than the pane under the list.
+func bxLongWork(t *testing.T, w, h int) Model {
+	t.Helper()
+	m, _, _ := bxPayments(t, w, h)
+	items := []query.WorkItem{
+		{ID: 1, Kind: "assigned", Status: "done", At: bxAt(17, 0),
+			Title: "HU-387 khay trang trí trong màn soạn (HU-388..394)",
+			Last:  "HU-388..394 đều đã vào main (PR #334-#340); HU-387 Done trên Linear",
+			Notes: []query.WorkNote{{At: bxAt(17, 0), Op: "done", Text: "HU-388..394 đều đã vào main (PR #334-#340); HU-387 Done trên Linear, chờ anh thử app"}}},
+	}
+	for i := 2; i <= 9; i++ {
+		items = append(items, query.WorkItem{ID: i, Kind: "assigned", Status: "okayed", At: bxAt(13, 0),
+			Title: "việc cũ số " + strings.Repeat("x", i) + " đã xong từ trước", Last: "đã merge"})
+	}
+	m.tree.Projects[7].Mate.Work = query.KnownField(items)
+	m, _ = send(t, m, key("w"))
+	return m
+}
+
+// Nothing on the board is cut: the title and the Mate's last line wrap,
+// and so does a note's text in the history.
+func TestTheWorkBoardWrapsInsteadOfCutting(t *testing.T) {
+	m := bxLongWork(t, 40, 60)
+	m, _ = send(t, m, key("enter"))
+	got := bxSheet(t, m)
+	if strings.Contains(got, "…") {
+		t.Fatalf("the board still cuts a line:\n%s", got)
+	}
+	flat := strings.Join(strings.Fields(got), " ")
+	// The status sits at the end of the title's first line, so the title is
+	// read with it taken out.
+	flat = strings.Replace(flat, " done ", " ", 1)
+	for _, want := range []string{
+		"HU-387 khay trang trí trong màn soạn (HU-388..394)",
+		"HU-388..394 đều đã vào main (PR #334-#340); HU-387 Done trên Linear",
+		"chờ anh thử app",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the board lacks %q:\n%s", want, got)
+		}
+	}
+	for _, l := range strings.Split(got, "\n") {
+		if cells(l) > 40 {
+			t.Errorf("line wider than the console: %q", l)
+		}
+	}
+	first := strings.Split(got, "\n")[1]
+	if !strings.HasSuffix(first, "done") {
+		t.Errorf("the status left the title's first line: %q", first)
+	}
+}
+
+// A board taller than its pane scrolls to keep the selected row whole,
+// and a click lands on the row drawn under the pointer.
+func TestATallWorkBoardScrollsToTheSelectedRow(t *testing.T) {
+	m := bxLongWork(t, 40, 24)
+	sl, ok := m.plan().slot(slotSheet)
+	if !ok {
+		t.Fatal("no sheet slot")
+	}
+	_, h := sl.body()
+	_, rowAt := m.workSheetLines(m.plan())
+	if len(rowAt) <= h {
+		t.Fatalf("setup: board of %d lines fits the %d-row pane", len(rowAt), h)
+	}
+	for i := 0; i < 8; i++ {
+		m, _ = send(t, m, key("j"))
+	}
+	if m.work.sel != 8 {
+		t.Fatalf("sel = %d, want the last row", m.work.sel)
+	}
+	frame := renderFrame(t, m)
+	if !strings.Contains(frame, "việc cũ số "+strings.Repeat("x", 9)) {
+		t.Fatalf("the selected last row is not on screen:\n%s", frame)
+	}
+	sl, _ = m.plan().slot(slotSheet)
+	top, h := sl.body()
+	_, rowAt = m.workSheetLines(m.plan())
+	off := m.workTop(rowAt, h)
+	if off == 0 {
+		t.Fatal("the board did not scroll")
+	}
+	y := -1
+	for i := off; i < off+h && i < len(rowAt); i++ {
+		if rowAt[i] == 7 {
+			y = top + i - off
+			break
+		}
+	}
+	if y < 0 {
+		t.Fatal("row 7 is not drawn")
+	}
+	m, _ = send(t, m, tea.MouseMsg{X: 4, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.work.sel != 7 {
+		t.Fatalf("a click on row 7 selected %d", m.work.sel)
+	}
 }
