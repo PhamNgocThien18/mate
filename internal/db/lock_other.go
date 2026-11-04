@@ -12,9 +12,9 @@ import (
 // constraint above is lock_unix.go's, negated). Opening the file and taking
 // nothing would let a second writer interleave with the first, which is the
 // one thing the lock exists to refuse, and mate does not run without its
-// locks (CON-177). OpenRead takes no lock, so readers are unaffected.
+// locks (CON-177).
 func takeLock(path string) (*os.File, error) {
-	return nil, fmt.Errorf("db: the writer lock needs flock, which %s does not have", runtime.GOOS)
+	return nil, fmt.Errorf("db: the writer lock needs syscall.Flock, which Go lacks on %s", runtime.GOOS)
 }
 
 func releaseLock(f *os.File) {

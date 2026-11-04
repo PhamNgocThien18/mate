@@ -13,7 +13,7 @@ import (
 // took nothing would let a log append, a backlog edit or an outbox update
 // lose its exclusion without a word, and mate does not run without its
 // locks (CON-177).
-var errNoFlock = fmt.Errorf("store: file locks need flock, which %s does not have", runtime.GOOS)
+var errNoFlock = fmt.Errorf("store: file locks need syscall.Flock, which Go lacks on %s", runtime.GOOS)
 
 func lockFile(f *os.File, exclusive bool) error { return errNoFlock }
 
