@@ -241,7 +241,7 @@ func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps
 	if err != nil && !gone {
 		return "", err
 	}
-	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Resume: true, Harness: kind})
+	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Resume: true, Harness: kind, HeadlessOnly: req.HeadlessOnly})
 	if err != nil {
 		return "", err
 	}

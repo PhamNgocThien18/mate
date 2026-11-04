@@ -84,7 +84,9 @@ func TestStartConsoleDashboardRemoteNeedsAllow(t *testing.T) {
 
 // TestADashboardPressIsTheSheetsRequest: consoleAction branches on the
 // target kind, so a page's press must carry the one the sheet's entry
-// builds for the same action (CON-141).
+// builds for the same action (CON-141). It also says, every time, that a
+// page cannot show a pane Mate (CON-205), which the sheet leaves to the
+// console that runs it (headlessOnlyAction).
 func TestADashboardPressIsTheSheetsRequest(t *testing.T) {
 	for _, tc := range []struct {
 		in   dashboard.ActionRequest
@@ -110,7 +112,12 @@ func TestADashboardPressIsTheSheetsRequest(t *testing.T) {
 		{dashboard.ActionRequest{Action: "peek", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionPeek, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 		{dashboard.ActionRequest{Action: "explain_notice", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 	} {
-		if got := dashboardActionRequest(tc.in); got != tc.want {
+		got := dashboardActionRequest(tc.in)
+		if !got.HeadlessOnly {
+			t.Errorf("%+v -> %+v, want HeadlessOnly: a page cannot show a pane Mate", tc.in, got)
+		}
+		got.HeadlessOnly = false
+		if got != tc.want {
 			t.Errorf("%+v -> %+v, want %+v", tc.in, got, tc.want)
 		}
 	}

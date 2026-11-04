@@ -95,9 +95,10 @@ func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string
 // dashboardActionRequest is a page's button press in the shape the console's
 // action sheet sends the same action: the target kinds are the ones its
 // entries build (internal/ui/console's actionRequest, restartMateChoice,
-// onboardChoice), so consoleAction cannot tell the two callers apart.
+// onboardChoice), so consoleAction cannot tell the two callers apart. A
+// page cannot show a pane Mate, so every press is HeadlessOnly (CON-205).
 func dashboardActionRequest(req dashboard.ActionRequest) console.ActionRequest {
-	out := console.ActionRequest{Action: console.Action(req.Action), Target: req.Project}
+	out := console.ActionRequest{Action: console.Action(req.Action), Target: req.Project, HeadlessOnly: true}
 	switch {
 	case req.Action == "add_project":
 		// The new-project form's request (newProjectChoice).

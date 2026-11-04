@@ -101,6 +101,19 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 	}
 }
 
+// headlessOnlyAction is the action function as the console's TUI presses
+// it: every request says whether this console can show a pane Mate. One
+// in a terminal it cannot split (neither WezTerm nor Ghostty) has no
+// column for one, so the Mates its TUI brings up run headless when their
+// harness can (CON-150, CON-205). It wraps the one function the dashboard
+// presses too, so the two share its restartHolds.
+func headlessOnlyAction(next console.ActionFunc, headlessOnly bool) console.ActionFunc {
+	return func(ctx context.Context, req console.ActionRequest) (string, error) {
+		req.HeadlessOnly = headlessOnly
+		return next(ctx, req)
+	}
+}
+
 // stopCrewAction is the Crew row's `Stop crew…` entry (mvp.md task 16). It
 // calls the same function `mate crew stop` calls and reports in the same
 // words. It never discards: unlanded work is refused before anything
@@ -197,7 +210,7 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 	}
 	// Resume is the 's' on a stopped Mate: the conversation recorded in
 	// mate.meta comes back, or a fresh one starts with a note saying why.
-	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Harness: kind, Resume: req.Action == console.ActionResume})
+	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Harness: kind, Resume: req.Action == console.ActionResume, HeadlessOnly: req.HeadlessOnly})
 	if err != nil {
 		return "", err
 	}

@@ -148,11 +148,6 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 		return cols
 	}})
-	// A terminal the console cannot split (neither WezTerm nor Ghostty) has
-	// no column to show a pane Mate in, so every Mate this console starts,
-	// restarts, refreshes or recovers runs headless and is talked to in the
-	// box or on the dashboard.
-	deps.HeadlessOnly = h == nil
 	// One observer for the whole run too, so the observer chain's one
 	// minute memory of what Jev said is shared by the health column, the
 	// sends and the settles of this console. Nil is the fixture observer.
@@ -313,7 +308,10 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if observerErr != nil && (noticeErr == nil || observerErr.Error() != noticeErr.Error()) {
 		addNotice(observerErr.Error())
 	}
-	model := console.New(load, action).
+	// A terminal the console cannot split has no column to show a pane
+	// Mate in: what its TUI brings up runs headless (CON-150, CON-205).
+	// The refreshes and recoveries mate runs on its own keep their mode.
+	model := console.New(load, headlessOnlyAction(action, h == nil)).
 		WithNoticeClassifier(noticeClient != nil).
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).

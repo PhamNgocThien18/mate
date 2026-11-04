@@ -154,6 +154,12 @@ type ActionRequest struct {
 	// harness the new Mate is created with. Empty everywhere else - an
 	// existing Mate keeps its recorded harness.
 	Harness query.HarnessKind
+	// HeadlessOnly says the UI that sent the request cannot show a pane
+	// Mate: the console in a terminal it cannot split, or a dashboard page
+	// (CON-205). A start, resume, onboard or restart_mate it asks for then
+	// runs the Mate headless when its harness can. The Model never sets
+	// it; cmd/mate does, for each UI it serves.
+	HeadlessOnly bool
 }
 
 // ActionFunc is the application-service seam. A nil function keeps the

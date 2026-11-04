@@ -9,7 +9,7 @@ import (
 // A start that names no mode takes the last run's, then project.yaml's,
 // then Deps.DefaultMode; a harness without headless turns always runs in
 // the pane unless the start asked for headless, which is refused.
-// Deps.HeadlessOnly overrides all but the request.
+// StartRequest.HeadlessOnly overrides all but the request's mode.
 func TestHeadlessModeOrder(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -38,7 +38,7 @@ func TestHeadlessModeOrder(t *testing.T) {
 		{name: "bad config", cfg: store.MateConfig{Mode: "tui"}, can: true, err: true},
 	}
 	for _, c := range cases {
-		got, err := headlessMode(StartRequest{Mode: c.req}, map[string]string{MetaMode: c.prior}, c.cfg, c.fallback, c.only, c.can)
+		got, err := headlessMode(StartRequest{Mode: c.req, HeadlessOnly: c.only}, map[string]string{MetaMode: c.prior}, c.cfg, c.fallback, c.can)
 		if (err != nil) != c.err || got != c.want {
 			t.Errorf("%s: headless = %v, err %v; want %v, err %v", c.name, got, err, c.want, c.err)
 		}
