@@ -59,8 +59,11 @@ type JourneyBrief struct {
 }
 
 type JourneyHandback struct {
-	Path     string `json:"path"`
-	Bytes    int64  `json:"bytes"`
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+	// Kind is HandbackFile for a ship crew's handback.md, HandbackReport
+	// for the report.md a scout hands back.
+	Kind     string `json:"kind"`
 	Markdown string `json:"markdown"`
 	// Closes are the tracker lines at the top ("Closes HU-246", "Part of
 	// HU-228"), verbatim.
@@ -71,6 +74,11 @@ type JourneyHandback struct {
 	// Learning is the text after "Learning:" when the crew wrote one.
 	Learning string `json:"learning,omitempty"`
 }
+
+const (
+	HandbackFile   = "handback"
+	HandbackReport = "report"
+)
 
 type HandbackCriterion struct {
 	Name    string `json:"name"`
@@ -145,11 +153,19 @@ func (s *Server) journey(ctx context.Context, project, crew string, ledger Task,
 		missing("brief")
 	}
 
+	// A scout hands back its report.md: the ledger counts that hand-back,
+	// so the Journey reads it too (CON-201).
 	var handback string
-	if data, err := os.ReadFile(s.ws.CrewHandback(project, crew)); err == nil {
+	handbackPath, handbackKind := s.ws.CrewHandback(project, crew), HandbackFile
+	data, err := os.ReadFile(handbackPath)
+	if os.IsNotExist(err) && ledger.Role == store.WorkflowRoleScout {
+		handbackPath, handbackKind = s.ws.CrewReport(project, crew), HandbackReport
+		data, err = os.ReadFile(handbackPath)
+	}
+	if err == nil {
 		handback = string(data)
 		hb := parseHandback(handback)
-		hb.Path, hb.Bytes = s.ws.CrewHandback(project, crew), int64(len(data))
+		hb.Path, hb.Bytes, hb.Kind = handbackPath, int64(len(data)), handbackKind
 		out.Handback = &hb
 	} else {
 		missing("hand-back")
@@ -196,7 +212,7 @@ func (s *Server) journey(ctx context.Context, project, crew string, ledger Task,
 		missing("changed files")
 	}
 	if cfgErr == nil && len(cfg.Workflow) > 0 {
-		out.Workflow = checkWorkflow(cfg.Workflow, performance, handback, out.ChangedFiles, ledger.SpawnedAt)
+		out.Workflow = checkWorkflow(cfg.Workflow, ledger.Role, performance, handback, out.ChangedFiles, ledger.SpawnedAt)
 	}
 	return out
 }
@@ -365,9 +381,10 @@ func tableCells(line string) []string {
 // is n/a: the crew could not have been asked for it. A step not taken
 // whose evidence was never recorded (no commands, no hand-back) is
 // unknown, and a missed step says where it was looked for. A bad pattern
-// is unknown and says so. Every check carries its Rule, so the page can
-// say what would have counted.
-func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handback string, changed []string, started string) []WorkflowCheck {
+// is unknown and says so. A step not asked of the crew's role (a scout
+// neither commits nor gates) is n/a. Every check carries its Rule, so the
+// page can say what would have counted.
+func checkWorkflow(steps []store.WorkflowStep, role string, p diagnostics.Performance, handback string, changed []string, started string) []WorkflowCheck {
 	out := make([]WorkflowCheck, 0, len(steps))
 	execs := make([]diagnostics.Execution, 0, len(p.Executions))
 	for _, e := range p.Executions {
@@ -406,6 +423,11 @@ func checkWorkflow(steps []store.WorkflowStep, p diagnostics.Performance, handba
 		}
 		if bad != "" {
 			check.State, check.Evidence = WorkflowUnknown, "bad pattern · "+bad
+			out = append(out, check)
+			continue
+		}
+		if !step.AskedOf(role) {
+			check.State, check.Evidence = WorkflowNA, "asked of "+askedOf(step)+", and this crew is a "+role
 			out = append(out, check)
 			continue
 		}
@@ -495,6 +517,9 @@ func workflowRule(step store.WorkflowStep) string {
 		any = append(any, "writes a hand-back line matching "+step.Handback)
 	}
 	rule := strings.Join(any, ", or ")
+	if len(step.Roles) > 0 {
+		rule += "; asked of " + askedOf(step)
+	}
 	if step.Files != "" {
 		rule += "; only when a changed file matches " + step.Files
 	}
@@ -502,6 +527,19 @@ func workflowRule(step store.WorkflowStep) string {
 		rule += "; asked since " + step.Since
 	}
 	return rule
+}
+
+// askedOf names the crews a step is asked of: "ship crews", "ship and
+// scout crews".
+func askedOf(step store.WorkflowStep) string {
+	roles := step.Roles
+	if len(roles) == 0 {
+		roles = []string{store.WorkflowRoleShip}
+	}
+	if len(roles) == 1 {
+		return roles[0] + " crews"
+	}
+	return strings.Join(roles[:len(roles)-1], ", ") + " and " + roles[len(roles)-1] + " crews"
 }
 
 // missedWhy is a step no evidence ticked: missed, with where it was

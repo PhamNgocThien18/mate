@@ -418,8 +418,8 @@ const stepsFixture = () => {
   const body = fixture();
   const prompt = body.performance.prompt_turns[0];
   prompt.overview.steps = [
-    step("instructions", "Read instructions", ["call-1"], 1, tokens(100, 200), { skills: ["token-review"], segment_ids: ["segment-read"] }),
-    step("mixed", "Mixed activity", ["call-2"], 2, tokens(10, 400), { parts: ["research", "test"], segment_ids: ["segment-test"] }),
+    step("instructions", "Read instructions", ["call-1"], 1, tokens(100, 200), { skills: ["token-review"], segment_ids: ["segment-read"], tool_elapsed_ms: 1500 }),
+    step("mixed", "Mixed activity", ["call-2"], 2, tokens(10, 400), { parts: ["research", "test"], segment_ids: ["segment-test"], tool_elapsed_ms: 165000 }),
     step("response", "Respond", ["call-3"], 0, tokens(50, 300, 40, 20), { elapsed_ms: null, open: true })
   ];
   // The three calls' own usage: 310 + 420 + 390.
@@ -513,10 +513,11 @@ test("the effort table is summed from the stages and its total matches the heade
   const header = keyed(app.view, "data-kpi", "tokens").querySelector(".kpi-value").textContent;
   const total = cells(keyed(app.view, "data-effort", "total"));
   // 1120 tokens, 900 of them the context re-read (cache), 220 added (work).
-  assert.deepEqual(total, ["Total", "3", "3", "1.1k", "900", "220", "", "100%"]);
-  assert.equal(total[3], header, "tokens agree with the header");
-  assert.deepEqual(cells(keyed(app.view, "data-effort", "instructions")), ["Read instructions", "1", "1", "310", "200", "110", "", "27.7%"]);
-  assert.deepEqual(cells(keyed(app.view, "data-effort", "response")), ["Respond", "1", "–", "390", "300", "90", "", "34.8%"]);
+  assert.deepEqual(total, ["Total", "3", "3", "2m46s", "1.1k", "900", "220", "", "100%"]);
+  assert.equal(total[4], header, "tokens agree with the header");
+  // Time is how long the kind's commands ran: a kind that ran none is a dash.
+  assert.deepEqual(cells(keyed(app.view, "data-effort", "instructions")), ["Read instructions", "1", "1", "1.5s", "310", "200", "110", "", "27.7%"]);
+  assert.deepEqual(cells(keyed(app.view, "data-effort", "response")), ["Respond", "1", "–", "–", "390", "300", "90", "", "34.8%"]);
   const track = keyed(app.view, "data-effort", "response").querySelector(".sc-track");
   assert.equal(track.children.length, 2, "work solid and cache read faded");
   assert.equal(track.children[1].getAttribute("class"), "sc-cache");
@@ -533,7 +534,7 @@ test("only the kinds with a call are listed, in a fixed order, mixed as one row 
   assert.deepEqual(rows.map(row => row.getAttribute("data-effort")), ["instructions", "response", "mixed"]);
   const mixed = rows[2];
   assert.equal(mixed.getAttribute("data-parts"), "edit_code+test · research+test");
-  assert.deepEqual(cells(mixed).slice(0, 6), ["Mixed activityEdit code / files + Run tests / build · Research / inspect + Run tests / build", "3", "4", "650", "600", "50"]);
+  assert.deepEqual(cells(mixed).slice(0, 7), ["Mixed activityEdit code / files + Run tests / build · Research / inspect + Run tests / build", "3", "4", "2m45s", "650", "600", "50"]);
 });
 
 test("stages are numbered continuously across prompts, each prompt a band, the gap between them idle", async () => {

@@ -185,16 +185,20 @@ type Overview struct {
 // commands and direct tools, and a wrapper only when it is the sole record
 // of what ran inside it.
 type Step struct {
-	Kind       string   `json:"kind"`
-	Label      string   `json:"label"`
-	StartedAt  string   `json:"started_at,omitempty"`
-	EndedAt    string   `json:"ended_at,omitempty"`
-	ElapsedMs  *int64   `json:"elapsed_ms"`
-	ModelCalls int      `json:"model_calls"`
-	Executions int      `json:"executions"`
-	Tokens     Tokens   `json:"tokens"`
-	CallIDs    []string `json:"call_ids"`
-	SegmentIDs []string `json:"segment_ids"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label"`
+	StartedAt string `json:"started_at,omitempty"`
+	EndedAt   string `json:"ended_at,omitempty"`
+	ElapsedMs *int64 `json:"elapsed_ms"`
+	// ToolElapsedMs is the time the step's commands and tools ran, the
+	// union of their spans: the step's share of "waiting on the machine"
+	// (TimeSummary.ToolElapsedMs). nil when none recorded timing.
+	ToolElapsedMs *int64   `json:"tool_elapsed_ms"`
+	ModelCalls    int      `json:"model_calls"`
+	Executions    int      `json:"executions"`
+	Tokens        Tokens   `json:"tokens"`
+	CallIDs       []string `json:"call_ids"`
+	SegmentIDs    []string `json:"segment_ids"`
 	// Skills names the skills loaded during the step, once each.
 	Skills []string `json:"skills"`
 	// Parts are the types of work recorded inside the step's calls, sorted.

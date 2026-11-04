@@ -121,11 +121,34 @@ func operationWork(e Execution, withCommands bool) []string {
 		return kinds
 	}
 	for _, command := range commands {
-		for _, kind := range shellWork(command, 0) {
+		for _, kind := range buildDominates(shellWork(command, 0)) {
 			kinds = appendKind(kinds, kind)
 		}
 	}
 	return settleStatus(kinds)
+}
+
+// buildDominates makes one command line that builds or tests a build,
+// whatever it set up around it: the file it wrote or patched, the script or
+// the probe it ran first take seconds, the build minutes. Left mixed, the
+// minutes would vanish from "Run tests / build" (CON-201). Waiting on
+// another process, a review or a git write beside the build stay their own
+// work, and so do the separate tools a wrapper invokes.
+func buildDominates(kinds []string) []string {
+	build := false
+	for _, kind := range kinds {
+		switch kind {
+		case "test":
+			build = true
+		case "write_code", "edit_code", "research", "instructions", "unknown", statusLine:
+		default:
+			return kinds
+		}
+	}
+	if build {
+		return []string{"test"}
+	}
+	return kinds
 }
 
 // statusLine is shellWork's own word for a line appended to $MATE_STATUS. It
@@ -779,8 +802,27 @@ func commandWork(bin string, args []string) string {
 		// flow; what they guard is classified on its own.
 		return ""
 	}
+	// A repo's own build or test script is named for it: build.sh,
+	// run-tests.sh, test-ui.sh. A bare ./test says too little.
+	if buildScript.MatchString(bin) {
+		return "test"
+	}
+	// A wrapper that runs a build under it (scripts/sim-run.sh $udid
+	// xcodebuild …, timeout 600 go test …) is that build.
+	for i, arg := range args {
+		if runner := strings.ToLower(filepath.Base(arg)); buildRunners[runner] && commandWork(runner, args[i+1:]) == "test" {
+			return "test"
+		}
+	}
 	return "unknown"
 }
+
+var buildScript = regexp.MustCompile(`^(run[-_](build|tests?)|(run[-_])?(build|tests?)[-_.][a-z0-9_.-]*)$`)
+
+// buildRunners are the programs commandWork reads as a build or a test run
+// when their arguments say so.
+var buildRunners = map[string]bool{"go": true, "cargo": true, "xcodebuild": true, "pytest": true, "pytest-3": true, "jest": true, "vitest": true,
+	"gradle": true, "gradlew": true, "mvn": true, "swift": true, "npm": true, "pnpm": true, "yarn": true, "bun": true, "make": true, "playwright": true}
 
 // redirectFile is the file an output redirect writes to, or "" when there is
 // none. shellParts emits each '>' as its own word, so an append (>>) arrives

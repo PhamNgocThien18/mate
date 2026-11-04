@@ -807,7 +807,7 @@ button.overview-stage:hover { border-color: var(--accent); color: var(--ink); }
 .sc-table { margin-top: 12px; border: 1px solid var(--border); border-radius: 4px; min-width: 0; }
 .sc-row { display: grid; align-items: center; gap: 0 8px; padding: 5px 8px; border-top: 1px solid var(--grid); font-size: 12.5px; min-width: 0; }
 .sc-table > .sc-row:first-child { border-top: 0; }
-.sc-efforts .sc-row { grid-template-columns: minmax(0, 1.7fr) 2.6em 2.6em 5.2em 5.2em 5.2em minmax(24px, 1fr) 3.8em; }
+.sc-efforts .sc-row { grid-template-columns: minmax(0, 1.7fr) 2.6em 2.6em 5.6em 5.2em 5.2em 5.2em minmax(24px, 1fr) 3.8em; }
 .sc-efforts .sc-what > span:first-of-type { white-space: nowrap; }
 .sc-efforts .sc-parts { flex-basis: 100%; }
 .sc-efforts .sc-what > span { min-width: 0; overflow-wrap: anywhere; }
@@ -895,7 +895,11 @@ button.overview-stage:hover { border-color: var(--accent); color: var(--ink); }
   .tool-mix .tool-mix-prompt { max-width: none; }
   .sc-band { padding: 12px; }
   .sc-row { gap: 0 6px; padding: 5px 6px; }
-  .sc-efforts .sc-row { grid-template-columns: minmax(0, 1.7fr) 2.5em 2.5em 4.8em 4.8em 4.8em minmax(18px, 1fr) 3.6em; }
+  /* A phone drops the cache-read column (tokens minus work) and the bar,
+     and gives the type its own line above the numbers. */
+  .sc-efforts .sc-row { grid-template-columns: 2.5em 2.5em repeat(4, minmax(0, 1fr)); }
+  .sc-efforts .sc-row > :first-child { grid-column: 1 / -1; }
+  .sc-efforts .sc-row > :nth-child(6), .sc-efforts .sc-row > :nth-child(8) { display: none; }
   .work-current-title { font-size: 18px; }
   .work-segment > summary, .segment-evidence { padding-left: 10px; padding-right: 10px; }
   .tl-drill { padding: 10px; }

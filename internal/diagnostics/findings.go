@@ -291,6 +291,13 @@ func (p *projection) detectOutputsAndSlowTools() {
 		f.Detail = "Output bytes are measured; their exact contribution to billed input tokens is not measured."
 		if delta, ok := p.nextContextDelta(e); ok {
 			f.Detail += fmt.Sprintf(" The next linked model call's recorded context changed by %+d tokens.", delta)
+			// Read as text the output would cost about a token per four
+			// bytes. A context that grew by under a tenth of that never took
+			// the output in: an image, or output the harness kept out.
+			if delta < *e.OutputBytes/40 {
+				f.Detail += " That is far less than the output's size, so most of it never reached the model."
+				p.keptOut[f.ID] = true
+			}
 		}
 		if e.Truncated != nil && *e.Truncated {
 			f.Detail += " The harness marked this output truncated."

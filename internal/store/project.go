@@ -68,14 +68,39 @@ type ProjectConfig struct {
 // diff matches none of them has the step as "n/a", not "missed". Since,
 // when set, is the day the repo started asking for the step (2026-10-28,
 // or an RFC 3339 time): a task spawned before it has the step as "n/a".
+// Roles names the crews the step is asked of (WorkflowRoleShip,
+// WorkflowRoleScout, WorkflowRoleReview); empty means ship crews only,
+// because a workflow is the way a change is shipped. A crew of another
+// role has the step as "n/a" (CON-201).
 type WorkflowStep struct {
-	Step     string `yaml:"step"`
-	Command  string `yaml:"command,omitempty"`
-	Read     string `yaml:"read,omitempty"`
-	Skill    string `yaml:"skill,omitempty"`
-	Handback string `yaml:"handback,omitempty"`
-	Files    string `yaml:"files,omitempty"`
-	Since    string `yaml:"since,omitempty"`
+	Step     string   `yaml:"step"`
+	Command  string   `yaml:"command,omitempty"`
+	Read     string   `yaml:"read,omitempty"`
+	Skill    string   `yaml:"skill,omitempty"`
+	Handback string   `yaml:"handback,omitempty"`
+	Files    string   `yaml:"files,omitempty"`
+	Since    string   `yaml:"since,omitempty"`
+	Roles    []string `yaml:"roles,omitempty"`
+}
+
+// The values of WorkflowStep.Roles, the dashboard's task roles.
+const (
+	WorkflowRoleShip   = "ship"
+	WorkflowRoleScout  = "scout"
+	WorkflowRoleReview = "review"
+)
+
+// AskedOf reports whether the step is asked of a crew of role.
+func (s WorkflowStep) AskedOf(role string) bool {
+	if len(s.Roles) == 0 {
+		return role == WorkflowRoleShip
+	}
+	for _, r := range s.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }
 
 // The values of ProjectConfig.Review.

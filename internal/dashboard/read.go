@@ -415,11 +415,11 @@ func (x *agentIndex) used(ctx context.Context, q *sql.DB, project string) (map[s
 func taskRole(ws *store.Workspace, project, crew, review string, meta map[string]string) string {
 	switch {
 	case review != "":
-		return "review"
+		return store.WorkflowRoleReview
 	case spawn.CrewIsScout(ws, project, crew, meta):
-		return "scout"
+		return store.WorkflowRoleScout
 	}
-	return "ship"
+	return store.WorkflowRoleShip
 }
 
 // reviewVerdict is Task.Review: "" unless the crew has review.meta, then

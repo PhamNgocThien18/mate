@@ -87,7 +87,7 @@ func TestCheckWorkflowTicksStepsFromTheRecording(t *testing.T) {
 		{Step: "learning line", Handback: `^- Learning:`},
 		{Step: "bad", Command: `(`},
 	}
-	got := checkWorkflow(steps, p, fixtureHandback, []string{"ios/Sources/NoteEditorView.swift", "docs/x.md"}, "2026-10-30T17:59:00Z")
+	got := checkWorkflow(steps, store.WorkflowRoleShip, p, fixtureHandback, []string{"ios/Sources/NoteEditorView.swift", "docs/x.md"}, "2026-10-30T17:59:00Z")
 	if got[4].Rule != `loads a skill matching ^ios-ui-verify$; only when a changed file matches \.swift$` {
 		t.Errorf("rule = %q", got[4].Rule)
 	}
@@ -117,7 +117,7 @@ func TestCheckWorkflowTicksStepsFromTheRecording(t *testing.T) {
 
 	// Without the changed files a step with `files` that was not taken is
 	// unknown, not missed and not n/a; a step taken anyway is still done.
-	got = checkWorkflow(steps[4:6], p, "", nil, "")
+	got = checkWorkflow(steps[4:6], store.WorkflowRoleShip, p, "", nil, "")
 	if got[0].State != WorkflowDone || got[1].State != WorkflowUnknown {
 		t.Errorf("without changed files: %+v", got)
 	}
@@ -137,7 +137,7 @@ func TestCheckWorkflowSinceAndUnrecordedEvidence(t *testing.T) {
 	// Bash calls are recorded as their JSON input; an anchored pattern
 	// still sees the command line, and so does the evidence.
 	recorded := diagnostics.Performance{Executions: []diagnostics.Execution{{ID: "1", Tool: "Bash", Command: `{"command":"make pre-merge E=E1","description":"gate"}`, StartedAt: "2026-10-23T17:30:00Z"}}}
-	got := checkWorkflow(steps, recorded, "", nil, "2026-10-23T17:21:51Z")
+	got := checkWorkflow(steps, store.WorkflowRoleShip, recorded, "", nil, "2026-10-23T17:21:51Z")
 	want := []struct{ state, evidence string }{
 		{WorkflowNA, "added to the workflow on 2026-10-28, after this task started"},
 		{WorkflowDone, "make pre-merge E=E1"},
@@ -154,7 +154,7 @@ func TestCheckWorkflowSinceAndUnrecordedEvidence(t *testing.T) {
 		t.Errorf("rule = %q", got[0].Rule)
 	}
 
-	got = checkWorkflow(steps[1:4], diagnostics.Performance{}, "Closes HU-36\n", nil, "")
+	got = checkWorkflow(steps[1:4], store.WorkflowRoleShip, diagnostics.Performance{}, "Closes HU-36\n", nil, "")
 	want = []struct{ state, evidence string }{
 		{WorkflowUnknown, "no command recorded to check"},
 		{WorkflowMissed, "nothing matches in: its hand-back"},
@@ -164,6 +164,131 @@ func TestCheckWorkflowSinceAndUnrecordedEvidence(t *testing.T) {
 		if got[i].State != w.state || got[i].Evidence != w.evidence {
 			t.Errorf("unrecorded %s: got %s %q, want %s %q", steps[i+1].Step, got[i].State, got[i].Evidence, w.state, w.evidence)
 		}
+	}
+}
+
+// The HU-403 scout's report (CON-201), shortened: a scout hands back a
+// report.md, not a handback.md, and its Learning line is a list item.
+const fixtureScoutReport = `## For the next crew
+- I could NOT reproduce the captain's mismatch. I ran 9 end-to-end runs on the iPhone 16 sim.
+- Learning: follow-up (rev 1)
+  - evidence: this report's runs u/z/q/s/t; destination: the Mate's PROJECT.md; owner: Mate.
+
+## Smallest fix
+Not named. No cause is proven.
+`
+
+// mihuv2's workflow as project.yaml declared it on 2026-11-04, with the
+// Learning step asked of scouts too.
+var mihuv2Workflow = []store.WorkflowStep{
+	{Step: "Read docs/harness/mate.md first", Read: `docs/harness/mate\.md`, Since: "2026-10-27"},
+	{Step: "Follow docs/harness/workflows/feature.md", Read: `docs/harness/workflows/feature\.md`, Since: "2026-10-17"},
+	{Step: "make agent-start", Command: "make agent-start", Since: "2026-10-20"},
+	{Step: "make gate-plan", Command: "make gate-plan", Since: "2026-10-28"},
+	{Step: "Gate with make pre-merge on the commit", Command: "make pre-merge"},
+	{Step: "Screenshots with make shot", Command: "make shot", Since: "2026-10-29"},
+	{Step: "ios-ui-verify after a UI change", Skill: "ios-ui-verify", Files: `\.swift$`},
+	{Step: "Read docs/harness/workflows/learn.md before handing back", Read: `docs/harness/workflows/learn\.md`, Since: "2026-10-27"},
+	{Step: "Hand-back has a Learning line", Handback: "Learning:", Since: "2026-10-27", Roles: []string{store.WorkflowRoleShip, store.WorkflowRoleScout}},
+	{Step: "Hand-back has the criteria table with the gate receipt", Handback: `^\| *Gates? green`},
+}
+
+// A scout neither commits nor gates: the feature steps are n/a for it and
+// say why, and the Learning step asked of scouts is ticked on its report.
+func TestCheckWorkflowAsksAScoutOnlyItsOwnSteps(t *testing.T) {
+	p := diagnostics.Performance{Executions: []diagnostics.Execution{
+		{ID: "1", Tool: "Bash", Command: `{"command":"cd x; xcodebuild build-for-testing"}`, StartedAt: "2026-11-04T14:50:00Z"},
+	}}
+	got := checkWorkflow(mihuv2Workflow, store.WorkflowRoleScout, p, fixtureScoutReport, nil, "2026-11-04T14:37:17Z")
+	for i, c := range got {
+		switch i {
+		case 8:
+			if c.State != WorkflowDone || c.Evidence != "- Learning: follow-up (rev 1)" {
+				t.Errorf("learning step on the report: %+v", c)
+			}
+			if c.Rule != "writes a hand-back line matching Learning:; asked of ship and scout crews; asked since 2026-10-27" {
+				t.Errorf("learning rule = %q", c.Rule)
+			}
+		default:
+			if c.State != WorkflowNA || c.Evidence != "asked of ship crews, and this crew is a scout" {
+				t.Errorf("%s: %s %q, want n/a for a scout", c.Step, c.State, c.Evidence)
+			}
+		}
+	}
+	// A ship crew is still asked every step.
+	got = checkWorkflow(mihuv2Workflow, store.WorkflowRoleShip, p, "", nil, "2026-11-04T14:37:17Z")
+	if got[2].State != WorkflowMissed || got[8].State != WorkflowUnknown {
+		t.Errorf("ship crew: %+v", got)
+	}
+	// So is a reviewer, but only for the steps that name it.
+	got = checkWorkflow([]store.WorkflowStep{{Step: "verdict", Handback: "Verdict:", Roles: []string{store.WorkflowRoleReview}}}, store.WorkflowRoleReview, p, "Verdict: approve\n", nil, "")
+	if got[0].State != WorkflowDone {
+		t.Errorf("review step: %+v", got[0])
+	}
+}
+
+// The ledger counts a scout's report as its hand-back, so the Journey reads
+// it as one: the header's "handed back" and the Journey agree.
+func TestTaskJourneyReadsAScoutsReportAsItsHandback(t *testing.T) {
+	f := newFixture(t)
+	if err := f.ws.UpdateCrewMeta(fixtureProject, fixtureCrew, map[string]string{"kind": "scout"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(f.ws.CrewReport(fixtureProject, fixtureCrew)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.ws.CrewReport(fixtureProject, fixtureCrew), []byte(fixtureScoutReport), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := f.ws.LoadProject(fixtureProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Workflow = mihuv2Workflow
+	if err := f.ws.SaveProject(fixtureProject, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	var body TaskResponse
+	f.get(t, "/api/projects/shop/tasks/buybtn", 200, &body)
+	j := body.Journey
+	if body.Ledger.Role != store.WorkflowRoleScout {
+		t.Fatalf("role = %q", body.Ledger.Role)
+	}
+	if j.Handback == nil || j.Handback.Kind != HandbackReport || j.Handback.Path != f.ws.CrewReport(fixtureProject, fixtureCrew) || j.Handback.Learning != "follow-up (rev 1)" {
+		t.Fatalf("handback = %+v", j.Handback)
+	}
+	for _, m := range j.Missing {
+		if m == "hand-back" {
+			t.Errorf("missing still names the hand-back: %v", j.Missing)
+		}
+	}
+	missed := []string{}
+	for _, w := range j.Workflow {
+		if w.State == WorkflowMissed || w.State == WorkflowUnknown {
+			missed = append(missed, w.Step+"="+w.State)
+		}
+	}
+	if len(missed) != 0 {
+		t.Errorf("a scout is checked against ship steps: %v (%+v)", missed, j.Workflow)
+	}
+
+	// A ship crew's report (a reviewer's verdict, say) is not its hand-back.
+	if err := f.ws.UpdateCrewMeta(fixtureProject, fixtureCrew, map[string]string{"kind": "ship"}); err != nil {
+		t.Fatal(err)
+	}
+	f.appendEvent(t)
+	f.get(t, "/api/projects/shop/tasks/buybtn", 200, &body)
+	if body.Journey.Handback != nil {
+		t.Errorf("a ship crew's report read as its hand-back: %+v", body.Journey.Handback)
+	}
+	if err := os.WriteFile(f.ws.CrewHandback(fixtureProject, fixtureCrew), []byte(fixtureHandback), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.appendEvent(t)
+	f.get(t, "/api/projects/shop/tasks/buybtn", 200, &body)
+	if body.Journey.Handback == nil || body.Journey.Handback.Kind != HandbackFile {
+		t.Errorf("handback.md kind: %+v", body.Journey.Handback)
 	}
 }
 
