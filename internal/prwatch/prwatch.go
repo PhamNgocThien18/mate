@@ -11,7 +11,7 @@
 // the crew's primary checkout (unless that checkout is dirty or not on the
 // default branch, in which case it says why it did not), records
 // `pr_state=merged` and `merge_commit=` in the crew's meta, appends
-// `pr-merged: <url>` to the crew's status file, and wakes the Mate. A pull
+// `pr-merged: <url>` to the crew's status file, and wakes the Mate (to `mate land` it). A pull
 // request closed without merging is the same with `pr-closed`. Then it exits.
 //
 // # How the Mate is woken
@@ -165,7 +165,7 @@ func (d Deps) ended(ctx context.Context, project, crew, url, repo string, repoCf
 		sync := d.syncCheckout(ctx, repo, repoCfg.DefaultBranch, pr)
 		set[crewstate.MetaMergeCommit] = pr.MergeCommit
 		set[crewstate.MetaPRSync] = sync
-		line = fmt.Sprintf("pr-merged: %s %s was merged on GitHub as %s (%s); read %s, then run mate crew stop %s %s and keep the work moving",
+		line = fmt.Sprintf("pr-merged: %s %s was merged on GitHub as %s (%s); read %s, then run mate land %s %s and keep the work moving",
 			crew, url, short(pr.MergeCommit), sync, statusPath, project, crew)
 		d.logf("%s merged as %s; primary checkout: %s", url, short(pr.MergeCommit), sync)
 	} else {

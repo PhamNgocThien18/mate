@@ -1,0 +1,65 @@
+#!/bin/sh
+# mate land's tracker hook for Linear (docs/plugins.md, CON-193): moves the
+# issue to its team's completed state, attaches the hand-back's screenshots
+# and posts one comment with the landing's facts. Needs LINEAR_API_KEY in
+# the environment, or in ~/.config/linear/api_key (an API key from Linear
+# settings, not the Mate's OAuth login, which the binary cannot reach),
+# curl and jq.
+#
+# Wire it in .mate/plugins.yaml:
+#   tracker:
+#     land: [./bin/land, "{id}"]
+# and the Mate's `mate land` runs it with MATE_* in the environment.
+set -eu
+id="${1:-${MATE_TRACKER_ID:-}}"
+[ -n "$id" ] || { echo "land: no issue id" >&2; exit 2; }
+[ -n "${LINEAR_API_KEY:-}" ] || [ ! -r "$HOME/.config/linear/api_key" ] || LINEAR_API_KEY=$(cat "$HOME/.config/linear/api_key")
+[ -n "${LINEAR_API_KEY:-}" ] || { echo "land: LINEAR_API_KEY is not set and ~/.config/linear/api_key is missing" >&2; exit 2; }
+command -v jq >/dev/null || { echo "land: jq is not installed" >&2; exit 2; }
+
+gql() { # gql <query> <variables-json>
+  curl -sS --fail-with-body https://api.linear.app/graphql \
+    -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
+    --data "$(jq -cn --arg q "$1" --argjson v "$2" '{query:$q,variables:$v}')"
+}
+
+issue=$(gql 'query($id:String!){ issue(id:$id){ id identifier title team{ states{ nodes{ id name type } } } } }' "$(jq -cn --arg id "$id" '{id:$id}')")
+issue_id=$(printf '%s' "$issue" | jq -r '.data.issue.id // empty')
+[ -n "$issue_id" ] || { echo "land: $id: $(printf '%s' "$issue" | jq -r '.errors[0].message // "unknown to Linear"')" >&2; exit 1; }
+done_state=$(printf '%s' "$issue" | jq -r '[.data.issue.team.states.nodes[] | select(.type=="completed")] | sort_by(.name) | .[0].id // empty')
+[ -n "$done_state" ] || { echo "land: $id: the team has no completed state" >&2; exit 1; }
+
+gql 'mutation($id:String!,$s:String!){ issueUpdate(id:$id,input:{stateId:$s}){ success } }' \
+  "$(jq -cn --arg id "$issue_id" --arg s "$done_state" '{id:$id,s:$s}')" | jq -e '.data.issueUpdate.success' >/dev/null \
+  || { echo "land: $id: state not updated" >&2; exit 1; }
+
+# Screenshots: upload each through fileUpload, then embed it in the comment.
+images=""
+n=0
+printf '%s\n' "${MATE_SHOTS:-}" | while IFS= read -r shot; do
+  [ -n "$shot" ] && [ -f "$shot" ] || continue
+  name=$(basename "$shot"); size=$(wc -c < "$shot" | tr -d ' ')
+  case "$name" in *.png) type=image/png;; *.jpg|*.jpeg) type=image/jpeg;; *.webp) type=image/webp;; *) continue;; esac
+  up=$(gql 'mutation($t:String!,$s:Int!,$f:String!){ fileUpload(contentType:$t,size:$s,filename:$f){ success uploadFile{ uploadUrl assetUrl headers{ key value } } } }' \
+    "$(jq -cn --arg t "$type" --argjson s "$size" --arg f "$name" '{t:$t,s:$s,f:$f}')")
+  url=$(printf '%s' "$up" | jq -r '.data.fileUpload.uploadFile.uploadUrl // empty')
+  asset=$(printf '%s' "$up" | jq -r '.data.fileUpload.uploadFile.assetUrl // empty')
+  [ -n "$url" ] || continue
+  hdrs=$(printf '%s' "$up" | jq -r '.data.fileUpload.uploadFile.headers[] | "-H\n\(.key): \(.value)"')
+  # shellcheck disable=SC2086
+  curl -sS --fail -X PUT "$url" -H "Content-Type: $type" $(printf '%s\n' "$hdrs" | tr '\n' ' ') --data-binary @"$shot" >/dev/null && printf '![%s](%s)\n' "$name" "$asset" >> "${TMPDIR:-/tmp}/mate-land-$$.images"
+done
+[ -f "${TMPDIR:-/tmp}/mate-land-$$.images" ] && { images=$(cat "${TMPDIR:-/tmp}/mate-land-$$.images"); n=$(printf '%s\n' "$images" | grep -c '^!'); rm -f "${TMPDIR:-/tmp}/mate-land-$$.images"; }
+
+landed="${MATE_MERGE_COMMIT:-}"
+[ -n "$landed" ] || landed="fast-forwarded (branch ${MATE_BRANCH:-?})"
+body="Landed by mate: ${MATE_TASK:-$id}
+Branch: ${MATE_BRANCH:-?} · ${landed}${MATE_PR_URL:+ · $MATE_PR_URL}
+Crew: ${MATE_PROJECT:-?}/${MATE_CREW:-?} · hand-back: ${MATE_HANDBACK:-?}"
+[ -n "$images" ] && body="$body
+
+$images"
+gql 'mutation($i:String!,$b:String!){ commentCreate(input:{issueId:$i,body:$b}){ success } }' \
+  "$(jq -cn --arg i "$issue_id" --arg b "$body" '{i:$i,b:$b}')" | jq -e '.data.commentCreate.success' >/dev/null \
+  || { echo "land: $id: done, but the comment was not posted" >&2; exit 1; }
+echo "$id → Done, 1 comment, $n image(s)"
