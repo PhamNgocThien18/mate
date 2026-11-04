@@ -1,14 +1,20 @@
-//go:build !darwin && !linux
+//go:build !darwin && !dragonfly && !freebsd && !illumos && !linux && !netbsd && !openbsd
 
 package db
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"runtime"
+)
 
-// mate targets darwin and linux, where flock is available. Elsewhere the
-// package still builds and the single-writer rule rests on SQLite's own
-// locking alone.
+// takeLock refuses on a platform whose syscall package has no Flock (the
+// constraint above is lock_unix.go's, negated). Opening the file and taking
+// nothing would let a second writer interleave with the first, which is the
+// one thing the lock exists to refuse, and mate does not run without its
+// locks (CON-177). OpenRead takes no lock, so readers are unaffected.
 func takeLock(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	return nil, fmt.Errorf("db: the writer lock needs flock, which %s does not have", runtime.GOOS)
 }
 
 func releaseLock(f *os.File) {
