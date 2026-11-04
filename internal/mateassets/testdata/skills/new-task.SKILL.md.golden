@@ -173,6 +173,9 @@ Both revision paths check shape and refuse a changed captain history. You check 
 
 ## Scouts
 
+A bug the captain reports from a screenshot or a recording whose state it does not show (the steps that led there, the device, the data) gets a news first, before any scout: ask for the steps, a screen recording, or the app's own action log or report.
+The scout waits for the answer unless the captain says to go without it; then its brief names the missing state under `Unknown:`. On mihuv2 (HU-403), a scout spent 13.5M tokens and 40 minutes on a simulator and could not reproduce a washi frame offset: the screenshot came from a real iPhone after a drag or resize the captain had done, which one question would have told it.
+
 A scout that diagnoses a bug asks in `## Deliverable` for each of these, one line each; the Crew template carries the procedure:
 
 - the end-to-end reproduction on the real user path, or the exact limitation that prevented one;
