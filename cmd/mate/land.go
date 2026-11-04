@@ -144,7 +144,12 @@ func cmdLand(args []string, stdout, stderr io.Writer) error {
 			len(open), strings.Join(open, ", "), project, strings.Join(learnings.Outcomes, "|"))
 	}
 
-	// 7. What next-work needs.
+	// 7. A landing is what grows a repo's friction log (CON-200).
+	for _, l := range frictionCheck(w, project, time.Now(), true) {
+		fmt.Fprintln(stdout, l)
+	}
+
+	// 8. What next-work needs.
 	fmt.Fprintln(stdout, landNext(w, project))
 	return nil
 }
