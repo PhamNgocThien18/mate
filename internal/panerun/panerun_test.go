@@ -66,7 +66,6 @@ func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
 		_ = w.Close()
 		_ = os.RemoveAll(dir)
 	})
-	waitFor(t, func() bool { _, err := os.Stat(socket); return err == nil })
 	return socket, screen, &restores
 }
 
@@ -88,11 +87,22 @@ func waitForWithin(t *testing.T, limit time.Duration, ok func() bool) {
 	}
 }
 
+// send asks the runner on socket to show argv. A send is refused until the
+// runner listens, and its socket file appears a moment before that, when it
+// binds (CON-175). Send reports the refusal as ErrGone, so, like the
+// Console's waitSend, send tries again until the runner takes the command
+// or 5s pass.
 func send(t *testing.T, socket string, argv ...string) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return Send(ctx, socket, Command{Argv: argv})
+	for {
+		err := Send(ctx, socket, Command{Argv: argv})
+		if !errors.Is(err, ErrGone) || ctx.Err() != nil {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // The pane shows its idle line until told otherwise, then the child's
@@ -203,7 +213,6 @@ func TestExitEndsTheRunnerAndItsChild(t *testing.T) {
 	s := &Server{}
 	served := make(chan error, 1)
 	go func() { served <- s.Serve(context.Background(), socket) }()
-	waitFor(t, func() bool { _, err := os.Stat(socket); return err == nil })
 	ready := filepath.Join(dir, "ready")
 	if err := send(t, socket, "sh", "-c", "trap 'touch "+marker+"; exit 0' TERM; touch "+ready+"; while :; do sleep 0.05; done"); err != nil {
 		t.Fatal(err)
@@ -300,7 +309,6 @@ func TestWhatAChildLeftOnTheTerminalIsPartOfTheColumn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = s.Serve(ctx, socket) }()
-	waitFor(t, func() bool { _, err := os.Stat(socket); return err == nil })
 
 	cli := []string{"sh", "-c", "echo cli-ran; touch " + handedOver}
 	if err := send(t, socket, cli...); err != nil {
@@ -355,7 +363,6 @@ func TestExitRepliesAfterTheChildIsGone(t *testing.T) {
 	socket := filepath.Join(dir, "s.sock")
 	s := &Server{}
 	go func() { _ = s.Serve(context.Background(), socket) }()
-	waitFor(t, func() bool { _, err := os.Stat(socket); return err == nil })
 	ready := filepath.Join(dir, "ready")
 	if err := send(t, socket, "sh", "-c", "trap 'sleep 0.3; exit 0' TERM; touch "+ready+"; while :; do sleep 0.05; done"); err != nil {
 		t.Fatal(err)
