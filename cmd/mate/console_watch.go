@@ -56,10 +56,11 @@ func consoleWatcher(dir string, deps spawn.Deps) (*watch.Watcher, error) {
 // end of every poll what the files say.
 //
 // The returned handle owns the database and its advisory lock; the
-// caller closes it when the workspace closes. A workspace whose database is
-// already locked by another console is not an error here: that console is the
-// writer, this one still observes, and the timeline is recorded once rather
-// than twice (internal/db.ErrLocked).
+// caller closes it when the workspace closes. Since CON-162 a second
+// console never gets this far (consoleClaim), but another writer such as
+// `mate reindex` can hold the database: that is not an error here. That
+// process is the writer, this console still observes, and the timeline is
+// recorded once rather than twice (internal/db.ErrLocked).
 func consoleWatcherWithTimeline(dir string, deps spawn.Deps) (*watch.Watcher, *db.DB, *timeline.Ingester, error) {
 	ws, err := store.Open(dir)
 	if err != nil {
