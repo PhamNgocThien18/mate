@@ -211,45 +211,44 @@ func (w *Workspace) AddProject(name string, cfg ProjectConfig) error {
 	if err := ValidateProjectName(name); err != nil {
 		return err
 	}
-	// cfgMu is held from the check that the name is free to the save that
+	// One update from the check that the name is free to the save that
 	// registers it, so no LoadConfig or other change of this handle lands
 	// in between (CON-204).
-	w.cfgMu.Lock()
-	defer w.cfgMu.Unlock()
-	if _, ok := w.Project(name); ok {
-		return fmt.Errorf("%w: %s", ErrProjectExists, name)
-	}
-	normalised, err := w.normaliseProject(name, cfg)
-	if err != nil {
-		return err
-	}
-	if err := w.checkReposUnclaimed(name, normalised.Repos); err != nil {
-		return err
-	}
-	for _, dir := range []string{w.ProjectHome(name), w.ProjectDir(name), w.MateDir(name), w.CrewsDir(name)} {
-		if err := w.mkdirAll(dir); err != nil {
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		if _, ok := w.Project(name); ok {
+			return fmt.Errorf("%w: %s", ErrProjectExists, name)
+		}
+		normalised, err := w.normaliseProject(name, cfg)
+		if err != nil {
 			return err
 		}
-	}
-	if err := w.SaveProject(name, normalised); err != nil {
-		return err
-	}
-	if err := w.seedOnce(w.ProjectCrewDoc(name), projectCrewDocSeed(name)); err != nil {
-		return err
-	}
-	next := w.config().clone()
-	next.Projects = append(next.Projects, ProjectRef{Name: name})
-	return w.saveConfigLocked(next)
+		if err := w.checkReposUnclaimed(name, normalised.Repos); err != nil {
+			return err
+		}
+		for _, dir := range []string{w.ProjectHome(name), w.ProjectDir(name), w.MateDir(name), w.CrewsDir(name)} {
+			if err := w.mkdirAll(dir); err != nil {
+				return err
+			}
+		}
+		if err := w.SaveProject(name, normalised); err != nil {
+			return err
+		}
+		if err := w.seedOnce(w.ProjectCrewDoc(name), projectCrewDocSeed(name)); err != nil {
+			return err
+		}
+		next.Projects = append(next.Projects, ProjectRef{Name: name})
+		return nil
+	})
 }
 
 // RemoveProject drops a project from workspace.yaml. The state directory under
 // `projects/` is left on disk: like `crews/<id>/`, it is history and only the
 // user deletes it.
 func (w *Workspace) RemoveProject(name string) error {
-	return w.changeConfig(func(cfg *WorkspaceConfig) error {
-		for i, p := range cfg.Projects {
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		for i, p := range next.Projects {
 			if p.Name == name {
-				cfg.Projects = append(cfg.Projects[:i:i], cfg.Projects[i+1:]...)
+				next.Projects = append(next.Projects[:i:i], next.Projects[i+1:]...)
 				return nil
 			}
 		}

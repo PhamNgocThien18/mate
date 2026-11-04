@@ -89,7 +89,7 @@ const DefaultLaneCap = 2
 
 // LaneCap is how many crews may hold the lane at once.
 func (w *Workspace) LaneCap(lane string) int {
-	if n := w.config().Lanes[lane]; n > 0 {
+	if n := w.snapshot().Lanes[lane]; n > 0 {
 		return n
 	}
 	return DefaultLaneCap
@@ -282,16 +282,19 @@ func SessionName(absPath string) string {
 	return "mate-" + hex.EncodeToString(sum[:4])
 }
 
-// config is the configuration as last loaded or saved. It is shared with every
-// other reader, so it is only read, never changed.
-func (w *Workspace) config() *WorkspaceConfig {
+// snapshot is the configuration as last loaded or saved. Every reader shares
+// it, so it is only read, never changed. A Workspace that neither Init nor
+// OpenForMigrate made has none and reads as empty, as the zero Workspace did.
+func (w *Workspace) snapshot() *WorkspaceConfig {
 	if cfg := w.cfg.Load(); cfg != nil {
 		return cfg
 	}
 	return &WorkspaceConfig{}
 }
 
-// clone is a copy of cfg that shares no slice or map with it.
+// clone is a copy of cfg that shares no slice or map with it. A field added
+// to WorkspaceConfig that holds a reference must be copied here too
+// (TestStoreConfigSharesNothingWithTheWorkspace).
 func (cfg *WorkspaceConfig) clone() WorkspaceConfig {
 	out := *cfg
 	out.Projects = append([]ProjectRef(nil), cfg.Projects...)
@@ -301,19 +304,19 @@ func (cfg *WorkspaceConfig) clone() WorkspaceConfig {
 
 // Config is the loaded workspace.yaml. The copy is the caller's; changes reach
 // disk only through the methods on Workspace.
-func (w *Workspace) Config() WorkspaceConfig { return w.config().clone() }
+func (w *Workspace) Config() WorkspaceConfig { return w.snapshot().clone() }
 
 // Session is the Herdr session name of this workspace.
-func (w *Workspace) Session() string { return w.config().Session }
+func (w *Workspace) Session() string { return w.snapshot().Session }
 
 // RecordedRoot is the root workspace.yaml last recorded, "" for a workspace
 // written before the file carried one.
-func (w *Workspace) RecordedRoot() string { return w.config().Root }
+func (w *Workspace) RecordedRoot() string { return w.snapshot().Root }
 
 // SetRoot records the workspace's current root in workspace.yaml.
 func (w *Workspace) SetRoot(root string) error {
-	return w.changeConfig(func(cfg *WorkspaceConfig) error {
-		cfg.Root = root
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		next.Root = root
 		return nil
 	})
 }
@@ -322,8 +325,8 @@ func (w *Workspace) SetRoot(root string) error {
 // workspace copied beside its original, which must never share the original's
 // session; nothing else renames a session.
 func (w *Workspace) SetSession(name string) error {
-	return w.changeConfig(func(cfg *WorkspaceConfig) error {
-		cfg.Session = name
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		next.Session = name
 		return nil
 	})
 }
@@ -331,7 +334,7 @@ func (w *Workspace) SetSession(name string) error {
 // Layout is the workspace's directory layout: 2 when workspace.yaml says so,
 // 1 for a file with no `layout:`.
 func (w *Workspace) Layout() int {
-	layout := w.config().Layout
+	layout := w.snapshot().Layout
 	if layout == 0 {
 		return 1
 	}
@@ -343,13 +346,13 @@ func (w *Workspace) Layout() int {
 func (w *Workspace) LayoutOld() bool { return w.Layout() < layoutProjectDirs }
 
 // Defaults are the workspace-wide harness defaults.
-func (w *Workspace) Defaults() Defaults { return w.config().Defaults }
+func (w *Workspace) Defaults() Defaults { return w.snapshot().Defaults }
 
 // CrewAutocompact is the compaction threshold a Crew launches with: the
 // `crew.autocompact` of workspace.yaml, DefaultCrewAutocompact when it says
 // none, and 0 (no flag) when it is negative.
 func (w *Workspace) CrewAutocompact() int {
-	switch n := w.config().Crew.Autocompact; {
+	switch n := w.snapshot().Crew.Autocompact; {
 	case n < 0:
 		return 0
 	case n == 0:
@@ -364,7 +367,7 @@ func (w *Workspace) CrewAutocompact() int {
 // workspace.yaml, DefaultCrewContextHigh when it says none, and 0 (off)
 // when it is negative.
 func (w *Workspace) CrewContextHigh() int {
-	switch n := w.config().Crew.ContextHigh; {
+	switch n := w.snapshot().Crew.ContextHigh; {
 	case n < 0:
 		return 0
 	case n == 0:
@@ -376,12 +379,12 @@ func (w *Workspace) CrewContextHigh() int {
 
 // Projects are the registered projects, in the order workspace.yaml lists them.
 func (w *Workspace) Projects() []ProjectRef {
-	return append([]ProjectRef(nil), w.config().Projects...)
+	return append([]ProjectRef(nil), w.snapshot().Projects...)
 }
 
 // Project returns the registration of one project.
 func (w *Workspace) Project(name string) (ProjectRef, bool) {
-	for _, p := range w.config().Projects {
+	for _, p := range w.snapshot().Projects {
 		if p.Name == name {
 			return p, true
 		}
@@ -414,38 +417,35 @@ func (w *Workspace) LoadConfig() error {
 
 // SaveConfig writes workspace.yaml atomically.
 func (w *Workspace) SaveConfig() error {
-	return w.changeConfig(func(*WorkspaceConfig) error { return nil })
+	return w.updateConfig(func(*WorkspaceConfig) error { return nil })
 }
 
-// changeConfig is one read-modify-write of workspace.yaml: change edits a copy
-// of the configuration, which is then saved and swapped in. cfgMu is held
-// from the read to the swap, so a LoadConfig beside it cannot land in between
-// and undo the change (CON-204). An error from change saves nothing.
-func (w *Workspace) changeConfig(change func(*WorkspaceConfig) error) error {
+// updateConfig is every change of workspace.yaml: change edits a copy of the
+// configuration, the copy is written to the file, and only then is it the
+// one readers see, so a write that fails leaves the configuration as it was.
+// cfgMu is held from the read to the swap, so a LoadConfig beside it cannot
+// land in between and undo the change (CON-204); work that must not be
+// interleaved with the change goes in change too. An error from change saves
+// nothing. change must not call LoadConfig or anything that updates the
+// configuration: cfgMu is not reentrant.
+func (w *Workspace) updateConfig(change func(next *WorkspaceConfig) error) error {
 	w.cfgMu.Lock()
 	defer w.cfgMu.Unlock()
-	next := w.config().clone()
+	next := w.snapshot().clone()
 	if err := change(&next); err != nil {
 		return err
 	}
-	return w.saveConfigLocked(next)
-}
-
-// saveConfigLocked writes cfg to workspace.yaml and, once it is written, makes
-// it the configuration readers see: a save that fails leaves the one before.
-// The caller holds cfgMu.
-func (w *Workspace) saveConfigLocked(cfg WorkspaceConfig) error {
-	if cfg.Version == 0 {
-		cfg.Version = workspaceVersion
+	if next.Version == 0 {
+		next.Version = workspaceVersion
 	}
-	data, err := yaml.Marshal(cfg)
+	data, err := yaml.Marshal(next)
 	if err != nil {
 		return err
 	}
 	if err := w.writeFile(w.WorkspaceFile(), data, 0o644); err != nil {
 		return err
 	}
-	w.cfg.Store(&cfg)
+	w.cfg.Store(&next)
 	return nil
 }
 

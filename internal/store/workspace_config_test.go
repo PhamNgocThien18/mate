@@ -1,8 +1,10 @@
 package store_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -189,10 +191,10 @@ func TestStoreChangesSurviveAReloadBesideThem(t *testing.T) {
 	}
 }
 
-// TestStoreLoadConfigKeepsTheConfigOverABrokenFile: a workspace.yaml that no
-// longer reads, the captain halfway through an edit or the file gone, makes
-// LoadConfig fail and leaves the configuration it had loaded in place, so
-// the console's refresh goes on with the projects it knew (CON-204).
+// TestStoreLoadConfigKeepsTheConfigOverABrokenFile: a workspace.yaml that
+// does not parse, or is gone, makes LoadConfig fail and leaves the
+// configuration it had loaded in place, so the console's refresh goes on with
+// the projects it knew (CON-204).
 func TestStoreLoadConfigKeepsTheConfigOverABrokenFile(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -220,6 +222,102 @@ func TestStoreLoadConfigKeepsTheConfigOverABrokenFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStoreAFailedSaveLeavesTheConfigAsItWas: a change whose workspace.yaml
+// cannot be written returns the error and leaves the configuration as it
+// was, because the new one is swapped in only once it is saved (CON-204).
+// Before, the change stayed in memory, and the next save of anything wrote
+// it to the file.
+func TestStoreAFailedSaveLeavesTheConfigAsItWas(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*store.Workspace) error
+	}{
+		{"SetRoot", func(w *store.Workspace) error { return w.SetRoot("/elsewhere") }},
+		{"SetSession", func(w *store.Workspace) error { return w.SetSession("mate-elsewhere") }},
+		{"AddProject", func(w *store.Workspace) error { return w.AddProject("other", store.ProjectConfig{}) }},
+		{"RemoveProject", func(w *store.Workspace) error { return w.RemoveProject("shop") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newProjectWorkspace(t)
+			before := w.Config()
+			// workspace.yaml becomes a link out of the workspace, which every
+			// write of it refuses; the rest of `.mate/` still takes writes.
+			outside := filepath.Join(t.TempDir(), "workspace.yaml")
+			if err := os.WriteFile(outside, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(w.WorkspaceFile()); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, w.WorkspaceFile()); err != nil {
+				t.Fatalf("symlink: %v", err)
+			}
+			var boundary *store.BoundaryError
+			if err := tc.change(w); !errors.As(err, &boundary) {
+				t.Fatalf("%s with workspace.yaml unwritable: err = %v, want *store.BoundaryError", tc.name, err)
+			}
+			if got := w.Config(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("config after the failed save = %+v, want it as it was, %+v", got, before)
+			}
+		})
+	}
+}
+
+// TestStoreConfigSharesNothingWithTheWorkspace: Config is the caller's copy.
+// Every other reader of the workspace shares one configuration, so writing
+// into the slices and maps Config returned must change nothing they see
+// (CON-204).
+func TestStoreConfigSharesNothingWithTheWorkspace(t *testing.T) {
+	w := newWorkspace(t)
+	cfg := w.Config()
+	cfg.Lanes = map[string]int{"xcode": 1}
+	cfg.Projects = []store.ProjectRef{{Name: "a1"}}
+	if err := saveAsAnotherProcess(w, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := w.Config()
+	got.Projects[0].Name = "changed"
+	got.Lanes["xcode"] = 9
+	if p := w.Projects(); len(p) != 1 || p[0].Name != "a1" {
+		t.Errorf("projects after writing into Config's copy = %+v, want [{Name:a1}]", p)
+	}
+	if n := w.LaneCap("xcode"); n != 1 {
+		t.Errorf("lane cap after writing into Config's copy = %d, want 1", n)
+	}
+
+	// Config copies exactly these; a field that holds a reference, added to
+	// WorkspaceConfig later, has to be copied too (clone, workspace.go).
+	if refs := referenceFields(reflect.TypeOf(store.WorkspaceConfig{}), ""); !reflect.DeepEqual(refs, []string{"Lanes", "Projects"}) {
+		t.Errorf("WorkspaceConfig holds references in %v, but Config copies only [Lanes Projects]", refs)
+	}
+}
+
+// referenceFields names the fields of the struct typ, at any depth, whose
+// value a plain copy shares rather than duplicates.
+func referenceFields(typ reflect.Type, prefix string) []string {
+	var out []string
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		name := prefix + f.Name
+		switch f.Type.Kind() {
+		case reflect.Struct:
+			out = append(out, referenceFields(f.Type, name+".")...)
+		case reflect.Slice, reflect.Map, reflect.Pointer:
+			out = append(out, name)
+			if f.Type.Elem().Kind() == reflect.Struct {
+				out = append(out, referenceFields(f.Type.Elem(), name+"[].")...)
+			}
+		case reflect.Interface, reflect.Chan, reflect.Func:
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // saveAsAnotherProcess writes cfg over w's workspace.yaml the way any process
