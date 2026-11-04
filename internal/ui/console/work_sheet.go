@@ -1,6 +1,7 @@
 package console
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,7 +13,9 @@ import (
 
 // The work board sheet (CON-158): `w` on a Mate or Project row lists what
 // the captain asked the Mate for and what the Mate proposed, grouped by
-// where each stands. The only thing the captain does here is tick a done
+// where each stands. A headless Mate shows the board as a page in its own
+// pane instead (CON-198): the sheet is 40 columns, too narrow to read, so
+// it is only for a Mate with no REPL. The only thing the captain does here is tick a done
 // row (Space), which is final and takes it off the board; everything else
 // is for looking. A row that waits on a topic names it, and `t` opens the
 // topic in the Mate the way Enter on a news does.
@@ -44,11 +47,23 @@ var workGroups = []struct{ status, heading string }{
 	{"okayed", "okayed"},
 }
 
-// beginWork is `w`: the board of the selected row's Mate.
-func (m Model) beginWork() Model {
+// ErrNoMateREPL is an open-work request for a Mate that runs without the
+// REPL: the console shows the board in its own sheet.
+var ErrNoMateREPL = errors.New("the Mate runs without the REPL")
+
+// workOpenedMsg is the REPL's answer to an open-work request.
+type workOpenedMsg struct {
+	project string
+	row     row
+	err     error
+}
+
+// beginWork is `w`: the board of the selected row's Mate, as a page in the
+// Mate's pane when it runs headless, else in the sheet.
+func (m Model) beginWork() (Model, tea.Cmd) {
 	r, ok := m.selectedRow()
 	if !ok {
-		return m
+		return m, nil
 	}
 	project := ""
 	switch r.kind {
@@ -58,8 +73,39 @@ func (m Model) beginWork() Model {
 		project = r.id
 	}
 	if project == "" {
-		return m
+		return m, nil
 	}
+	if m.action == nil {
+		return m.openWorkSheet(project), nil
+	}
+	action, ctx := m.action, m.baseCtx()
+	req := ActionRequest{Action: ActionOpenWork, Target: project, TargetKind: "project"}
+	return m, func() tea.Msg {
+		_, err := action(ctx, req)
+		return workOpenedMsg{project: project, row: r, err: err}
+	}
+}
+
+// onWorkOpened shows the Mate's pane once its REPL has the page, or the
+// sheet when the Mate has no REPL.
+func (m Model) onWorkOpened(msg workOpenedMsg) (Model, tea.Cmd) {
+	switch {
+	case errors.Is(msg.err, ErrNoMateREPL):
+		return m.openWorkSheet(msg.project), nil
+	case msg.err != nil:
+		m.msg = errMsg("Open work refused: " + msg.err.Error())
+		return m, nil
+	case msg.row.kind == rowMate:
+		m, stage := m.stageRow(msg.row)
+		m.msg = infoMsg(m.g.Arrow + " work board opened in the Mate's pane")
+		return m, stage
+	}
+	m.msg = infoMsg(m.g.Arrow + " work board opened in the Mate's pane")
+	return m, nil
+}
+
+// openWorkSheet is the board of project in the console's own sheet.
+func (m Model) openWorkSheet(project string) Model {
 	m = m.closeActions()
 	m.work = workSheet{open: true, project: project, expanded: map[int]bool{}}
 	m.msg = footerMsg{}
