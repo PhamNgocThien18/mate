@@ -214,6 +214,9 @@ type InboxItem struct {
 	Verb      string `json:"verb,omitempty"`
 	Text      string `json:"text"`
 	Attention bool   `json:"attention"`
+	// AssignKey is what an `assign` press names this entry by, set only
+	// when the Mate can be handed it (query.BoxEntry.Resolvable).
+	AssignKey string `json:"assign_key,omitempty"`
 }
 
 // ProjectResponse is GET /api/projects/{project}.

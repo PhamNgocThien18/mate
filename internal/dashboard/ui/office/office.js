@@ -268,6 +268,14 @@
     return node;
   }
 
+  // setDisabled turns a drawn button on or off in place, the attribute
+  // being what el() set.
+  function setDisabled(node, on) {
+    if (on) node.setAttribute("disabled", ""); else node.removeAttribute("disabled");
+  }
+
+  function isDisabled(node) { return node.hasAttribute("disabled"); }
+
   function setAttrs(node, attrs) {
     if (!attrs) return;
     Object.keys(attrs).forEach(function (k) {
@@ -420,9 +428,12 @@
   var running = {};           // drawer key -> the button running there; that drawer's other buttons wait
   var outcomes = {};          // drawer key -> {kind, text}: the last action's one line on that drawer
   var diffView = null;        // {key, body} | {key, error} | {key, loading}: a crew's branch diff
+  var peekView = null;        // {key, text} | {key, error} | {key, loading}: a crew's screen
   var wsReadOnly = null;      // why this dashboard cannot act ("" when it can, null until known)
   var mateTab = "details";    // the Mate drawer's tab: "details" or "talk"
   var talkOpen = {};          // turn time -> true when an older turn is opened up
+  var talkDraft = {};         // project -> what the captain is writing to the Mate
+  var talkTimer = null;       // reads the open Talk again while the Mate answers
   var mateFull = storedFlag("mate-office-mate-full"); // the Mate drawer fills the page, replies unclipped
   var matesOnly = storedFlag("mate-office-mates-only"); // the console's `v`: rooms show only their Mate
   var inboxMode = {};         // project -> "inbox" | "log"
@@ -546,7 +557,17 @@
     var token = ++detailToken;
     if (s && s.kind === "captain") return loadNews();
     if (s && s.kind === "add") return Promise.resolve();
-    if (s && s.kind === "inbox") return (inboxMode[s.project] === "log" ? loadInboxLog(s.project) : Promise.resolve());
+    if (s && s.kind === "inbox") {
+      // Assign to Mate is the crew's City button (CON-142), read beside
+      // the box.
+      var actRead = api(actionsPath(s.project)).then(function (body) {
+        noteReadOnly(body);
+        if (token === detailToken) acts = { key: key, body: body };
+      }, function (err) {
+        if (token === detailToken) acts = { key: key, error: err };
+      });
+      return Promise.all([actRead, inboxMode[s.project] === "log" ? loadInboxLog(s.project) : null]);
+    }
     if (!s || s.kind === "cab") return Promise.resolve();
     if (s.kind === "board") return Promise.all([loadBoard(), s.date ? loadBoardDay(s.date) : null]);
     if (!detail || detail.key !== key) detail = { key: key, loading: true };
@@ -1560,7 +1581,7 @@
     return { action: action, label: label, available: false, reason: "?" };
   }
 
-  function mateSlots(list) {
+  function mateSlots(list, more) {
     var start = list[0] && /^(start|onboard|resume)$/.test(list[0].action) ? list[0] : serverButton(list, "start", "Start mate");
     var mode = null;
     list.forEach(function (b) { if (b.action === "mode") mode = b; });
@@ -1572,18 +1593,18 @@
       serverButton(list, "clear_composer", "Clear composer"),
       { action: "explain", label: "Explain notice (Jev)", available: false, reason: NOT_WIRED },
       { action: "copy", label: "Copy agent id", available: false, reason: "no agent id in the API yet" },
-      { action: "remove_project", label: "Remove project…", available: false, reason: NOT_WIRED }
+      serverButton(more, "remove_project", "Remove project…")
     ];
   }
 
-  function crewSlots(list) {
+  function crewSlots(list, more) {
     return [
       serverButton(list, "stop", "Stop crew…"),
       serverButton(list, "restart_crew", "Restart crew…"),
       serverButton(list, "merge", "Merge…"),
       { action: "repair", label: "Repair binding…", available: false, reason: NOT_WIRED },
       serverButton(list, "diff", "Diff"),
-      { action: "peek", label: "Peek", available: false, reason: NOT_WIRED },
+      serverButton(more, "peek", "Peek"),
       { action: "zed", label: "Open in Zed", available: false, reason: NOT_WIRED },
       { action: "copy", label: "Copy crew id", available: true }
     ];
@@ -1601,7 +1622,8 @@
       var list = crew ? (a.body.crews || {})[crew] : a.body.mate;
       if (!list) nodes.push(el("p", { class: "loading-note", text: "This crew is not open in the console; there is nothing to act on." }));
       else {
-        var slots = crew ? crewSlots(list) : mateSlots(list);
+        var more = (crew ? (a.body.crew_more || {})[crew] : a.body.mate_more) || [];
+        var slots = crew ? crewSlots(list, more) : mateSlots(list, more);
         nodes.push(el("div", { class: "acts", role: "group", "aria-label": "Actions" }, slots.map(function (btn, i) {
           return actionSlot(name, crew, key, btn, i);
         })));
@@ -1612,6 +1634,7 @@
       nodes.push(el("p", { class: "stale-line" }, [icon("clock"), "This page is stale. Each action re-reads first and refuses if things moved."]));
     }
     if (crew && diffView && diffView.key === key) nodes.push(diffBlock(diffView));
+    if (crew && peekView && peekView.key === key) nodes.push(peekBlock(peekView));
     return el("section", { class: "ds", "aria-label": "Actions" }, nodes);
   }
 
@@ -1635,6 +1658,7 @@
     b.addEventListener("click", function () {
       if (disabled) return;
       if (btn.action === "diff") { toggleDiff(name, crew, key); return; }
+      if (btn.action === "peek") { togglePeek(name, crew, key); return; }
       if (btn.action === "copy") { copyText(crew || name, key); return; }
       if (btn.confirm) {
         asking = { key: key, name: name, crew: crew, button: btn };
@@ -1755,6 +1779,25 @@
     }, function (err) {
       if (diffView && diffView.key === key) diffView = { key: key, error: err };
     }).then(draw);
+  }
+
+  // togglePeek reads the crew's screen once (the City's Peek, CON-142):
+  // the console's action answers with the screen as its line.
+  function togglePeek(name, crew, key) {
+    if (peekView && peekView.key === key && !peekView.loading) { peekView = null; draw(); return; }
+    peekView = { key: key, loading: true };
+    draw();
+    press({ action: "peek", project: name, crew: crew }).then(function (res) {
+      if (peekView && peekView.key === key) peekView = { key: key, text: res.line || "" };
+    }, function (err) {
+      if (peekView && peekView.key === key) peekView = { key: key, error: err };
+    }).then(draw);
+  }
+
+  function peekBlock(v) {
+    if (v.loading) return el("p", { class: "loading-note", text: "reading the screen…" });
+    if (v.error) return resultLine(outcomeOf(v.error));
+    return el("pre", { class: "act-diff", "aria-label": "Screen of the crew", text: v.text || "the screen is empty" });
   }
 
   function diffBlock(v) {
@@ -1886,19 +1929,95 @@
     return t.length > 90 ? t.slice(0, 89) + "…" : t || "(no prompt)";
   }
 
-  // The composer keeps its place. Sending is not wired yet (CON-141's
-  // follow-up), so it is drawn and dimmed with the reason.
+  // The composer talks to a headless Mate the way its REPL does (the
+  // City's `say` and `interrupt`, CON-142). Whether it can is the
+  // console's: the Mate's `say` button says why not.
   function composer(name) {
     var a = acts && acts.key === "mate/" + enc(name) ? acts : null;
     if (a && a.body && a.body.read_only) return el("footer", { class: "dfoot" }, roLine(a.body.read_only));
-    var send = el("button", { class: "btn primary", type: "button", disabled: true, "aria-describedby": "send-why" }, [icon("send"), "Send"]);
+    var say = a && a.body ? serverButton(a.body.mate_more || [], "say", "Send") : null;
+    var key = "talk/" + enc(name);
+    var busy = running[key];
+    var blocked = !a ? "loading…" : a.error ? "Actions: ?" : !say.available ? say.reason || "?" : "";
+    var x = chatOf(name);
+    var thinking = !!(x.state && x.state.busy);
+    var box = el("textarea", { class: "compose", disabled: !!blocked, "aria-label": "Message the Mate of " + name,
+      placeholder: "Message the Mate of " + name + "…", "data-focus": "talk:" + name });
+    box.value = talkDraft[name] || "";
+    box.textContent = talkDraft[name] || "";
+    var cannot = function () { return !!blocked || !!busy || !(talkDraft[name] || "").trim(); };
+    var send = el("button", { class: "btn primary", type: "button", disabled: cannot(), "aria-describedby": "send-why", "data-focus": "talk-send" },
+      [icon("send"), busy && busy.action === "say" ? "Sending…" : "Send"]);
+    var stop = el("button", { class: "btn", type: "button", disabled: !!blocked || !!busy || !thinking, "data-focus": "talk-interrupt",
+      title: thinking ? null : "nothing to interrupt" }, "Interrupt");
+    box.addEventListener("input", function (e) {
+      talkDraft[name] = e.target.value;
+      setDisabled(send, cannot());
+    });
+    box.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        if (e.preventDefault) e.preventDefault();
+        sendTalk(name);
+      }
+    });
+    send.addEventListener("click", function () { sendTalk(name); });
+    stop.addEventListener("click", function () {
+      if (!isDisabled(stop)) talkPress(name, { action: "interrupt", project: name });
+    });
     return el("footer", { class: "dfoot" }, [
-      el("textarea", { class: "compose", disabled: true, "aria-label": "Message the Mate of " + name, placeholder: "Message the Mate of " + name + "…" }),
+      box,
       el("div", { class: "crow" }, [
-        el("small", { id: "send-why", text: "Talking to the Mate from the browser is " + NOT_WIRED + " · use its REPL" }),
+        el("small", { id: "send-why", text: blocked || "⌘↵ sends · Enter is a new line" }),
+        stop,
         send
-      ])
+      ]),
+      outcomes[key] ? resultLine(outcomes[key]) : null
     ]);
+  }
+
+  function sendTalk(name) {
+    var text = (talkDraft[name] || "").trim();
+    if (!text || running["talk/" + enc(name)]) return;
+    talkPress(name, { action: "say", project: name, text: text }, function () { talkDraft[name] = ""; });
+  }
+
+  // talkPress runs one chat action. It holds up only the composer, never
+  // the drawer's other buttons, the way the server keeps a chat apart from
+  // a stop or a merge. The chat is read again after, and while the Mate
+  // answers.
+  function talkPress(name, body, sent) {
+    var key = "talk/" + enc(name);
+    running[key] = { action: body.action, label: body.action };
+    delete outcomes[key];
+    draw();
+    return press(body).then(function (res) {
+      if (sent) sent();
+      outcomes[key] = { kind: "ok", text: res.line || "sent" };
+    }, function (err) {
+      outcomes[key] = outcomeOf(err);
+    }).then(function () {
+      delete running[key];
+      return loadDetail();
+    }).then(function () {
+      draw();
+      followTalk(name);
+    });
+  }
+
+  function talkShown(name) {
+    return !!sel && sel.kind === "mate" && sel.project === name && mateTab === "talk";
+  }
+
+  // followTalk reads the open Talk again while the Mate is answering, so
+  // its reply shows up without a click.
+  function followTalk(name) {
+    clearTimeout(talkTimer);
+    var x = chatOf(name);
+    if (!(x.state && x.state.busy) || !talkShown(name)) return;
+    talkTimer = setTimeout(function () {
+      if (!talkShown(name)) return;
+      loadDetail().then(function () { draw(); followTalk(name); });
+    }, 2500);
   }
 
   // ------------------------------------------------------------ the room's inbox
@@ -1987,13 +2106,43 @@
     return nodes;
   }
 
+  // assignSlot hands one waiting question to the Mate: the crew's own
+  // `assign` button for this entry, so the console says whether it can.
+  function assignSlot(name, i) {
+    var key = "inbox/" + enc(name);
+    var a = acts && acts.key === key ? acts : null;
+    var okey = "assign/" + enc(name) + "/" + i.seq;
+    var btn = null;
+    ((a && a.body && (a.body.crew_more || {})[i.crew]) || []).forEach(function (b) {
+      if (b.action === "assign" && i.assign_key && b.key === i.assign_key) btn = b;
+    });
+    var busy = running[okey];
+    var why = wsReadOnly ? "read-only dashboard" : !a ? "loading…" : a.error ? "Actions: ?" : !btn ? "the Mate cannot be handed this one"
+      : !btn.available ? btn.reason || "?" : "";
+    var b = el("button", { class: "btn", type: "button", disabled: !!why || !!busy, "aria-label": "Assign to Mate", "data-focus": "assign:" + i.seq },
+      [icon("assign"), busy ? "Assigning…" : "Assign to Mate"]);
+    b.addEventListener("click", function () {
+      if (isDisabled(b)) return;
+      running[okey] = { action: "assign", label: "Assign to Mate" };
+      delete outcomes[okey];
+      draw();
+      press({ action: "assign", project: name, crew: i.crew, key: i.assign_key }).then(function (res) {
+        outcomes[okey] = { kind: "ok", text: res.line || "handed to the Mate" };
+      }, function (err) {
+        outcomes[okey] = outcomeOf(err);
+      }).then(function () {
+        delete running[okey];
+        return Promise.all([loadAll(), loadDetail()]);
+      }).then(draw);
+    });
+    return [b, el("small", { class: "why", text: why }), outcomes[okey] ? resultLine(outcomes[okey]) : null];
+  }
+
   function inboxRow(name, i) {
     var info = inboxInfo(i);
     var action;
     if (info.assign) {
-      var ro = wsReadOnly;
-      action = [el("button", { class: "btn", type: "button", disabled: true, "aria-label": "Assign to Mate", "data-focus": "assign:" + i.seq }, [icon("assign"), "Assign to Mate"]),
-        el("small", { class: "why", text: ro ? "read-only dashboard" : NOT_WIRED })];
+      action = assignSlot(name, i);
     } else if (i.crew) {
       var open = pickable(el("button", { class: "btn", type: "button" }, [icon("arrowR"), "Open crew"]), "crew/" + enc(name) + "/" + enc(i.crew));
       action = [open, el("small", { class: "why", text: i.verb === "wait-mate" ? "Merge… is in the crew drawer" : "" })];
@@ -2059,6 +2208,9 @@
       "aria-describedby": "add-name-why", "data-focus": "add-name" });
     var repo = el("input", { class: "inp mono", id: "add-repo", value: addForm.repo, placeholder: "~/code/kiosk", autocomplete: "off", spellcheck: "false",
       "data-focus": "add-repo" });
+    var go = el("button", { class: "btn primary", type: "button", id: "add-go", disabled: true, "aria-describedby": "add-go-why", "data-focus": "add-go" },
+      running.add ? "Adding…" : "Add project");
+    go.addEventListener("click", addProject);
     name.addEventListener("input", function (e) { addForm.name = e.target.value; refreshAdd(); });
     repo.addEventListener("input", function (e) { addForm.repo = e.target.value; refreshAdd(); });
     var nodes = [head, el("section", { class: "ds", "aria-label": "Add project" }, [
@@ -2068,13 +2220,33 @@
       el("small", { class: "fhelp", text: "Leave it empty to add the room now and point it at a repo later." }),
       el("div", { class: "frow" }, [
         el("div", { class: "act-slot right" }, [
-          el("button", { class: "btn primary", type: "button", id: "add-go", disabled: true, "aria-describedby": "add-go-why" }, "Add project"),
+          go,
           el("small", { class: "why", id: "add-go-why", text: "" })
         ])
       ]),
-      el("div", { class: "cmd", id: "add-cmd" }, [el("span", { text: "Until then, run it in a terminal:" }), el("code", { id: "add-cmd-t", text: "" })])
+      outcomes.add ? resultLine(outcomes.add) : null,
+      el("div", { class: "cmd", id: "add-cmd" }, [el("span", { text: "Or run it in a terminal:" }), el("code", { id: "add-cmd-t", text: "" })])
     ])];
     return nodes;
+  }
+
+  // addProject is the City's `add_project` (CON-142): the console adds the
+  // room, and the floor reads it at once.
+  function addProject() {
+    if (addProblem() || wsReadOnly || running.add) return;
+    var body = { action: "add_project", project: addForm.name.trim(), repo: addForm.repo.trim() };
+    running.add = { action: "add_project", label: "Add project" };
+    delete outcomes.add;
+    draw();
+    return press(body).then(function (res) {
+      outcomes.add = { kind: "ok", text: res.line || "added " + body.project };
+      addForm = { name: "", repo: "" };
+    }, function (err) {
+      outcomes.add = outcomeOf(err);
+    }).then(function () {
+      delete running.add;
+      return loadAll();
+    }).then(draw);
   }
 
   // refreshAdd updates the form in place while the captain types, so the
@@ -2089,7 +2261,9 @@
     if (!name) return;
     name.setAttribute("class", "inp" + (p && p.field ? " err" : ""));
     if (why) { why.textContent = p && p.field ? p.field : "Lowercase letters, digits and dashes. It names the room."; why.setAttribute("class", p && p.field ? "ferr" : "fhelp"); }
-    if (goWhy) goWhy.textContent = p ? p.why : wsReadOnly ? "read-only dashboard" : "adding a project from the browser is " + NOT_WIRED;
+    var go = root.querySelector("#add-go");
+    if (go) setDisabled(go, !!p || !!wsReadOnly || !!running.add);
+    if (goWhy) goWhy.textContent = p ? p.why : wsReadOnly ? "read-only dashboard" : "";
     if (cmd) { if (p) cmd.setAttribute("hidden", ""); else cmd.removeAttribute("hidden"); }
     if (cmdT) cmdT.textContent = p ? "" : addCommand();
   }
@@ -2110,14 +2284,57 @@
     var own = el("textarea", { class: "compose", rows: "2", "aria-label": "Or in your own words", placeholder: "Or in your own words…", "data-focus": "own:" + key });
     own.value = d.own;
     own.textContent = d.own;
-    own.addEventListener("input", function (e) { d.own = e.target.value; });
     nodes.push(own);
-    var why = wsReadOnly ? "read-only dashboard" : "answering from the browser is " + NOT_WIRED + " · answer in the Mate's REPL (^T)";
+    var project = key.slice(0, key.lastIndexOf("/"));
+    var sending = !!running["news/" + key];
+    // The answer the Mate gets: the captain's words, else the option as
+    // the City sends it.
+    var answer = function () {
+      if (d.own.trim()) return d.own.trim();
+      var o = (n.options || []).filter(function (x) { return x.key === d.opt; })[0];
+      return o ? "[" + o.key + "] " + o.text : "";
+    };
+    var whyNot = function () {
+      if (wsReadOnly) return "read-only dashboard";
+      if (sending) return "";
+      return answer() ? "" : "pick an option or type an answer";
+    };
+    var send = el("button", { class: "btn primary", type: "button", disabled: sending || !!whyNot(), "data-focus": "send:" + key },
+      [icon("send"), sending ? "Sending…" : "Send to the Mate"]);
+    var why = el("small", { class: "why", text: whyNot() });
+    // Typing keeps the caret: the button and its reason change in place.
+    own.addEventListener("input", function (e) {
+      d.own = e.target.value;
+      setDisabled(send, sending || !!whyNot());
+      why.textContent = whyNot();
+    });
+    send.addEventListener("click", function () {
+      if (!isDisabled(send)) sendAnswer(project, n.id, key, answer());
+    });
     nodes.push(el("div", { class: "tactions" }, [
-      el("div", { class: "act-slot" }, [el("button", { class: "btn primary", type: "button", disabled: true }, [icon("send"), "Send to the Mate"]), el("small", { class: "why", text: why })]),
-      el("div", { class: "act-slot" }, [el("button", { class: "btn", type: "button", disabled: true }, [icon("fork"), "Talk it over first"]), el("small", { class: "why", text: "side talk is " + NOT_WIRED })])
+      el("div", { class: "act-slot" }, [send, why]),
+      el("div", { class: "act-slot" }, [el("button", { class: "btn", type: "button", disabled: true }, [icon("fork"), "Talk it over first"]), el("small", { class: "why", text: "side talk is in Agent City" })])
     ]));
     return el("div", { class: "nans-form" }, nodes);
+  }
+
+  // sendAnswer hands the captain's answer to the news's Mate (the City's
+  // `answer`, CON-142) and reads the news again: an answered one leaves
+  // Waiting on you.
+  function sendAnswer(project, id, key, text) {
+    var okey = "news/" + key;
+    running[okey] = { action: "answer", label: "Send to the Mate" };
+    delete outcomes[okey];
+    draw();
+    return press({ action: "answer", project: project, news: id, text: text }).then(function (res) {
+      delete newsDraft[key];
+      outcomes[okey] = { kind: "ok", text: res.line || "sent to the Mate" };
+    }, function (err) {
+      outcomes[okey] = outcomeOf(err);
+    }).then(function () {
+      delete running[okey];
+      return loadNews();
+    }).then(draw);
   }
 
   // noticeNews keeps which news this page has seen; one that arrives while
@@ -2607,7 +2824,7 @@
         nodes.push(sec);
       }
     }
-    nodes.push(el("p", { class: "loading-note news-ro", text: "Sending an answer from the browser is " + NOT_WIRED + ": answer a news in its Mate's REPL (^T)." }));
+    if (wsReadOnly) nodes.push(el("p", { class: "loading-note news-ro", text: "This dashboard only reads: answer a news in its Mate's REPL (^T)." }));
     return nodes;
   }
 
@@ -2635,7 +2852,9 @@
       draw();
     });
     var owed = n.status === "new" || n.status === "waiting";
-    return el("li", { class: "nli" + (open ? " open" : "") }, [btn, open ? newsBody(n) : null, open && owed ? answerForm(key, n) : null]);
+    var out = outcomes["news/" + key];
+    return el("li", { class: "nli" + (open ? " open" : "") }, [btn, open ? newsBody(n) : null, open && owed ? answerForm(key, n) : null,
+      open && out ? resultLine(out) : null]);
   }
 
   function when(ts) {

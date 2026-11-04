@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/db"
+	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -891,4 +892,34 @@ func TestTaskSummaryIsTheFullAnswerWithoutTurnsOrPerformance(t *testing.T) {
 		t.Errorf("the summary's ledger, status lines or questions differ from the full answer's")
 	}
 	f.get(t, "/api/projects/"+fixtureProject+"/tasks/nosuch?view=summary", http.StatusNotFound, nil)
+}
+
+// An inbox item carries the key an `assign` press names it by exactly when
+// the Mate can be handed it, the same key the crew's Assign button has.
+func TestInboxItemsCarryTheirAssignKey(t *testing.T) {
+	f := newFixture(t)
+	// The fixture crew's last line is wait-mate; a fresh question is one
+	// the Mate can be handed.
+	if err := f.ws.AppendStatus(fixtureProject, fixtureCrew, "needs-decision: Stripe or bank?"); err != nil {
+		t.Fatal(err)
+	}
+	items, reason := f.server.inbox(fixtureProject)
+	if reason != "" {
+		t.Fatalf("the fixture's box must read: %s", reason)
+	}
+	box := query.LoadBox(f.ws, fixtureProject).Value.Inbox
+	resolvable := 0
+	for i, e := range box {
+		want := ""
+		if e.Resolvable() {
+			want = e.AssignKey
+			resolvable++
+		}
+		if items[i].AssignKey != want {
+			t.Errorf("item %d (%s) assign_key = %q, want %q", i, e.Verb, items[i].AssignKey, want)
+		}
+	}
+	if resolvable == 0 {
+		t.Fatal("the fixture has no question the Mate can be handed; the test proves nothing")
+	}
 }
