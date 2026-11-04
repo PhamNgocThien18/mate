@@ -213,7 +213,7 @@ func cmdMateRefresh(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	changed, err := contextRefresh(context.Background(), w, liveDeps(w, stderr), fs.Arg(0), false)
+	changed, err := mateRefresher(w, liveDeps(w, stderr)).Run(context.Background(), fs.Arg(0), false)
 	if err != nil {
 		return err
 	}

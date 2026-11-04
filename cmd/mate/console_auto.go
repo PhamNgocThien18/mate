@@ -9,6 +9,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/prwatch"
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/refresh"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -114,13 +115,30 @@ func consoleAutoPilot(ws *store.Workspace, deps spawn.Deps) *autopilot.Pilot {
 	return autopilot.New(ws, autopilot.Deps{
 		Outbox: consoleOutbox(ws, deps),
 		Maintain: func(ctx context.Context, project string) (bool, error) {
-			return contextRefresh(ctx, ws, deps, project, true)
+			return mateRefresher(ws, deps).Run(ctx, project, true)
 		},
 		Sweep: func(ctx context.Context) {
 			prwatch.Sweep(ws, prStarter)
 			gc.Tick(ctx)
 		},
 		Budget: consoleBudgetActions(ws, deps),
+	})
+}
+
+// mateRefresher is the Mate's context refresh (internal/refresh) over ws,
+// handed what only this package holds: the receipt protocol of `mate
+// checkpoint` (checkpoint.go) and the outbox sender over deps' runtime.
+// `mate mate refresh` and the auto daemon build one for each refresh.
+func mateRefresher(ws *store.Workspace, deps spawn.Deps) *refresh.Refresher {
+	return refresh.New(ws, refresh.Deps{
+		Spawn:  deps,
+		Outbox: consoleOutbox(ws, deps),
+		RequestPath: func(project string) (string, error) {
+			return refreshMeta(ws, project, "refresh-request")
+		},
+		VerifyCheckpoint: func(project, nonce, session string) error {
+			return verifyCheckpoint(ws, project, nonce, session)
+		},
 	})
 }
 
