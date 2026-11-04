@@ -242,9 +242,10 @@ func (m Model) keyLine(p framePlan) gline {
 }
 
 func (m Model) keyHints() []keyHint {
-	switch m.sheetOpen() {
-	case sheetActions, sheetConfirm, sheetNewProject, sheetHarness:
+	if m.menuOnScreen() {
 		return m.actions.keyHints(m.g)
+	}
+	switch m.sheetOpen() {
 	case sheetDiff:
 		return []keyHint{{m.g.UpDown, "scroll"}, {"esc", "close"}}
 	case sheetKeys, sheetMessage:

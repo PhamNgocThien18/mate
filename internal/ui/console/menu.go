@@ -334,7 +334,7 @@ func (m Model) carryOutEntry(e menuEntry, r row) (Model, tea.Cmd) {
 }
 
 // menuFacts is what the action menu reads of the tree on screen, built
-// afresh for every key and every frame (see menuFacts).
+// afresh for every key and every frame (the menuFacts type says why).
 func (m Model) menuFacts() menuFacts {
 	return menuFacts{
 		g:         m.g,

@@ -379,15 +379,12 @@ func (m Model) bindingForRow(r row) query.Field[query.BindingValue] {
 	return query.Field[query.BindingValue]{State: query.Unknown, Reason: "row is not a bindable entity"}
 }
 
-// beginNewProject is the 'n' key: it opens the name input for a new
-// Project directly, without the action menu in between. Creating a Project
-// is the one thing a reader can do on a workspace that has none (ADR 0023
-// dropped the default Project), so it is the one action that gets its own
-// key rather than five keystrokes through a menu of entries that all refuse.
-//
-// The menu is deliberately NOT opened behind it: Esc from here closes the
-// overlay and returns the reader to the list they were on, rather than
-// stranding them in a menu they never asked for.
+// beginNewProject is the 'n' key: it opens the new-project form directly,
+// without the actions sheet in between, and leaves the sheet closed behind
+// it (actionMenu.openForm). Creating a Project is the one thing a reader can
+// do on a workspace that has none (ADR 0023 dropped the default Project), so
+// it is the one action that gets its own key rather than five keystrokes
+// through a menu of entries that all refuse.
 func (m Model) beginNewProject() Model {
 	choice, ok := m.newProjectChoice()
 	if !ok {
@@ -623,9 +620,9 @@ func (m Model) mateStartChoice(r row, mate query.MateNode) actionChoice {
 	return c
 }
 
-// beginHarnessPick opens the agent chooser for an already-built choice. Like
-// beginNewProject it leaves the menu closed, so Esc returns to the list
-// rather than a menu the reader never opened.
+// beginHarnessPick opens the harness picker for an already-built choice,
+// its cursor on the harness the Mate records. Like the form, it leaves the
+// actions sheet closed behind it (actionMenu.openPicker).
 func (m Model) beginHarnessPick(choice actionChoice) Model {
 	m.actions = m.actions.openPicker(choice, m.recordedHarnessIndex())
 	m.msg = footerMsg{}

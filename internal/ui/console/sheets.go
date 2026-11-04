@@ -46,11 +46,19 @@ func (m Model) sheetOpen() sheetKind {
 	return sheetNone
 }
 
+// menuOnScreen reports whether the sheet on screen is one of the action
+// menu's, which the menu draws and takes the input of itself.
+func (m Model) menuOnScreen() bool {
+	s := m.actions.sheet()
+	return s != sheetNone && s == m.sheetOpen()
+}
+
 // sheetTitle is the open sheet's rule title and meta.
 func (m Model) sheetTitle() (gline, string) {
-	switch m.sheetOpen() {
-	case sheetActions, sheetConfirm, sheetNewProject, sheetHarness:
+	if m.menuOnScreen() {
 		return m.actions.title(m.menuFacts())
+	}
+	switch m.sheetOpen() {
 	case sheetDiff:
 		return gl().add(m.diffTitle(), tAcc), "esc"
 	case sheetKeys:
@@ -92,9 +100,10 @@ func (m Model) actionObjectTitle() gline {
 
 // sheetLines draws the open sheet's body.
 func (m Model) sheetLines(p framePlan) []gline {
-	switch m.sheetOpen() {
-	case sheetActions, sheetConfirm, sheetNewProject, sheetHarness:
+	if m.menuOnScreen() {
 		return m.actions.view(p.w, m.menuFacts())
+	}
+	switch m.sheetOpen() {
 	case sheetDiff:
 		return m.diffSheetLines(p)
 	case sheetKeys:

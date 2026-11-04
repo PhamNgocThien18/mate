@@ -16,25 +16,31 @@ import (
 // The action menu (CON-174) is a model of its own inside the Console: the
 // actions sheet (design F) and its confirmation (design G), the new-project
 // form (design K), the harness picker, and the one action that may be
-// running. Model keeps it in its actions field, hands it the keys while one
-// of its sheets is open (update), and draws the sheet it says is on screen
-// (view).
+// running. Model keeps it in its actions field, hands it the keyboard and
+// the mouse while one of its sheets is open (update), and draws the sheet
+// it says is on screen (view).
 //
 // The menu reads nothing of the tree itself. What it needs - the harnesses
 // the picker lists, the Projects a new name must not repeat, the words for
 // the row it acts on - comes in a menuFacts that Model builds from the tree
-// on screen for every key and every frame. What a key asks of Model - carry
-// out an entry, start an action, say something on the message line - comes
-// back as a menuIntent that Model carries out in the same Update. Model
-// reads the menu's fields; it changes them only through the menu's methods.
+// on screen for every key and every frame. What the input asks of Model -
+// carry out an entry, start an action, say something on the message line -
+// comes back as a menuIntent that Model carries out in the same Update.
+// Model reads the menu's fields; it changes them only through the menu's
+// methods.
+//
+// The running action is not input. Every action of the Console runs here,
+// the box's and the Work sheet's as well as the menu's, so Model starts and
+// ends it itself (start, finish, abandon).
 
 // actionMenu is the menu's state. The zero value has nothing open and
 // nothing running.
 type actionMenu struct {
-	// open is the actions sheet. entries is what it lists, row is the row
-	// they were built for - the box's `o` opens the sheet for a row the
-	// list's cursor is not on, and the sheet's title names it - and index
-	// is the sheet's cursor.
+	// open is the actions sheet, and only that sheet: the confirmation, the
+	// form and the picker have fields of their own below. entries is what
+	// the sheet lists, row is the row they were built for - the box's `o`
+	// opens the sheet for a row the list's cursor is not on, and the
+	// sheet's title names it - and index is the sheet's cursor.
 	open    bool
 	entries []menuEntry
 	row     row
@@ -42,10 +48,11 @@ type actionMenu struct {
 	// confirm is the open confirmation: over the sheet it was asked from,
 	// or over nothing when a dangerous choice came from the picker.
 	confirm *actionConfirmation
-	// inputMode is the new-project form: input is its name field, repo the
-	// repository path, and field the one the keyboard types into.
+	// inputMode is the new-project form: name is the Project name typed so
+	// far, repo the repository path, and field the one the keyboard types
+	// into.
 	inputMode bool
-	input     string
+	name      string
 	repo      string
 	field     onboardField
 	// pending is the action the open sub-modal will run - the form or the
@@ -155,19 +162,15 @@ func (a actionMenu) sheet() sheetKind {
 	return sheetNone
 }
 
-// closeSheets closes every sheet of the menu and forgets what they held. A
-// running action is not a sheet: it goes on.
+// closeSheets closes every sheet of the menu and forgets what they held,
+// all but row, which only the next openSheet replaces. A running action is
+// not a sheet: it goes on.
 func (a actionMenu) closeSheets() actionMenu {
+	a = a.closeForm().closePicker()
 	a.open = false
-	a.confirm = nil
-	a.inputMode = false
-	a.input = ""
-	a.repo, a.field = "", fieldName
-	a.pending = actionChoice{}
-	a.harnessPick = false
-	a.harnessIndex = 0
 	a.entries = nil
 	a.index = 0
+	a.confirm = nil
 	return a
 }
 
@@ -185,14 +188,9 @@ func (a actionMenu) openSheet(r row, entries []menuEntry) actionMenu {
 // NOT opened behind it: Esc from the form returns the captain to the list
 // they were on, rather than stranding them in a sheet they never asked for.
 func (a actionMenu) openForm(choice actionChoice) actionMenu {
-	a.open = false
-	a.confirm = nil
-	a.entries = nil
-	a.index = 0
-	a.pending = choice
+	a = a.closeSheets()
 	a.inputMode = true
-	a.input = ""
-	a.repo, a.field = "", fieldName
+	a.pending = choice
 	return a
 }
 
@@ -200,17 +198,22 @@ func (a actionMenu) openForm(choice actionChoice) actionMenu {
 // cursor on index. Like the form it leaves the sheet closed, so Esc returns
 // to the list rather than to a sheet the captain never opened.
 func (a actionMenu) openPicker(choice actionChoice, index int) actionMenu {
-	a.open = false
-	a.confirm = nil
-	a.inputMode = false
-	a.entries = nil
-	a.index = 0
-	a.pending = choice
+	a = a.closeSheets()
 	a.harnessPick = true
 	a.harnessIndex = index
+	a.pending = choice
 	return a
 }
 
+// closeForm closes the new-project form and forgets the draft.
+func (a actionMenu) closeForm() actionMenu {
+	a.inputMode = false
+	a.name, a.repo, a.field = "", "", fieldName
+	a.pending = actionChoice{}
+	return a
+}
+
+// closePicker closes the harness picker.
 func (a actionMenu) closePicker() actionMenu {
 	a.harnessPick = false
 	a.harnessIndex = 0
@@ -228,26 +231,30 @@ func (a actionMenu) runPending(choice actionChoice) (actionMenu, menuIntent) {
 	return a, menuIntent{run: &choice}
 }
 
-// ---------- keys ----------
+// ---------- input ----------
 
-// update takes a key for the sheet that has the keyboard, in the order
-// Model.onKey has always routed them: the form, the picker, the
-// confirmation, then the actions sheet. Any other message, or a key while
-// no sheet is open, asks nothing.
+// update takes the captain's input while one of the menu's sheets is open.
+// A key goes to the sheet that has the keyboard: the form, the picker, the
+// confirmation, then the actions sheet. The wheel moves a cursor and a
+// click is Enter on the line clicked (onWheel, onClick). Any other message,
+// or input while no sheet is open, asks nothing.
 func (a actionMenu) update(msg tea.Msg, f menuFacts) (actionMenu, menuIntent) {
-	key, ok := msg.(tea.KeyMsg)
-	if !ok {
-		return a, menuIntent{}
-	}
-	switch {
-	case a.inputMode:
-		return a.onFormKey(key, f)
-	case a.harnessPick:
-		return a.onPickerKey(key, f)
-	case a.confirm != nil:
-		return a.onConfirmKey(key.String())
-	case a.open:
-		return a.onSheetKey(key.String())
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case a.inputMode:
+			return a.onFormKey(msg, f)
+		case a.harnessPick:
+			return a.onPickerKey(msg, f)
+		case a.confirm != nil:
+			return a.onConfirmKey(msg.String())
+		case a.open:
+			return a.onSheetKey(msg.String())
+		}
+	case menuWheel:
+		return a.onWheel(msg.delta, f), menuIntent{}
+	case menuClick:
+		return a.onClick(msg.line, f)
 	}
 	return a, menuIntent{}
 }
@@ -276,8 +283,10 @@ func (a actionMenu) onSheetKey(key string) (actionMenu, menuIntent) {
 }
 
 // runEntry runs one entry of the open sheet. An entry that cannot run does
-// nothing: its reason is already on the row. A dangerous action opens its
-// confirmation; any other entry closes the sheet and goes to Model.
+// nothing: its reason is already on the row. An entry that is not an action
+// closes the sheet and goes to Model (carryOutEntry). A dangerous action
+// opens its confirmation; any other action closes the sheet and asks Model
+// to run it.
 func (a actionMenu) runEntry(i int) (actionMenu, menuIntent) {
 	if i < 0 || i >= len(a.entries) {
 		return a, menuIntent{}
@@ -286,10 +295,8 @@ func (a actionMenu) runEntry(i int) (actionMenu, menuIntent) {
 	if !e.enabled {
 		return a, menuIntent{}
 	}
-	r := a.row
-	switch e.kind {
-	case entryShow, entryOpen, entryCopy, entryNewProject, entryStartMate, entryMode:
-		return a.closeSheets(), menuIntent{entry: &e, row: r}
+	if e.kind != entryAction {
+		return a.closeSheets(), menuIntent{entry: &e, row: a.row}
 	}
 	if e.confirms() {
 		key := e.key
@@ -343,13 +350,19 @@ const (
 
 // onFormKey is a key while the new-project form is open.
 func (a actionMenu) onFormKey(msg tea.KeyMsg, f menuFacts) (actionMenu, menuIntent) {
+	// field is the draft the keyboard types into, limit its length, and
+	// label what the message line calls it.
+	field, limit, label := &a.name, onboardNameLimit, "Project name"
+	if a.field == fieldRepo {
+		field, limit, label = &a.repo, onboardRepoLimit, "Repo path"
+	}
 	switch msg.String() {
 	case "tab", "shift+tab", "up", "down":
 		a.field = 1 - a.field
 		return a, menuIntent{}
 	case "esc", "backspace":
 		if msg.String() == "backspace" {
-			if field := a.typing(); *field != "" {
+			if *field != "" {
 				r := []rune(*field)
 				*field = string(r[:len(r)-1])
 				return a, menuIntent{}
@@ -366,21 +379,17 @@ func (a actionMenu) onFormKey(msg tea.KeyMsg, f menuFacts) (actionMenu, menuInte
 		// what opened this form, and out of the menu entirely when the 'n'
 		// key did (openForm leaves the sheet closed).
 		if a.open {
-			a.inputMode = false
-			a.input = ""
-			a.repo, a.field = "", fieldName
-			a.pending = actionChoice{}
-			return a, menuIntent{}
+			return a.closeForm(), menuIntent{}
 		}
 		return a.closeSheets(), menuIntent{}
 	case "enter":
-		if strings.TrimSpace(a.input) == "" {
+		if strings.TrimSpace(a.name) == "" {
 			a.field = fieldName
 			return a, noted(errMsg("Action refused: project name is required · nothing started"))
 		}
 		// A name the store would refuse is not sent: the rule line under
 		// the field already says why, in amber (design K).
-		if why := projectNameProblem(strings.TrimSpace(a.input), f.projects); why != "" {
+		if why := projectNameProblem(strings.TrimSpace(a.name), f.projects); why != "" {
 			a.field = fieldName
 			return a, menuIntent{}
 		}
@@ -398,13 +407,9 @@ func (a actionMenu) onFormKey(msg tea.KeyMsg, f menuFacts) (actionMenu, menuInte
 		if choice.action == "" {
 			return a.closeSheets(), menuIntent{}
 		}
-		choice.req.Input = strings.TrimSpace(a.input)
+		choice.req.Input = strings.TrimSpace(a.name)
 		choice.req.Repo = strings.TrimSpace(a.repo)
 		return a, menuIntent{run: &choice}
-	}
-	field, limit, label := &a.input, onboardNameLimit, "Project name"
-	if a.field == fieldRepo {
-		field, limit, label = &a.repo, onboardRepoLimit, "Repo path"
 	}
 	var do menuIntent
 	for _, r := range msg.Runes {
@@ -418,14 +423,6 @@ func (a actionMenu) onFormKey(msg tea.KeyMsg, f menuFacts) (actionMenu, menuInte
 		}
 	}
 	return a, do
-}
-
-// typing is the field the keyboard is typing into.
-func (a *actionMenu) typing() *string {
-	if a.field == fieldRepo {
-		return &a.repo
-	}
-	return &a.input
 }
 
 // projectNameProblem is why a typed name would be refused, or "". The shape
@@ -476,31 +473,42 @@ func (a actionMenu) onPickerKey(msg tea.KeyMsg, f menuFacts) (actionMenu, menuIn
 
 // ---------- the mouse ----------
 
-// scroll is the wheel over the actions sheet: it moves the cursor.
-func (a actionMenu) scroll(delta int) actionMenu {
-	a.index = clampInt(a.index+delta, 0, max0(len(a.entries)-1))
+// menuWheel and menuClick are the mouse over the menu's sheet, which Model
+// hit-tests against the frame it drew: a turn of the wheel (delta is -1 or
+// +1), and a click on line of the sheet's body (0 is its first line).
+type menuWheel struct{ delta int }
+
+type menuClick struct{ line int }
+
+// onWheel moves the cursor of the actions sheet or of the picker. The
+// confirmation and the form have none.
+func (a actionMenu) onWheel(delta int, f menuFacts) actionMenu {
+	switch a.sheet() {
+	case sheetActions:
+		a.index = clampInt(a.index+delta, 0, max0(len(a.entries)-1))
+	case sheetHarness:
+		a.harnessIndex = clampInt(a.harnessIndex+delta, 0, len(f.harnesses)-1)
+	}
 	return a
 }
 
-// click is a click on entry i of the actions sheet: it runs, as Enter on it
-// would.
-func (a actionMenu) click(i int) (actionMenu, menuIntent) {
-	a.index = i
-	return a.runEntry(i)
-}
-
-// scrollPicker is the wheel over the picker: it moves the cursor over its
-// rows.
-func (a actionMenu) scrollPicker(delta int, f menuFacts) actionMenu {
-	a.harnessIndex = clampInt(a.harnessIndex+delta, 0, len(f.harnesses)-1)
-	return a
-}
-
-// clickPicker is a click on the picker's row i: Enter on it, like every
-// other row.
-func (a actionMenu) clickPicker(i int, f menuFacts) (actionMenu, menuIntent) {
-	a.harnessIndex = i
-	return a.onPickerKey(tea.KeyMsg{Type: tea.KeyEnter}, f)
+// onClick is a click on line i of the sheet's body. On an entry of the
+// actions sheet or a row of the picker it is Enter on that line, like every
+// other row; anywhere else it does nothing.
+func (a actionMenu) onClick(i int, f menuFacts) (actionMenu, menuIntent) {
+	switch a.sheet() {
+	case sheetActions:
+		if i >= 0 && i < len(a.entries) {
+			a.index = i
+			return a.runEntry(i)
+		}
+	case sheetHarness:
+		if i >= 0 && i < len(f.harnesses) {
+			a.harnessIndex = i
+			return a.onPickerKey(tea.KeyMsg{Type: tea.KeyEnter}, f)
+		}
+	}
+	return a, menuIntent{}
 }
 
 // ---------- the running action ----------
@@ -644,7 +652,7 @@ func (a actionMenu) keyHints(g glyphSet) []keyHint {
 func (a actionMenu) view(w int, f menuFacts) []gline {
 	switch a.sheet() {
 	case sheetActions:
-		return a.sheetLines(w, f.g)
+		return a.actionsLines(w, f.g)
 	case sheetConfirm:
 		return a.confirmLines(w, f)
 	case sheetNewProject:
@@ -660,7 +668,9 @@ func (a actionMenu) view(w int, f menuFacts) []gline {
 // menuKeyWidth is the key column: "enter" and two blanks.
 const menuKeyWidth = 7
 
-func (a actionMenu) sheetLines(w int, g glyphSet) []gline {
+// actionsLines draws the actions sheet: its entries, then what the one
+// under the cursor does.
+func (a actionMenu) actionsLines(w int, g glyphSet) []gline {
 	var out []gline
 	for i, e := range a.entries {
 		on := i == a.index
@@ -806,14 +816,14 @@ func (a actionMenu) formLines(w int, f menuFacts) []gline {
 		}
 		return gl().pad(2).add(value, tFg)
 	}
-	name := strings.TrimSpace(a.input)
+	name := strings.TrimSpace(a.name)
 	rule, ruleTok := names.ProjectRule+", unique", tDim
 	if why := projectNameProblem(name, f.projects); why != "" && name != "" {
 		rule, ruleTok = why, tAmber
 	}
 	out := []gline{
 		gl().pad(2).add("name", tDim),
-		input(fieldName, a.input, ""),
+		input(fieldName, a.name, ""),
 	}
 	for _, part := range wrapWords(rule, w-6) {
 		out = append(out, gl().pad(4).add(part, ruleTok))

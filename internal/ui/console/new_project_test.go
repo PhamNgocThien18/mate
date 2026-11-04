@@ -68,8 +68,8 @@ func TestNewProjectTypesANameAndDispatchesOnboardOnce(t *testing.T) {
 	m, _ = send(t, m, key("n"))
 	// The name has an n in it: once the sheet is open, n is a character.
 	m = actType(t, m, "payments-api")
-	if m.actions.input != "payments-api" {
-		t.Fatalf("typed name = %q, want payments-api", m.actions.input)
+	if m.actions.name != "payments-api" {
+		t.Fatalf("typed name = %q, want payments-api", m.actions.name)
 	}
 	if !strings.Contains(renderFrame(t, m), "create payments-api") {
 		t.Fatalf("the sheet does not say what Enter creates:\n%s", renderFrame(t, m))
@@ -102,8 +102,8 @@ func TestNewProjectEscapeClosesWithoutOpeningTheSheet(t *testing.T) {
 	if m.actions.inputMode || m.actions.open {
 		t.Fatalf("esc left input=%v sheet=%v open", m.actions.inputMode, m.actions.open)
 	}
-	if m.actions.input != "" {
-		t.Fatalf("esc kept the abandoned draft %q", m.actions.input)
+	if m.actions.name != "" {
+		t.Fatalf("esc kept the abandoned draft %q", m.actions.name)
 	}
 }
 
@@ -197,8 +197,8 @@ func TestNewProjectNameCanContainQ(t *testing.T) {
 		}
 		m = next
 	}
-	if m.actions.input != "queue-sqlite" {
-		t.Fatalf("typed name = %q, want queue-sqlite", m.actions.input)
+	if m.actions.name != "queue-sqlite" {
+		t.Fatalf("typed name = %q, want queue-sqlite", m.actions.name)
 	}
 	if strings.Contains(renderFrame(t, m), "q quit") {
 		t.Fatalf("the frame offers q as quit while q types a character:\n%s", renderFrame(t, m))
@@ -255,14 +255,14 @@ func TestNewProjectFieldsAreEditedIndependently(t *testing.T) {
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m = actType(t, m, "ab")
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if m.actions.input != "led" || m.actions.repo != "a" {
-		t.Fatalf("fields = name %q repo %q, want led and a", m.actions.input, m.actions.repo)
+	if m.actions.name != "led" || m.actions.repo != "a" {
+		t.Fatalf("fields = name %q repo %q, want led and a", m.actions.name, m.actions.repo)
 	}
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if !m.actions.inputMode || m.actions.field != fieldName || m.actions.input != "led" {
+	if !m.actions.inputMode || m.actions.field != fieldName || m.actions.name != "led" {
 		t.Fatalf("backspace on an empty repo: input=%v field=%d name=%q, want back on the kept name",
-			m.actions.inputMode, m.actions.field, m.actions.input)
+			m.actions.inputMode, m.actions.field, m.actions.name)
 	}
 	// The field with the cursor is the one drawn with it.
 	view := renderFrame(t, m)
@@ -292,7 +292,7 @@ func TestNewProjectNameStopsAtItsLimit(t *testing.T) {
 	m := loaded(t, actEmptyWorkspace(), nil)
 	m, _ = send(t, m, key("n"))
 	m = actType(t, m, strings.Repeat("a", onboardNameLimit+3))
-	if n := len([]rune(m.actions.input)); n != onboardNameLimit {
+	if n := len([]rune(m.actions.name)); n != onboardNameLimit {
 		t.Fatalf("typed name length = %d, want the %d limit", n, onboardNameLimit)
 	}
 	if !strings.Contains(m.msg.text, "limit reached") {

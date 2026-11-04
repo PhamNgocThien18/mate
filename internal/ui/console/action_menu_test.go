@@ -12,10 +12,11 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
-// The action menu's two edge cases (CON-174): the captain backs out while
-// an action is running, and a snapshot lands in the middle of the menu or
-// of the action. Each test pins what the Console does today, so moving the
-// menu's state out of Model cannot change it unnoticed.
+// The action menu (CON-174). First its two edge cases: the captain backs
+// out while an action is running, and a snapshot lands in the middle of the
+// menu or of the action. Each of those tests pinned what the Console did
+// before the menu's state left Model, so the move could not change it
+// unnoticed. Then the menu on its own, without a Model.
 
 // ---------- backing out of a running action ----------
 
@@ -408,6 +409,12 @@ func TestTheMenuReadsTheTreeOnlyFromItsFacts(t *testing.T) {
 	a, do := picker.update(key("enter"), menuFacts{harnesses: []query.HarnessKind{codex, claude}})
 	if a.sheet() != sheetNone || do.run == nil || do.run.req.Harness != claude {
 		t.Fatalf("enter on the second row: sheet=%v intent=%+v, want claude, the second row of these facts", a.sheet(), do)
+	}
+	if a, do := picker.update(menuClick{line: 1}, menuFacts{harnesses: []query.HarnessKind{claude}}); a.sheet() != sheetHarness || do != (menuIntent{}) {
+		t.Fatalf("a click under the one harness listed: sheet=%v intent=%+v, want nothing", a.sheet(), do)
+	}
+	if a, do := picker.update(menuClick{line: 0}, menuFacts{harnesses: []query.HarnessKind{codex, claude}}); a.sheet() != sheetNone || do.run == nil || do.run.req.Harness != codex {
+		t.Fatalf("a click on the first row: sheet=%v intent=%+v, want codex, the first row of these facts", a.sheet(), do)
 	}
 
 	form := actionMenu{}.openForm(actionChoice{action: ActionOnboard, enabled: true, req: ActionRequest{Action: ActionOnboard, TargetKind: "workspace"}})
