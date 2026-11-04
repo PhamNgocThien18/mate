@@ -79,7 +79,7 @@ func receiptTurn(w *store.Workspace, cp *receipt, scenario string) func() error 
 	}
 }
 
-func TestRefreshQuietRequiresAnAnsweredCaptainAndFiveMinutes(t *testing.T) {
+func TestMateQuietRequiresAnAnsweredCaptainAndFiveMinutes(t *testing.T) {
 	w, _ := fixture(t, "shop")
 	now := time.Now()
 	appendEntry := func(source, target string, at time.Time) {
@@ -181,6 +181,38 @@ func spoilAutomatic(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runti
 		}
 	}
 	return deps
+}
+
+// A harness that declares no turn-end evidence cannot show the stow turn
+// ended, so the captain's refresh of its Mate is put off when the stow
+// times out, and the session is kept. The console never asks for one (the
+// no-turn-end scenario of
+// TestAutomaticRefreshUsesOnlyCurrentSessionAndHonorsThreshold).
+func TestContextRefreshCannotConfirmAStowWithoutTurnEndEvidence(t *testing.T) {
+	w, deps := fixture(t, "shop")
+	writeProjectDoc(t, w)
+	before, rt, _ := startMate(t, w, deps)
+	reg, err := harness.NewRegistry(nil, claudeWithoutTurnEnd{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps.Harnesses = reg
+	cp := &receipt{ws: w}
+	deps.Sleep = onStow(w, "shop", func() error {
+		if err := cp.answer("shop"); err != nil {
+			return err
+		}
+		return w.AppendSent("shop", store.SentEntry{Source: store.SourceMate, Target: store.SourceUser, Text: "stowed"})
+	})
+
+	changed, err := refresher(w, deps, cp).Run(context.Background(), "shop", false)
+	if changed || err == nil || !strings.HasPrefix(err.Error(), "refresh postponed: not stowed: the Mate had not finished its stow turn after ") {
+		t.Fatalf("refresh = %v, %v; want postponed with the stow turn's end never seen", changed, err)
+	}
+	if len(rt.SentText) != 1 {
+		t.Fatalf("stow sent %q, want the one stow line", rt.SentText)
+	}
+	assertKept(t, w, rt, before)
 }
 
 // A manual refresh over a Mate composer holding a draft is postponed in the

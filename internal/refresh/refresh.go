@@ -4,8 +4,9 @@
 // checkpoint`, and only once that receipt verifies is the old session
 // archived and a fresh one started, which recalls what was stowed.
 //
-// The receipt protocol of `mate checkpoint` and the outbox sender over the
-// live runtime belong to the caller, which hands them in through Deps.
+// The caller hands in, through Deps, what it owns: where the request lives
+// and how the Mate's receipt is verified (`mate checkpoint`), and the outbox
+// sender over the live runtime.
 package refresh
 
 import (
@@ -43,8 +44,11 @@ type Deps struct {
 	Spawn spawn.Deps
 	// Outbox asks the Mate to stow.
 	Outbox *outbox.Sender
-	// RequestPath is the file a refresh writes its request to: the nonce
-	// and session `mate checkpoint` must answer, and when it was asked.
+	// RequestPath is the store meta file a refresh writes its request to.
+	// Its nonce and session keys are what `mate checkpoint <project>
+	// <nonce>` reads and must answer (cmd/mate/checkpoint.go); its
+	// attempted_at is when the request was made, which spaces automatic
+	// attempts by retryAfter.
 	RequestPath func(project string) (string, error)
 	// VerifyCheckpoint returns nil only when the Mate's receipt answers
 	// nonce in session and nothing the receipt covers changed since.
@@ -95,7 +99,8 @@ func (r *Refresher) Run(ctx context.Context, project string, automatic bool) (bo
 // attempt is one Run: what it read before asking for a stow, and what the
 // Mate's receipt must answer.
 type attempt struct {
-	*Refresher
+	ws        *store.Workspace
+	deps      Deps
 	project   string
 	automatic bool
 	now       time.Time
@@ -113,7 +118,7 @@ type attempt struct {
 // due: the Mate has a session and, for an automatic refresh, may be
 // refreshed automatically, is quiet, and has reached the context limit.
 func (r *Refresher) begin(ctx context.Context, project string, automatic bool) (*attempt, bool, error) {
-	a := &attempt{Refresher: r, project: project, automatic: automatic, now: time.Now()}
+	a := &attempt{ws: r.ws, deps: r.deps, project: project, automatic: automatic, now: time.Now()}
 	if r.deps.Spawn.Now != nil {
 		a.now = r.deps.Spawn.Now()
 	}
@@ -134,7 +139,7 @@ func (r *Refresher) begin(ctx context.Context, project string, automatic bool) (
 	if !automatic {
 		return a, true, nil
 	}
-	due, err := a.contextFull(ctx, cfg)
+	due, err := a.automaticDue(ctx, cfg)
 	return a, due, err
 }
 
@@ -144,15 +149,18 @@ func (r *Refresher) begin(ctx context.Context, project string, automatic bool) (
 // Mate quiet by the answers its Stop hook logs to sent.log (mateQuiet). A
 // harness whose turn-end evidence is not that log - Codex's is its rollout
 // - or that declares none gives it nothing to judge by, so it is never
-// refreshed automatically; the captain's `mate mate refresh` still can.
+// refreshed automatically; the captain's `mate mate refresh` still can,
+// though one that declares none cannot show the stow turn ended either, so
+// that refresh is put off when the stow times out.
 func (a *attempt) manualOnly(cfg store.ProjectConfig) bool {
 	return cfg.Mate.RefreshContext < 0 || !logsAnswers(a.deps.Spawn.Harnesses, a.meta[spawn.MetaHarness]) || !a.ws.Auto(a.project) || a.ws.Held(a.project)
 }
 
-// contextFull reports whether a quiet Mate's current session carries at
-// least the project's refresh_context tokens, as the timeline last measured
-// them. A timeline that cannot be opened puts the refresh off.
-func (a *attempt) contextFull(ctx context.Context, cfg store.ProjectConfig) (bool, error) {
+// automaticDue reports whether an automatic refresh is due: the Mate is
+// quiet, and its current session carries at least the project's
+// refresh_context tokens, as the timeline last measured them. A timeline
+// that cannot be opened puts the refresh off.
+func (a *attempt) automaticDue(ctx context.Context, cfg store.ProjectConfig) (bool, error) {
 	quiet, err := mateQuiet(a.ws, a.project, a.now)
 	if err != nil || !quiet {
 		return false, err
@@ -257,7 +265,7 @@ func (a *attempt) stow(ctx context.Context) error {
 }
 
 // stowLine is the stow request: memory.StowLine, and the receipt the Mate
-// runs before it ends its turn.
+// runs before it ends its turn, `mate checkpoint <project> <nonce>`.
 func (a *attempt) stowLine() (string, error) {
 	binary := a.deps.Spawn.Binary
 	if binary == "" {

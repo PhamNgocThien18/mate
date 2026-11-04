@@ -192,18 +192,23 @@ func refresher(w *store.Workspace, deps spawn.Deps, c *receipt) *Refresher {
 }
 
 // testOutbox is the sender cmd/mate's consoleOutbox builds: over deps'
-// runtime, harnesses and observer, with its clock and sleep.
+// runtime, harnesses and observer, with its clock and sleep when set.
 func testOutbox(w *store.Workspace, deps spawn.Deps) *outbox.Sender {
-	return outbox.New(w, outbox.Deps{
+	od := outbox.Deps{
 		Runtime: deps.Runtime,
 		Handle: func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error) {
 			return spawn.MateHandle(ctx, w, deps, project)
 		},
 		Harnesses: deps.Harnesses,
 		Observer:  deps.Observer,
-		Clock:     clockFunc(deps.Now),
-		Sleeper:   sleepFunc(deps.Sleep),
-	})
+	}
+	if deps.Now != nil {
+		od.Clock = clockFunc(deps.Now)
+	}
+	if deps.Sleep != nil {
+		od.Sleeper = sleepFunc(deps.Sleep)
+	}
+	return outbox.New(w, od)
 }
 
 type clockFunc func() time.Time
@@ -236,10 +241,13 @@ func onStow(w *store.Workspace, project string, turn func() error) func(context.
 	}
 }
 
-// receipt plays `mate checkpoint` (cmd/mate/checkpoint.go): the request
-// lives where cmd/mate keeps it, and the receipt names the request's nonce
-// and session and holds the memory, backlog and project doc as they were
-// when the Mate wrote it.
+// receipt plays `mate checkpoint` (cmd/mate/checkpoint.go) as far as a
+// refresh can tell: the request lives where cmd/mate keeps it, and the
+// receipt names the request's nonce and session and holds the memory,
+// backlog and project doc as they were when the Mate wrote it. What
+// checkpoint.go checks besides - the backlog's sections, every open crew in
+// flight - is its own, tested beside it in cmd/mate, where
+// TestMateRefresherVerifiesTheCheckpointReceipt runs a refresh over it.
 type receipt struct {
 	ws      *store.Workspace
 	written map[string]string
