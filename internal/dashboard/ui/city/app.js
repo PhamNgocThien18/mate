@@ -1422,7 +1422,7 @@ function forkView(x, fork) {
     h('h4', {}, '◉ Private session · read-only fork of the Mate · nothing here reaches it'),
     ...items.flatMap((m) => [
       h('div', { class: 'msg captain' }, m.text),
-      m.reply ? h('div', { class: 'msg mate' }, m.reply, h('div', { class: 'meta' }, h('button', { type: 'button', onclick: () => {
+      m.reply ? h('div', { class: 'msg mate' }, chatMarkdown(m.reply), h('div', { class: 'meta' }, h('button', { type: 'button', onclick: () => {
         S.drafts.set(`own-${x.key}`, m.reply);
         render();
         document.getElementById(`own-${x.key}`)?.focus();
