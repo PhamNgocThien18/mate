@@ -33,13 +33,15 @@ import (
 //     deciding it needs: a question in full, a hand-back's branch summary,
 //     its `## For the next crew` section and its reviews;
 //  2. the status lines written since the Mate's last wake;
-//  3. each open Crew's state.
+//  3. each open Crew's state;
+//  4. a repo whose harness friction log is over budget, and the news that
+//     asks the captain about its review (CON-200), when there is one.
 //
 // It reads the same view the digest is built from (internal/box), so a
 // wake never disagrees with the digest that caused it. Part 2's cursor is
 // its own (`mate/.wake-cursor`), moved by every run but a --peek, so a
 // captain who looks at a wake does not take its lines from the Mate's next
-// one; part 1 has none, so an item stays listed until it is dealt with,
+// one, nor opens part 4's news; part 1 has none, so an item stays listed until it is dealt with,
 // whatever was shown before. It asks Herdr nothing: a pane's health is `mate state`'s, and `mate peek`
 // is still how a Mate looks at a blocked Crew.
 func cmdWake(args []string, stdout, stderr io.Writer) error {
@@ -49,7 +51,7 @@ func cmdWake(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "usage: mate wake <project> [--peek] [--workspace <dir>]")
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
-	peek := fs.Bool("peek", false, "print the wake without moving the cursor of part 2")
+	peek := fs.Bool("peek", false, "print the wake without moving the cursor of part 2 or opening part 4's news")
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return &usageError{err}
 	}
@@ -156,6 +158,15 @@ func wake(ctx context.Context, w *store.Workspace, git gitx.Git, project string,
 			profile += "/" + c.Effort
 		}
 		fmt.Fprintf(&out, "%s %s · %s · %s\n", c.Crew, c.State, profile, dashIfEmpty(clipRunes(c.Note, wakeNoteRunes)))
+	}
+
+	// CON-200: only a repo over its friction budget is named, so a wake
+	// with nothing to review stays three parts.
+	if lines := frictionCheck(w, project, now, advance); len(lines) > 0 {
+		out.WriteString("\n== 4. Harness friction over budget ==\n")
+		for _, l := range lines {
+			out.WriteString(l + "\n")
+		}
 	}
 
 	if advance {

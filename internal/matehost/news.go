@@ -200,6 +200,34 @@ func OpenNews(path string, n News, now time.Time) (int, error) {
 	return id, err
 }
 
+// OpenNewsUnless opens n unless the log has a news that same accepts, and
+// then returns the newest such news instead, with opened false. The check
+// and the open are one step under the log's lock, so two callers that see
+// the same reason to ask never ask twice (CON-200).
+func OpenNewsUnless(path string, n News, same func(News) bool, now time.Time) (News, bool, error) {
+	if strings.TrimSpace(n.Title) == "" {
+		return News{}, false, errors.New("a news needs a title")
+	}
+	var got News
+	opened := false
+	err := withNewsLog(path, func(list []News, f *os.File) error {
+		id := 0
+		for _, x := range list {
+			id = max(id, x.ID)
+			if same(x) {
+				got = x
+			}
+		}
+		if got.ID != 0 {
+			return nil
+		}
+		n.ID, n.Status, n.OpenedAt, n.At = id+1, NewsNew, now, now
+		got, opened = n, true
+		return writeNewsEvent(f, newsEvent{At: now, Op: opOpen, ID: n.ID, Crew: n.Crew, Kind: n.Kind, Title: n.Title, Context: n.Context, Question: n.Question, Options: n.Options})
+	})
+	return got, opened, err
+}
+
 // UpdateNews adds the Mate's line to an open news and moves it to the top.
 // It waits on the captain again only when the Mate asks them (ask): an
 // update is not a new debt. An ask is the news's question from then on,

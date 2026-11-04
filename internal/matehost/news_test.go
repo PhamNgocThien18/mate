@@ -221,3 +221,30 @@ func TestProposeNews(t *testing.T) {
 		t.Fatal("a closed news took a proposal")
 	}
 }
+
+func TestOpenNewsUnlessKeepsOneNewsPerReason(t *testing.T) {
+	path := filepath.Join(t.TempDir(), NewsName)
+	now := time.Date(2026, 11, 4, 20, 0, 0, 0, time.Local)
+	if _, err := OpenNews(path, News{Title: "PR #12"}, now); err != nil {
+		t.Fatal(err)
+	}
+	same := func(n News) bool { return n.Kind == "harness-review" && !n.Closed() }
+	ask := News{Kind: "harness-review", Title: "friction over budget"}
+	n, opened, err := OpenNewsUnless(path, ask, same, now)
+	if err != nil || !opened || n.ID != 2 || n.Status != NewsNew {
+		t.Fatalf("first = %+v, %v, %v; want #2 opened", n, opened, err)
+	}
+	again, opened, err := OpenNewsUnless(path, ask, same, now.Add(time.Hour))
+	if err != nil || opened || again.ID != 2 {
+		t.Fatalf("second = %+v, %v, %v; want #2 already open", again, opened, err)
+	}
+	if err := CloseNews(path, 2, "not now", false, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n, opened, _ := OpenNewsUnless(path, ask, same, now.Add(3*time.Hour)); !opened || n.ID != 3 {
+		t.Fatalf("after close = %+v, %v; want #3 opened", n, opened)
+	}
+	if list, _ := LoadNews(path); len(list) != 3 {
+		t.Fatalf("log has %d news, want 3", len(list))
+	}
+}

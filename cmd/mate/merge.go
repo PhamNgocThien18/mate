@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/memory"
@@ -63,6 +64,10 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 	// the setting rides on the Mate's merge so it is in front of it then.
 	if spawn.NormaliseCaller(spawn.CallerFromEnv()) != spawn.CallerMate {
 		return nil
+	}
+	// CON-200: the merge may have grown a repo's friction log.
+	for _, l := range frictionCheck(w, project, time.Now(), true) {
+		fmt.Fprintln(stdout, l)
 	}
 	if cfg, err := w.LoadProject(project); err == nil {
 		fmt.Fprintln(stdout, nextWorkLine(cfg))

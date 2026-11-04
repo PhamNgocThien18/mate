@@ -1,6 +1,6 @@
 ---
 name: task-learning
-description: Close the learning loop at handoff, before landing or closing a ship or scout, after an external merge, and when a later task supplies evidence for a linked prediction. Use existing handback and bounded usage evidence; no transcript audit.
+description: Close the learning loop at handoff, before landing or closing a ship or scout, after an external merge, when a later task supplies evidence for a linked prediction, and when the captain answers a harness-review news. Use existing handback and bounded usage evidence; no transcript audit.
 ---
 
 # task-learning
@@ -33,6 +33,10 @@ Each proposed efficiency change names a prediction, baseline source and the next
 Compare only tasks with comparable scope, size, model/effort, environment and measurement coverage. Judge tokens, time and acceptance/review quality together. A prompt edit or merge alone proves no saving. Withdraw or revise an ineffective proposal; standing rules need repeated evidence or a demonstrated mechanical cause.
 
 A prediction is one numbered item under `## Predictions` of the record, `1. <claim>; baseline <source>; next check <task or area> — outcome: open`; `{{.MatevBin}} learnings open {{.ProjectName}}` lists every open one and `new-task` carries the matching ones into a brief as `Prediction <crew> <id>: ...` lines. For every such line in this task's brief, close it now with this task's evidence: `{{.MatevBin}} learnings close {{.ProjectName}} <crew> <id> improved|unchanged|inconclusive|not comparable --evidence "<task/revision: what it showed>"`. A prediction the brief carried and this record does not close is a missing result. A prediction closed `unchanged` twice is withdrawn: `stow` drops the lesson it came from.
+
+## Harness review
+
+Wake part 4, `land` and `merge` name a repo whose `docs/harness/friction.md` is over the budgets in its `docs/harness/workflows/review.md`; the app counts, opens one `harness-review` news asking the captain, and opens no other for that repo while it is open. Do not count, ask again or sweep the log yourself. On the captain's yes, spawn one ship in that repo whose brief says: run `/harness-review`; hand back one pull request proposing each close, archive and promotion; change nothing else. Note the crew on the news with `news update`, and close the news when that pull request lands or the captain drops it. On no, close the news: the app does not ask about that repo again for three days.
 
 ## Result
 
