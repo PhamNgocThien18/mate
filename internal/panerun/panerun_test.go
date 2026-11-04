@@ -72,10 +72,17 @@ func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
 
 func waitFor(t *testing.T, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	waitForWithin(t, 5*time.Second, ok)
+}
+
+// waitForWithin is waitFor with a limit of its own, for a condition that
+// comes only after one of the runner's polls.
+func waitForWithin(t *testing.T, limit time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(limit)
 	for !ok() {
 		if time.Now().After(deadline) {
-			t.Fatal("condition not met within 5s")
+			t.Fatalf("condition not met within %s", limit)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -264,27 +271,30 @@ func TestWhatAChildLeftOnTheTerminalIsPartOfTheColumn(t *testing.T) {
 	defer func() { _ = viewer.Process.Kill() }()
 	viewerDone := make(chan struct{})
 	go func() { _ = viewer.Wait(); close(viewerDone) }()
-	var mu sync.Mutex
-	onTTY := []int{viewer.Process.Pid}
 	r, w, _ := os.Pipe()
 	screen := &capture{}
 	go func() {
 		_, _ = io.Copy(struct{ io.Writer }{writerFunc(func(p []byte) (int, error) { screen.mu.Lock(); defer screen.mu.Unlock(); return screen.buf.Write(p) })}, r)
 	}()
 	defer w.Close()
+	// The CLI hands the terminal to the viewer before it exits, so the
+	// runner finds the viewer there as soon as it sees the CLI end. The
+	// hand-over is a file the CLI makes, not its output on the screen: the
+	// copy above may reach that output only after the runner has looked
+	// (CON-175).
+	handedOver := filepath.Join(dir, "viewer-up")
+	var viewerSeen atomic.Int32 // looks that found the viewer on the terminal
 	s := &Server{Idle: "idle-line", Term: Terminal{Out: w, Err: w}, Occupants: func() []int {
-		mu.Lock()
-		defer mu.Unlock()
 		select {
 		case <-viewerDone:
 			return nil
 		default:
 		}
-		// The viewer takes the terminal once the CLI has run.
-		if !strings.Contains(screen.String(), "cli-ran") {
+		if _, err := os.Stat(handedOver); err != nil {
 			return nil
 		}
-		return append([]int(nil), onTTY...)
+		viewerSeen.Add(1)
+		return []int{viewer.Process.Pid}
 	}}
 	socket := filepath.Join(dir, "s.sock")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -292,17 +302,29 @@ func TestWhatAChildLeftOnTheTerminalIsPartOfTheColumn(t *testing.T) {
 	go func() { _ = s.Serve(ctx, socket) }()
 	waitFor(t, func() bool { _, err := os.Stat(socket); return err == nil })
 
-	cli := []string{"sh", "-c", "echo cli-ran"}
+	cli := []string{"sh", "-c", "echo cli-ran; touch " + handedOver}
 	if err := send(t, socket, cli...); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Contains(screen.String(), "cli-ran") })
-	time.Sleep(2 * occupantPoll)
+	// The runner looks once the CLI has exited, then again every
+	// occupantPoll: a second look that found the viewer is a poll the
+	// column outlasted. An idle line drawn back meanwhile fails at once.
+	waitForWithin(t, occupantPoll+5*time.Second, func() bool {
+		return viewerSeen.Load() >= 2 || strings.Count(screen.String(), "idle-line") > 1
+	})
 	if strings.Count(screen.String(), "idle-line") != 1 {
 		t.Fatalf("the idle line came back while the viewer still had the terminal: %q", screen.String())
 	}
 	if err := send(t, socket, cli...); err != nil {
 		t.Fatal(err)
+	}
+	// Starting it again would sweep the viewer off the terminal before the
+	// reply, while what a restarted CLI prints may not be on the screen yet.
+	select {
+	case <-viewerDone:
+		t.Fatal("the same command ended its viewer: it was started again")
+	default:
 	}
 	if strings.Count(screen.String(), "cli-ran") != 1 {
 		t.Fatal("the same command started again while its viewer was up")
