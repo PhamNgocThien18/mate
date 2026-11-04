@@ -199,6 +199,22 @@ func Gather(v box.View, cursor map[string]int64, now time.Time) []Item {
 	return out
 }
 
+// Wakes reports whether items are worth a turn of the Mate's own. An
+// ItemContextHigh is not: its handling is "do not cut it mid-turn; at its
+// next hand-back open a fresh session" (cmd/mate/wake.go), so a digest of
+// nothing else woke the Mate to answer "—". On mihuv2 every one of the six
+// such digests up to 2026-11-04 was answered that way, one of them at
+// 198.6k tokens (CON-202). Held back, the item rides with the next digest
+// that does wake the Mate, normally that crew's own hand-back.
+func Wakes(items []Item) bool {
+	for _, item := range items {
+		if item.Kind != ItemContextHigh {
+			return true
+		}
+	}
+	return false
+}
+
 // Advance returns the cursor a caller should record once the items have been
 // delivered: the previous cursor with each file moved to the last offset
 // digested out of it. Files that contributed nothing keep the offset they
