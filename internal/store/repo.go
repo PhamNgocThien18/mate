@@ -194,7 +194,7 @@ func (w *Workspace) normaliseRepos(project string, repos []RepoConfig) ([]RepoCo
 // crew branch is `mate/<crew>` and a crew id is unique only inside its
 // project, so two projects in one repo would collide on branch names.
 func (w *Workspace) checkReposUnclaimed(project string, repos []RepoConfig) error {
-	for _, ref := range w.cfg.Projects {
+	for _, ref := range w.config().Projects {
 		if ref.Name == project {
 			continue
 		}

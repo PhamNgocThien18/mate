@@ -5,8 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 
 	"gopkg.in/yaml.v3"
 )
@@ -86,7 +89,7 @@ const DefaultLaneCap = 2
 
 // LaneCap is how many crews may hold the lane at once.
 func (w *Workspace) LaneCap(lane string) int {
-	if n := w.cfg.Lanes[lane]; n > 0 {
+	if n := w.config().Lanes[lane]; n > 0 {
 		return n
 	}
 	return DefaultLaneCap
@@ -129,9 +132,23 @@ const DefaultCrewContextHigh = 200000
 
 // Workspace is an opened workspace: a resolved root plus the parsed
 // workspace.yaml. It is the handle every other package holds.
+//
+// One Workspace may be shared by goroutines: in the console, the refresh
+// reloads workspace.yaml while the Office and City handlers, the actions and
+// recovery read it (CON-204). Nothing changes the loaded configuration in
+// place. LoadConfig and every change of workspace.yaml build a new one and
+// swap it in whole, so a reader never waits and never sees parts of two.
+// The swaps take turns under one lock, each holding it from its read to its
+// swap with the file I/O between, so a reload cannot land inside a change
+// and undo it. Two Workspace values on one directory still each hold their
+// own copy, and the last one to save wins.
 type Workspace struct {
 	root string
-	cfg  WorkspaceConfig
+	// cfg is the loaded workspace.yaml: set once Init or OpenForMigrate
+	// returns, and never changed in place.
+	cfg atomic.Pointer[WorkspaceConfig]
+	// cfgMu serialises LoadConfig and every change of workspace.yaml.
+	cfgMu sync.Mutex
 }
 
 // Init creates `.mate/` under workspaceDir and writes a workspace.yaml
@@ -155,13 +172,13 @@ func Init(workspaceDir string, defaults Defaults) (*Workspace, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	w.cfg = WorkspaceConfig{
+	w.cfg.Store(&WorkspaceConfig{
 		Version:  workspaceVersion,
 		Layout:   layoutProjectDirs,
 		Session:  SessionName(root),
 		Root:     root,
 		Defaults: defaults,
-	}
+	})
 	if err := w.mkdirAll(w.ProjectsDir()); err != nil {
 		return nil, err
 	}
@@ -265,42 +282,60 @@ func SessionName(absPath string) string {
 	return "mate-" + hex.EncodeToString(sum[:4])
 }
 
-// Config is the loaded workspace.yaml. The copy is the caller's; changes reach
-// disk only through the methods on Workspace.
-func (w *Workspace) Config() WorkspaceConfig {
-	cfg := w.cfg
-	cfg.Projects = append([]ProjectRef(nil), w.cfg.Projects...)
-	return cfg
+// config is the configuration as last loaded or saved. It is shared with every
+// other reader, so it is only read, never changed.
+func (w *Workspace) config() *WorkspaceConfig {
+	if cfg := w.cfg.Load(); cfg != nil {
+		return cfg
+	}
+	return &WorkspaceConfig{}
 }
 
+// clone is a copy of cfg that shares no slice or map with it.
+func (cfg *WorkspaceConfig) clone() WorkspaceConfig {
+	out := *cfg
+	out.Projects = append([]ProjectRef(nil), cfg.Projects...)
+	out.Lanes = maps.Clone(cfg.Lanes)
+	return out
+}
+
+// Config is the loaded workspace.yaml. The copy is the caller's; changes reach
+// disk only through the methods on Workspace.
+func (w *Workspace) Config() WorkspaceConfig { return w.config().clone() }
+
 // Session is the Herdr session name of this workspace.
-func (w *Workspace) Session() string { return w.cfg.Session }
+func (w *Workspace) Session() string { return w.config().Session }
 
 // RecordedRoot is the root workspace.yaml last recorded, "" for a workspace
 // written before the file carried one.
-func (w *Workspace) RecordedRoot() string { return w.cfg.Root }
+func (w *Workspace) RecordedRoot() string { return w.config().Root }
 
 // SetRoot records the workspace's current root in workspace.yaml.
 func (w *Workspace) SetRoot(root string) error {
-	w.cfg.Root = root
-	return w.SaveConfig()
+	return w.changeConfig(func(cfg *WorkspaceConfig) error {
+		cfg.Root = root
+		return nil
+	})
 }
 
 // SetSession gives the workspace another Herdr session name. It is for a
 // workspace copied beside its original, which must never share the original's
 // session; nothing else renames a session.
 func (w *Workspace) SetSession(name string) error {
-	w.cfg.Session = name
-	return w.SaveConfig()
+	return w.changeConfig(func(cfg *WorkspaceConfig) error {
+		cfg.Session = name
+		return nil
+	})
 }
 
 // Layout is the workspace's directory layout: 2 when workspace.yaml says so,
 // 1 for a file with no `layout:`.
 func (w *Workspace) Layout() int {
-	if w.cfg.Layout == 0 {
+	layout := w.config().Layout
+	if layout == 0 {
 		return 1
 	}
-	return w.cfg.Layout
+	return layout
 }
 
 // LayoutOld reports a workspace not yet on layout 2, which only
@@ -308,13 +343,13 @@ func (w *Workspace) Layout() int {
 func (w *Workspace) LayoutOld() bool { return w.Layout() < layoutProjectDirs }
 
 // Defaults are the workspace-wide harness defaults.
-func (w *Workspace) Defaults() Defaults { return w.cfg.Defaults }
+func (w *Workspace) Defaults() Defaults { return w.config().Defaults }
 
 // CrewAutocompact is the compaction threshold a Crew launches with: the
 // `crew.autocompact` of workspace.yaml, DefaultCrewAutocompact when it says
 // none, and 0 (no flag) when it is negative.
 func (w *Workspace) CrewAutocompact() int {
-	switch n := w.cfg.Crew.Autocompact; {
+	switch n := w.config().Crew.Autocompact; {
 	case n < 0:
 		return 0
 	case n == 0:
@@ -329,7 +364,7 @@ func (w *Workspace) CrewAutocompact() int {
 // workspace.yaml, DefaultCrewContextHigh when it says none, and 0 (off)
 // when it is negative.
 func (w *Workspace) CrewContextHigh() int {
-	switch n := w.cfg.Crew.ContextHigh; {
+	switch n := w.config().Crew.ContextHigh; {
 	case n < 0:
 		return 0
 	case n == 0:
@@ -341,12 +376,12 @@ func (w *Workspace) CrewContextHigh() int {
 
 // Projects are the registered projects, in the order workspace.yaml lists them.
 func (w *Workspace) Projects() []ProjectRef {
-	return append([]ProjectRef(nil), w.cfg.Projects...)
+	return append([]ProjectRef(nil), w.config().Projects...)
 }
 
 // Project returns the registration of one project.
 func (w *Workspace) Project(name string) (ProjectRef, bool) {
-	for _, p := range w.cfg.Projects {
+	for _, p := range w.config().Projects {
 		if p.Name == name {
 			return p, true
 		}
@@ -354,8 +389,11 @@ func (w *Workspace) Project(name string) (ProjectRef, bool) {
 	return ProjectRef{}, false
 }
 
-// LoadConfig re-reads workspace.yaml from disk.
+// LoadConfig re-reads workspace.yaml from disk. A file that is missing or does
+// not parse is an error, and the configuration loaded before stays.
 func (w *Workspace) LoadConfig() error {
+	w.cfgMu.Lock()
+	defer w.cfgMu.Unlock()
 	data, err := os.ReadFile(w.WorkspaceFile())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -370,20 +408,45 @@ func (w *Workspace) LoadConfig() error {
 	if cfg.Session == "" {
 		cfg.Session = SessionName(w.root)
 	}
-	w.cfg = cfg
+	w.cfg.Store(&cfg)
 	return nil
 }
 
 // SaveConfig writes workspace.yaml atomically.
 func (w *Workspace) SaveConfig() error {
-	if w.cfg.Version == 0 {
-		w.cfg.Version = workspaceVersion
+	return w.changeConfig(func(*WorkspaceConfig) error { return nil })
+}
+
+// changeConfig is one read-modify-write of workspace.yaml: change edits a copy
+// of the configuration, which is then saved and swapped in. cfgMu is held
+// from the read to the swap, so a LoadConfig beside it cannot land in between
+// and undo the change (CON-204). An error from change saves nothing.
+func (w *Workspace) changeConfig(change func(*WorkspaceConfig) error) error {
+	w.cfgMu.Lock()
+	defer w.cfgMu.Unlock()
+	next := w.config().clone()
+	if err := change(&next); err != nil {
+		return err
 	}
-	data, err := yaml.Marshal(w.cfg)
+	return w.saveConfigLocked(next)
+}
+
+// saveConfigLocked writes cfg to workspace.yaml and, once it is written, makes
+// it the configuration readers see: a save that fails leaves the one before.
+// The caller holds cfgMu.
+func (w *Workspace) saveConfigLocked(cfg WorkspaceConfig) error {
+	if cfg.Version == 0 {
+		cfg.Version = workspaceVersion
+	}
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return w.writeFile(w.WorkspaceFile(), data, 0o644)
+	if err := w.writeFile(w.WorkspaceFile(), data, 0o644); err != nil {
+		return err
+	}
+	w.cfg.Store(&cfg)
+	return nil
 }
 
 // mkdirAll creates dir and its parents after checking the boundary.

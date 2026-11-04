@@ -166,6 +166,8 @@ func (w *Workspace) WriteCrewBrief(project, crew string, data []byte) error {
 // lives under its project's directory. `mate migrate` writes it once every
 // project is moved.
 func (w *Workspace) SetLayoutProjectDirs() error {
-	w.cfg.Layout = layoutProjectDirs
-	return w.SaveConfig()
+	return w.changeConfig(func(cfg *WorkspaceConfig) error {
+		cfg.Layout = layoutProjectDirs
+		return nil
+	})
 }

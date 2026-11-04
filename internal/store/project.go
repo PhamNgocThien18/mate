@@ -211,6 +211,11 @@ func (w *Workspace) AddProject(name string, cfg ProjectConfig) error {
 	if err := ValidateProjectName(name); err != nil {
 		return err
 	}
+	// cfgMu is held from the check that the name is free to the save that
+	// registers it, so no LoadConfig or other change of this handle lands
+	// in between (CON-204).
+	w.cfgMu.Lock()
+	defer w.cfgMu.Unlock()
 	if _, ok := w.Project(name); ok {
 		return fmt.Errorf("%w: %s", ErrProjectExists, name)
 	}
@@ -232,24 +237,24 @@ func (w *Workspace) AddProject(name string, cfg ProjectConfig) error {
 	if err := w.seedOnce(w.ProjectCrewDoc(name), projectCrewDocSeed(name)); err != nil {
 		return err
 	}
-	w.cfg.Projects = append(w.cfg.Projects, ProjectRef{Name: name})
-	if err := w.SaveConfig(); err != nil {
-		return err
-	}
-	return nil
+	next := w.config().clone()
+	next.Projects = append(next.Projects, ProjectRef{Name: name})
+	return w.saveConfigLocked(next)
 }
 
 // RemoveProject drops a project from workspace.yaml. The state directory under
 // `projects/` is left on disk: like `crews/<id>/`, it is history and only the
 // user deletes it.
 func (w *Workspace) RemoveProject(name string) error {
-	for i, p := range w.cfg.Projects {
-		if p.Name == name {
-			w.cfg.Projects = append(w.cfg.Projects[:i:i], w.cfg.Projects[i+1:]...)
-			return w.SaveConfig()
+	return w.changeConfig(func(cfg *WorkspaceConfig) error {
+		for i, p := range cfg.Projects {
+			if p.Name == name {
+				cfg.Projects = append(cfg.Projects[:i:i], cfg.Projects[i+1:]...)
+				return nil
+			}
 		}
-	}
-	return fmt.Errorf("%w: %s", ErrNoProject, name)
+		return fmt.Errorf("%w: %s", ErrNoProject, name)
+	})
 }
 
 // LoadProject reads `projects/<name>/project.yaml`.
