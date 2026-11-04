@@ -231,11 +231,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// The action function is built before the dashboard so its buttons run
 	// exactly what the action sheet runs (CON-141).
 	noticeClient, noticeErr := consoleNoticeClient(ws)
-	action := consoleAction(ws, deps)
-	if noticeClient != nil {
-		action = consoleNoticeAction(ws, deps, noticeClient, action)
-	}
-	if url, stopDashboard, err := startConsoleDashboard(ctx, ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, ingest, dashboardLoad, action, noticeClient != nil); err != nil {
+	tuiAction, webAction := tuiAndWebActions(ws, deps, noticeClient, h)
+	if url, stopDashboard, err := startConsoleDashboard(ctx, ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, ingest, dashboardLoad, webAction, noticeClient != nil); err != nil {
 		notice = err.Error()
 	} else {
 		defer stopDashboard()
@@ -308,10 +305,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if observerErr != nil && (noticeErr == nil || observerErr.Error() != noticeErr.Error()) {
 		addNotice(observerErr.Error())
 	}
-	// A terminal the console cannot split has no column to show a pane
-	// Mate in: what its TUI brings up runs headless (CON-150, CON-205).
-	// The refreshes and recoveries mate runs on its own keep their mode.
-	model := console.New(load, headlessOnlyAction(action, h == nil)).
+	model := console.New(load, tuiAction).
 		WithNoticeClassifier(noticeClient != nil).
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).

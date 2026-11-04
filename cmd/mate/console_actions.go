@@ -11,7 +11,9 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/harness"
+	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
+	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -101,17 +103,24 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 	}
 }
 
-// headlessOnlyAction is the action function as the console's TUI presses
-// it: every request says whether this console can show a pane Mate. One
-// in a terminal it cannot split (neither WezTerm nor Ghostty) has no
-// column for one, so the Mates its TUI brings up run headless when their
-// harness can (CON-150, CON-205). It wraps the one function the dashboard
-// presses too, so the two share its restartHolds.
-func headlessOnlyAction(next console.ActionFunc, headlessOnly bool) console.ActionFunc {
-	return func(ctx context.Context, req console.ActionRequest) (string, error) {
-		req.HeadlessOnly = headlessOnly
-		return next(ctx, req)
+// tuiAndWebActions is the console's one action function as its TUI and its
+// dashboard pages press it (CON-141, CON-205). consoleAction is called
+// once, so the two share one restartHolds: a restart held in one is
+// confirmed in the other. A terminal the console cannot split (h is nil:
+// neither WezTerm nor Ghostty) has no column to show a pane Mate in, so
+// there every TUI request is HeadlessOnly; a page's request says so itself
+// (dashboardActionRequest).
+func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client, h host.Host) (tui, web console.ActionFunc) {
+	web = consoleAction(ws, deps)
+	if noticeClient != nil {
+		web = consoleNoticeAction(ws, deps, noticeClient, web)
 	}
+	headlessOnly := h == nil
+	tui = func(ctx context.Context, req console.ActionRequest) (string, error) {
+		req.HeadlessOnly = headlessOnly
+		return web(ctx, req)
+	}
+	return tui, web
 }
 
 // stopCrewAction is the Crew row's `Stop crew…` entry (mvp.md task 16). It

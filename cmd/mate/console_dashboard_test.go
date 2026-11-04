@@ -86,7 +86,7 @@ func TestStartConsoleDashboardRemoteNeedsAllow(t *testing.T) {
 // target kind, so a page's press must carry the one the sheet's entry
 // builds for the same action (CON-141). It also says, every time, that a
 // page cannot show a pane Mate (CON-205), which the sheet leaves to the
-// console that runs it (headlessOnlyAction).
+// console that runs it (tuiAndWebActions).
 func TestADashboardPressIsTheSheetsRequest(t *testing.T) {
 	for _, tc := range []struct {
 		in   dashboard.ActionRequest

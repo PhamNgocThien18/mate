@@ -21,9 +21,10 @@ import (
 // HostStopWait is how long a stop lets a headless Mate finish its turn.
 const HostStopWait = 2 * time.Minute
 
-// headlessMode decides a start's mode: the request's, else headless when
-// the request is HeadlessOnly, else the mode the last run of this Mate
-// recorded, else project.yaml's `mate.headless`.
+// headlessMode decides a start's mode: the request's, else, when the
+// request is HeadlessOnly, headless if the harness can run it and the pane
+// if not, else the mode the last run of this Mate recorded, else
+// project.yaml's `mate.headless`.
 func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfig, fallback string, canHeadless bool) (bool, error) {
 	switch req.Mode {
 	case ModeHeadless:

@@ -24,7 +24,8 @@ var ErrMateRunning = errors.New("mate is already running")
 
 func errUsage(msg string) error { return observability.NewError(observability.CodeUsage, msg) }
 
-// StartRequest is one `mate mate start`.
+// StartRequest is one start of a Mate: `mate mate start`, a press in a UI,
+// or a restart mate makes on its own.
 type StartRequest struct {
 	// Project is the registered project whose Mate is started.
 	Project string
