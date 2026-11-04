@@ -506,6 +506,10 @@ instances:
 	if err == nil || !strings.Contains(err.Error(), "tracker.read") {
 		t.Fatalf("an empty read command was accepted: %v", err)
 	}
+	_, err = ReadConfig(workspace(t, "apiVersion: mate.plugins/v1\ninstances:\n  t:\n    path: $PKG/full\n    tracker:\n      land: [\"\"]\n"))
+	if err == nil || !strings.Contains(err.Error(), "tracker.land") {
+		t.Fatalf("an empty land command was accepted: %v", err)
+	}
 	_, err = ReadConfig(workspace(t, "apiVersion: mate.plugins/v1\ninstances:\n  t:\n    path: $PKG/full\n    tracker:\n      raed: [x]\n"))
 	if err == nil || !strings.Contains(err.Error(), "raed") {
 		t.Fatalf("a misspelt tracker field was accepted: %v", err)
@@ -521,10 +525,12 @@ instances:
     path: $PKG/skillsonly
     tracker:
       read: [sh, -c, "echo {id}"]
+      land: [sh, -c, "echo landed {id}"]
   absent:
     path: $PKG/skillsonly
     tracker:
       read: [./no-such-reader]
+      land: [./no-such-lander]
   silent:
     path: $PKG/skillsonly
     tracker: {}
@@ -537,8 +543,11 @@ instances:
 	}
 	want := []string{
 		"present: tracker read sh: ok (",
+		"present: tracker land sh: ok (",
 		"absent: tracker read ./no-such-reader: fail: ",
+		"absent: tracker land ./no-such-lander: fail: ",
 		"silent: tracker: ok (no read command; recall cannot cross-check In flight)",
+		"silent: tracker: ok (no land command; mate land leaves the tracker to the Mate)",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("tracker checks = %q, want %d", got, len(want))

@@ -46,6 +46,7 @@ instances:
     path: /path/to/linear-plugin
     tracker:
       read: [linear-axi, issue, view, "{id}"]   # optional; runs in the package root
+      land: [./bin/land, "{id}"]               # optional; what `mate land` runs
 ```
 
 With the block, `mate backlog add|move|done --tracker <tracker-id>` keeps only
@@ -55,6 +56,23 @@ appended; 3 s each, 10 s in all, 20 pointers at most) and prints the first
 line of its stdout, or `unknown to the tracker` on a non-zero exit. Without
 `read`, recall says the pointers were not cross-checked. `doctor` looks the
 command up the way it looks up a stdio server's.
+
+`land` is what `mate land <project> <crew>` runs once the crew's work is
+merged and the crew closed (CON-193): the tracker's own side of a landing -
+the task's state, a comment, the hand-back's screenshots - without the Mate
+spending a model call on each. It gets `{id}` the way `read` does and the
+landing's facts in its environment: `MATE_PROJECT`, `MATE_CREW`,
+`MATE_TRACKER_ID`, `MATE_TASK` (the crew's `task=` line), `MATE_BRANCH`,
+`MATE_MERGE_COMMIT` (empty for a local fast-forward), `MATE_PR_URL`,
+`MATE_HANDBACK`, `MATE_BRIEF` and `MATE_LEARNING` (paths), and `MATE_SHOTS`
+(the images the hand-back names that exist on disk, one per line). It runs
+in the package root with 60 s to finish; its first stdout line is what
+`land` prints. A non-zero exit, or no `land` command at all, makes `land`
+say `tracker: <id> not updated ...; mark it done yourself`, and the Mate
+does what it did before. The tracker id is whatever leads the crew's
+`task=` line (`HU-12: ...`, as crews named by the issue carry it) or the
+crew's backlog pointer. `examples/plugins/linear/bin/land` is one for
+Linear, driven by `LINEAR_API_KEY`.
 
 ## Install a local package in four steps
 

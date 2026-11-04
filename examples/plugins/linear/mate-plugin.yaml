@@ -8,3 +8,6 @@ skills:
 open:
   title: Open Linear
   url: "{config.project_url}"
+# The captain's plugins.yaml entry may add the tracker block (docs/plugins.md):
+#   tracker:
+#     land: [./bin/land, "{id}"]   # needs LINEAR_API_KEY, curl and jq

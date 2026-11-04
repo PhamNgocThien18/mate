@@ -277,7 +277,7 @@ func TestMergedPullRequestFastForwardsRecordsAndWakesTheMate(t *testing.T) {
 		t.Fatalf("pr outbox items = %+v, want exactly one, sent", items)
 	}
 	typed := e.typed()
-	if len(typed) != 1 || !strings.Contains(typed[0], "pr-merged: k3 "+prURL) || !strings.Contains(typed[0], "fast-forwarded main") || !strings.Contains(typed[0], "mate crew stop shop k3") {
+	if len(typed) != 1 || !strings.Contains(typed[0], "pr-merged: k3 "+prURL) || !strings.Contains(typed[0], "fast-forwarded main") || !strings.Contains(typed[0], "mate land shop k3") {
 		t.Fatalf("typed %q, want the one pr-merged line", typed)
 	}
 

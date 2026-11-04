@@ -47,27 +47,8 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	project, crew := fs.Arg(0), fs.Arg(1)
-	followups, err := checkFollowups(w, project, *followupsFlag)
+	res, followups, err := mergeReviewed(context.Background(), w, project, crew, *reviewFlag, *followupsFlag)
 	if err != nil {
-		return err
-	}
-	var reviewed []spawn.ReviewedCommit
-	if *reviewFlag != "" {
-		fp, _, err := checkReview(context.Background(), w, gitx.New(), project, crew, *reviewFlag)
-		if err != nil {
-			return err
-		}
-		if err := requireFollowups(w, project, *reviewFlag, followups); err != nil {
-			return err
-		}
-		reviewed = append(reviewed, spawn.ReviewedCommit{Head: fp["head"], Base: fp["base"]})
-	}
-	res, err := spawn.MergeCrew(context.Background(), w, baseDeps(), project, crew, spawn.CallerFromEnv(), reviewed...)
-	if err != nil {
-		// Including the one failure that is not a refusal: a teardown that
-		// failed after the fast-forward landed. MergeCrew's error already
-		// says the merge is done and the crew is not closed, which is the
-		// whole of what the caller needs, so nothing is added here.
 		return err
 	}
 	fmt.Fprintln(stdout, res.Line())
@@ -75,13 +56,8 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 	// output stays its one line, and `wake` is where the Mate reads the
 	// record's state.
 	recordUsageAtClose(context.Background(), w, project, crew, "mate merge")
-	if followups != "" {
-		// Recorded after the merge, on the closed crew's meta: a refused
-		// merge leaves no claim behind that the findings were followed up.
-		if err := w.UpdateCrewMeta(project, crew, map[string]string{store.MetaFollowups: followups}); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "followups: %s (recorded as %s= in %s)\n", followups, store.MetaFollowups, w.CrewMeta(project, crew))
+	if err := recordFollowups(stdout, w, project, crew, followups); err != nil {
+		return err
 	}
 	// A landed task is the moment the Mate decides what runs next (CON-120):
 	// the setting rides on the Mate's merge so it is in front of it then.
@@ -91,6 +67,52 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 	if cfg, err := w.LoadProject(project); err == nil {
 		fmt.Fprintln(stdout, nextWorkLine(cfg))
 	}
+	return nil
+}
+
+// mergeReviewed is the merge `mate merge` and `mate land` share: the
+// `--followups` reference resolved, the review checked and pinned when one
+// is named, then MergeCrew with the caller the pane environment names.
+// Every refusal happens before anything is touched, and the resolved
+// followups come back for the caller to record on the closed crew.
+func mergeReviewed(ctx context.Context, w *store.Workspace, project, crew, review, followupsRef string) (spawn.MergeResult, string, error) {
+	followups, err := checkFollowups(w, project, followupsRef)
+	if err != nil {
+		return spawn.MergeResult{}, "", err
+	}
+	var reviewed []spawn.ReviewedCommit
+	if review != "" {
+		fp, _, err := checkReview(ctx, w, gitx.New(), project, crew, review)
+		if err != nil {
+			return spawn.MergeResult{}, "", err
+		}
+		if err := requireFollowups(w, project, review, followups); err != nil {
+			return spawn.MergeResult{}, "", err
+		}
+		reviewed = append(reviewed, spawn.ReviewedCommit{Head: fp["head"], Base: fp["base"]})
+	}
+	res, err := spawn.MergeCrew(ctx, w, baseDeps(), project, crew, spawn.CallerFromEnv(), reviewed...)
+	if err != nil {
+		// Including the one failure that is not a refusal: a teardown that
+		// failed after the fast-forward landed. MergeCrew's error already
+		// says the merge is done and the crew is not closed, which is the
+		// whole of what the caller needs, so nothing is added here.
+		return spawn.MergeResult{}, "", err
+	}
+	return res, followups, nil
+}
+
+// recordFollowups writes a resolved `--followups` on the closed crew's
+// meta, after the merge: a refused merge leaves no claim behind that the
+// findings were followed up.
+func recordFollowups(stdout io.Writer, w *store.Workspace, project, crew, followups string) error {
+	if followups == "" {
+		return nil
+	}
+	if err := w.UpdateCrewMeta(project, crew, map[string]string{store.MetaFollowups: followups}); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "followups: %s (recorded as %s= in %s)\n", followups, store.MetaFollowups, w.CrewMeta(project, crew))
 	return nil
 }
 

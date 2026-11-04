@@ -122,6 +122,8 @@ That is a refusal to destroy work: get the branch merged, or ask the captain whe
 
 **`crew budget --extend`** refuses a ceiling not above the current one (pass the new ceiling, not the increment), and a second extension without `--captain`: that one is the captain's to decide.
 
+**`mate land`** is `mate merge` followed by the records a landing needs (learning head, backlog, tracker, Work with `--work`), each on one line, then a `next:` line. Its refusals are `mate merge`'s below, before anything is touched. After the merge nothing fails the command: a line saying `not written`, `not moved` or `not updated` names the one record to make yourself; `tracker: <id> not updated (... no tracker.land command ...)` means the captain gave no landing command, so mark the task done in the tracker as you did before. It keeps a learning record you wrote and writes the head from the hand-back only over `Learning: pending`; `--learning "<line>"` puts your line there instead.
+
 **`mate merge`** prints `merge refused:` and moves nothing. `<default>` is the default branch of the Crew's repo.
 
 - `the Mate merges only reviewed work` - the project's review is on: run `mate review` first. With `records no decision`, ask the captain and record their answer with `mate project review <project> on|off`.
@@ -132,7 +134,7 @@ That is a refusal to destroy work: get the branch merged, or ask the captain whe
 - `is not ahead of <default>: nothing to merge` - the Crew committed nothing; report it as such.
 - `has <branch> checked out, not <default>` or uncommitted files in the repo's own checkout - the captain is working there; say so and stop.
 - `has no pull request recorded` - the Crew has not opened one; tell it.
-- `is closed, not open` or `is merged, not open` - nothing to merge; a merged one needs `crew stop`.
+- `is closed, not open` or `is merged, not open` - nothing to merge; a merged pull request is landed with `mate land`, which closes it with `crew stop`.
 - `gh could not merge <url>` - read the reason, send the Crew one line to fix it on the same branch, and merge after its next hand-back.
 
 **`brief append` / `brief revise`** refuse a Crew with no live agent and leaves the brief alone.
@@ -158,6 +160,7 @@ When the captain asks to set up an editor, change its key or fix its launch:
 
 The captain chooses a tracker through `/ws/.mate/WORKSPACE.md`, `/ws/.mate/projects/shop/PROJECT.md` or a user skill; mate has no built-in binding.
 When configuring one, record its absolute location, command or skill, workflow states and who updates it in the captain's instructions. Run its commands where it lives, read its workflow before using it, keep task ids in briefs, and update delivery after acceptance.
+With a tracker plugin whose `tracker:` block has a `land:` command (docs/plugins.md), `mate land` updates the task at landing - its id is the one that leads the crew's `task=` line (`HU-12: ...`) or its backlog pointer - so you do not; without one, `land` says `mark it done yourself`.
 A board shortcut is a project-scoped command in `/ws/.mate/console.yaml`, following `console --help`; the key is the captain's choice.
 
 ## Plugins

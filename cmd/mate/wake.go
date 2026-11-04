@@ -80,6 +80,12 @@ const (
 	// wakeNextCrewLines bounds the `## For the next crew` excerpt; the
 	// brief asks for at most 10.
 	wakeNextCrewLines = 12
+	// wakeTableLines bounds the hand-back's acceptance table, and
+	// wakeSectionLines each of its `## Deviations from Build` and `## Still
+	// open` sections (CON-193): with them in the wake, review-delivery's
+	// check of the hand-back against the brief needs no `cat` of the file.
+	wakeTableLines   = 16
+	wakeSectionLines = 8
 )
 
 func wake(ctx context.Context, w *store.Workspace, git gitx.Git, project string, now time.Time, advance bool) (string, error) {
@@ -282,6 +288,9 @@ func writeHandBack(ctx context.Context, out *strings.Builder, w *store.Workspace
 				fmt.Fprintf(out, "    %s\n", l)
 			}
 		}
+		if !scout {
+			writeHandBackChecks(out, string(data))
+		}
 	}
 	if len(reviewers) == 0 {
 		if !scout {
@@ -295,6 +304,63 @@ func writeHandBack(ctx context.Context, out *strings.Builder, w *store.Workspace
 		fmt.Fprintf(out, "  reviews: %s\n", strings.Join(parts, ", "))
 	}
 	fmt.Fprintf(out, "  learning: %s\n", learningWord(ctx, w, git, project, crew, meta, "review-delivery's next step"))
+}
+
+// writeHandBackChecks prints what review-delivery checks a ship's hand-back
+// for, after `## For the next crew`: the acceptance table (one row per
+// criterion, pass or fail, with the command and output that show it),
+// then `## Deviations from Build` and `## Still open`. Each is bounded;
+// an empty one is said to be missing, which is itself a finding.
+func writeHandBackChecks(out *strings.Builder, data string) {
+	rows := markdownTable(data, wakeTableLines)
+	if len(rows) == 0 {
+		out.WriteString("  acceptance table: none\n")
+	} else {
+		out.WriteString("  acceptance table:\n")
+		for _, r := range rows {
+			fmt.Fprintf(out, "    %s\n", r)
+		}
+	}
+	for _, title := range []string{"Deviations from Build", "Still open"} {
+		section := markdownSection(data, title, wakeSectionLines)
+		if section == "" {
+			fmt.Fprintf(out, "  ## %s: missing\n", title)
+			continue
+		}
+		fmt.Fprintf(out, "  ## %s:\n", title)
+		for _, l := range strings.Split(section, "\n") {
+			fmt.Fprintf(out, "    %s\n", l)
+		}
+	}
+}
+
+// markdownTable is the first table of a markdown text: its contiguous
+// `|` lines, at most max of them, the cut marked. The hand-back's
+// acceptance table follows `## For the next crew` with no heading of its
+// own (assets/crew/brief.md.tmpl).
+func markdownTable(text string, max int) []string {
+	var rows []string
+	in := false
+	cut := 0
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "|") {
+			if in {
+				break
+			}
+			continue
+		}
+		in = true
+		if len(rows) >= max {
+			cut++
+			continue
+		}
+		rows = append(rows, t)
+	}
+	if cut > 0 {
+		rows = append(rows, fmt.Sprintf("(+%d more rows in the hand-back)", cut))
+	}
+	return rows
 }
 
 // landedCrews are the open crews whose pull request the watcher saw merged

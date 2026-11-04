@@ -89,7 +89,7 @@ func TestWakePrintsWhatToActOnInOrder(t *testing.T) {
 		"needs-decision ask-k4: keep the old endpoint, or remove it now that nothing calls it? Removing it breaks the mobile app v1.2.\n",
 		"wait-mate k3: ready in branch mate/k3\n",
 		"  branch mate/k3: 1 commit(s) beyond main; 1 file changed, 1 insertion(+)\n",
-		"(6 lines), ## For the next crew:\n    README now has two lines.\n    The build is `make`.\n  reviews:",
+		"(6 lines), ## For the next crew:\n    README now has two lines.\n    The build is `make`.\n  acceptance table:\n    | criterion | pass/fail | command | output |\n    | --- | --- | --- | --- |\n  ## Deviations from Build: missing\n  ## Still open: missing\n  reviews:",
 		"  reviews: rev-k3 pending\n",
 		"== 2. New status since your last wake (4) ==\n",
 		"busy-k5 working: running the test suite\n",
@@ -326,5 +326,18 @@ func TestWakeListsAMergedCrewStillOpen(t *testing.T) {
 	}
 	if text := runWake(t, w); strings.Contains(text, "landed k3") {
 		t.Errorf("a closed crew is still listed as landed:\n%s", text)
+	}
+}
+
+func TestWakePrintsTheHandBackChecksAfterForTheNextCrew(t *testing.T) {
+	var out strings.Builder
+	data := "## For the next crew\na\n\n| criterion | pass/fail | command | output |\n| --- | --- | --- | --- |\n| builds | pass | `make` | ok |\n\n## Deviations from Build\nNone.\n\n## Still open\n- the icon\n"
+	writeHandBackChecks(&out, data)
+	want := "  acceptance table:\n    | criterion | pass/fail | command | output |\n    | --- | --- | --- | --- |\n    | builds | pass | `make` | ok |\n  ## Deviations from Build:\n    None.\n  ## Still open:\n    - the icon\n"
+	if out.String() != want {
+		t.Fatalf("got\n%s\nwant\n%s", out.String(), want)
+	}
+	if rows := markdownTable("| a |\n| b |\n| c |\n", 2); len(rows) != 3 || rows[2] != "(+1 more rows in the hand-back)" {
+		t.Fatalf("markdownTable bound: %q", rows)
 	}
 }

@@ -16,7 +16,7 @@ After every session start and every task that lands or closes, before you end th
   Every open task inside a target counts as asked: dispatch in the tracker's priority and blocked-by order, independent tasks at the same time, and add to the tracker the work the target needs that has no task yet.
   A question only the captain can answer stops only the tasks that depend on it: ask it, and keep the rest moving.
   When every task in it is done, or the captain stops it, remove its line and tell the captain the target is finished.
-- Past what was asked, the project's next-work setting decides: `{{.MatevBin}} project next-work {{.ProjectName}}` prints it, and so do recall and your `mate merge`.
+- Past what was asked, the project's next-work setting decides: `{{.MatevBin}} project next-work {{.ProjectName}}` prints it, and so do recall and the `next:` line of your `mate land`, which also names the open crews, the lanes and the queue you would otherwise read.
   `pick`, the default: every open task in the captain's tracker counts as asked, and so does every `## Queued` line not marked `unrequested`. Dispatch the ready ones in the tracker's priority and blocked-by order, independent ones at the same time as far as the lanes allow, and tell the captain in one line what you started. Do not ask the captain which work comes next while one is ready.
   `ask`: ask the captain as a decision which work comes next, recommending one, unless that question is already open.
 - Not ready, under either setting: a task blocked by an open one, waiting on the captain's answer or deferred by the captain; a promise whose trigger has not come; a line marked `unrequested`; and work whose next step leaves this machine (a tag, a release, a deploy) until the captain says so.

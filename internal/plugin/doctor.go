@@ -170,6 +170,12 @@ func doctorInstance(in Instance, projects []string, cfg Config, opts DoctorOptio
 			path, err := findCommand(in.Tracker.Read[0], in.Path, lookPath)
 			add(in.ID, "tracker read "+in.Tracker.Read[0], err, path)
 		}
+		if len(in.Tracker.Land) == 0 {
+			add(in.ID, "tracker", nil, "no land command; mate land leaves the tracker to the Mate")
+		} else {
+			path, err := findCommand(in.Tracker.Land[0], in.Path, lookPath)
+			add(in.ID, "tracker land "+in.Tracker.Land[0], err, path)
+		}
 	}
 
 	for _, project := range projects {

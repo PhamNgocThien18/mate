@@ -1,13 +1,13 @@
 ---
 name: review-delivery
-description: A Crew handed back - check the hand-back against the brief, have it reviewed independently when the project wants that, send corrections, land it with `mate merge --review` or follow its pull request, close a scout, and close the task. Load it on a `wait-mate` or `pr-open` item, on `pr-merged:` or `pr-closed:`, and before you merge or stop any Crew.
+description: A Crew handed back - check the hand-back against the brief, have it reviewed independently when the project wants that, send corrections, land it with `mate land` (merge or follow its pull request, and every record that follows) or close a scout. Load it on a `wait-mate` or `pr-open` item, on `pr-merged:` or `pr-closed:`, and before you land or stop any Crew.
 ---
 
 # review-delivery
 
 `wait-mate:` means the Crew stopped. It may be done, or it may be saying "I could not, here is why".
 Never relay it to the captain as a result until you have checked it.
-Start from the item `/usr/local/bin/mate wake shop` printed: the branch summary, the hand-back or report path, its `## For the next crew` section and the reviews recorded for it. Peek nothing.
+Start from the item `/usr/local/bin/mate wake shop` printed: the branch summary, the hand-back or report path, its `## For the next crew` section, its acceptance table, its `## Deviations from Build` and `## Still open`, and the reviews recorded for it. Peek nothing, and do not cat the hand-back: what step 2 checks is in the wake.
 
 ## A ship
 
@@ -22,7 +22,7 @@ Start from the item `/usr/local/bin/mate wake shop` printed: the branch summary,
    A failed check is never approval. Send demonstrated defects for correction; for incomplete verification, resolve the evidence gap and request a new review. Missing credentials or a skipped live test call for evidence, not an invented code fix. A stale review needs a fresh review of the current revision.
 
 A summary, a diff stat or your own impression is not approval. Read the full patch yourself (`mate diff shop <id> --full`) only when the captain asks you to review directly.
-Read-only git in the Crew's worktree is allowed for what `mate diff` does not print; anything that writes is not, and landing is `mate merge` alone.
+Read-only git in the Crew's worktree is allowed for what `mate diff` does not print; anything that writes is not, and landing is `mate land` alone.
 
 ## Corrections
 
@@ -39,26 +39,27 @@ The fix after a review is reviewed from the commit that review saw, never from s
 
 ## Landing
 
-Run `task-learning` for the delivered revision and review evidence before landing, including when reviews are off. `wake` prints `learning:` under the hand-back: `none recorded` or `not for <revision>` is the app telling you the record is still missing for this evidence.
-
-Once the review passes, land the work yourself:
+Once the review passes, or with review `off` once the hand-back checks out, land the work with one command:
 
 ```text
-/usr/local/bin/mate merge shop <id> --review <review-id>
+/usr/local/bin/mate land shop <id> [--review <review-id>]
 ```
 
-With the project's review `off`, land it once the hand-back checks out, with `/usr/local/bin/mate merge shop <id>` and no `--review`.
-With `--review` it pins the commit the reviewer saw; either way it closes the Crew; report what it printed, in outcome words, then keep the work moving, as AGENTS.md says.
-The close also runs the repo's teardown command and ends processes still running in the worktree; a `left behind:` part names what could not go and why: tell the captain in one line, it does not hold the task.
-When memory `## Captain` says the captain merges this kind of work, report it as ready instead, naming the branch or the pull request.
-New reviews pass only with Findings and Verification gaps both set to none; Notes never block. For a legacy review that passed but left findings standing, record them first: add a line under `## Queued` with `mate backlog add`, or name the tracker issue, and merge again with `--followups backlog:<text>` or `--followups <TRACKER-id>`.
-A passing review's `## Notes` open no correction round: merge, and record a note worth keeping with `mate backlog add` or in the tracker, as you judge; it needs no `--followups`.
-On `merge refused: needs-rebase`, send the Crew one line, "rebase onto <default branch> and hand back with wait-mate", and merge after its next hand-back. Any other refusal: `mate-commands`.
+It is `mate merge` and every record that follows, in order, each on one line: the merge (with `--review` pinned to the commit the reviewer saw; `gh pr merge` for a pull request ship; `crew stop` for a pull request the watcher already saw merged), the crew closed with its teardown, the learning record's head written from the hand-back's `Learning:` line, the backlog entry to `## Done`, the tracker through the captain's `tracker.land` command, and a `next:` line with the open crews, the lanes, the queue and the next-work setting. Read that output instead of running those commands yourself.
+Every refusal is `mate merge`'s and happens before anything is touched: `merge refused: needs-rebase` is one line to the Crew, "rebase onto <default branch> and hand back with wait-mate", and land after its next hand-back; the rest are in `mate-commands`.
+A line after the merge that says `not updated`, `not moved` or `not written` is a record it could not make: the merge stands, so do that one thing yourself (`tracker: ... mark it done yourself` is the usual one, when the captain gave no `tracker.land` command).
+A `left behind:` part names what the teardown could not remove and why: tell the captain in one line, it does not hold the task.
+Report what it printed, in outcome words, then keep the work moving, as AGENTS.md says.
 
-A pull request ship (`--deliver pr`) hands back with `pr-open:`; review its branch exactly as above. It fixes corrections on the same branch and pushes; the same pull request follows. `mate merge` runs `gh pr merge` for it.
+`task-learning` is the one judgment it leaves to you. `land` writes the record's head from the hand-back only when you wrote none (`Learning: pending`), so a hand-back whose evidence shows a real finding gets your record first, as `task-learning` says, or your one line as `--learning "<text>"`; a `predictions: ... still open` line names the brief's predictions you still have to close.
+When memory `## Captain` says the captain merges this kind of work, report it as ready instead, naming the branch or the pull request.
+New reviews pass only with Findings and Verification gaps both set to none; Notes never block. For a legacy review that passed but left findings standing, record them first: add a line under `## Queued` with `mate backlog add`, or name the tracker issue, and land again with `--followups backlog:<text>` or `--followups <TRACKER-id>`.
+A passing review's `## Notes` open no correction round: land, and record a note worth keeping with `mate backlog add` or in the tracker, as you judge; it needs no `--followups`.
+
+A pull request ship (`--deliver pr`) hands back with `pr-open:`; review its branch exactly as above. It fixes corrections on the same branch and pushes; the same pull request follows. `land` runs `gh pr merge` for it.
 A watcher follows every open pull request and wakes you with `pr-merged:` or `pr-closed:`. When a Crew opened one without it and no console is open, start it: `/usr/local/bin/mate pr watch shop <id> <url>`.
 
-- **`pr-merged:`** - `wake` lists the Crew as a `landed` item with its `learning:` line until it is closed. Run `task-learning` first (reuse the result if this revision has no new evidence), then run `/usr/local/bin/mate crew stop shop <id>`, which takes the merged pull request as landed, even after a squash or rebase merge. If the line says the checkout was `skipped:`, tell the captain their copy of the default branch is behind. Then keep the work moving.
+- **`pr-merged:`** - `wake` lists the Crew as a `landed` item with its `learning:` line until it is closed. Run `/usr/local/bin/mate land shop <id>`: it takes the merged pull request as landed, even after a squash or rebase merge, closes the Crew and makes the same records. If the line says the checkout was `skipped:`, tell the captain their copy of the default branch is behind. Then keep the work moving.
 - **`pr-closed:`** - it was closed unmerged. Find out why (its comments, through a scout if they are long), then either send the Crew the rework, telling it to reopen the pull request (`gh pr reopen`) and run `pr watch` again, or tell the captain it was turned down.
 
 ## A scout
@@ -73,8 +74,7 @@ A scout is done when its report answers every question under `## Deliverable`. T
 
 ## Closing a task
 
-A Crew's task ends when you or the captain decide, never when the Crew says so; until `crew stop` or `mate merge` runs, it stays in flight.
-A ship is closed when its work has landed. When the captain merged it, run `crew stop`; it finds the work landed.
-Unlanded work is thrown away with `--discard` only on the captain's explicit word, and that records the Crew `failed`.
-Before teardown or marking any task closed (ship, scout, failed or abandoned), run `task-learning` if this evidence revision has no result yet.
-Then `/usr/local/bin/mate backlog done shop <id>`, and update the captain's tracker when the task lives there. When the task taught you something, `stow` says where it goes.
+A Crew's task ends when you or the captain decide, never when the Crew says so; until `mate land` or `crew stop` runs, it stays in flight.
+A ship is closed when its work has landed: `mate land`, which also finds a pull request the captain merged landed.
+Unlanded work is thrown away with `crew stop --discard` only on the captain's explicit word, and that records the Crew `failed`.
+Before `crew stop` closes a task (scout, failed or abandoned), run `task-learning` if this evidence revision has no result yet, then `/usr/local/bin/mate backlog done shop <id>`, and update the captain's tracker when the task lives there; `land` does those for a ship. When the task taught you something, `stow` says where it goes.

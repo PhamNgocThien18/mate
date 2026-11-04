@@ -57,6 +57,15 @@ type Tracker struct {
 	// answer; a non-zero exit is "unknown to the tracker". It runs in the
 	// package root.
 	Read []string
+	// Land records a landed task in the tracker (CON-193): its argv, with
+	// `{id}` replaced the way Read's is, run by `mate land` once the crew's
+	// work is merged and the crew closed. It gets the task's facts in its
+	// environment (MATE_TRACKER_ID, MATE_HANDBACK, MATE_MERGE_COMMIT, ...;
+	// docs/plugins.md) and does what the tracker wants done at landing:
+	// the state, a comment, the hand-back's screenshots. Nil when the
+	// captain gave none, and `mate land` then says the tracker was not
+	// updated.
+	Land []string
 }
 
 // TrackerFor is the tracker instance project receives: the first enabled
@@ -97,6 +106,7 @@ type rawInstance struct {
 
 type rawTracker struct {
 	Read []string `yaml:"read"`
+	Land []string `yaml:"land"`
 }
 
 type rawBinding struct {
@@ -184,7 +194,10 @@ func parseConfig(root, file string, data []byte, packages bool, only string) (Co
 			if len(ri.Tracker.Read) > 0 && strings.TrimSpace(ri.Tracker.Read[0]) == "" {
 				return Config{}, fail(id, "", "tracker.read: the command name is empty")
 			}
-			in.Tracker = &Tracker{Read: append([]string(nil), ri.Tracker.Read...)}
+			if len(ri.Tracker.Land) > 0 && strings.TrimSpace(ri.Tracker.Land[0]) == "" {
+				return Config{}, fail(id, "", "tracker.land: the command name is empty")
+			}
+			in.Tracker = &Tracker{Read: append([]string(nil), ri.Tracker.Read...), Land: append([]string(nil), ri.Tracker.Land...)}
 		}
 		if !filepath.IsAbs(in.Path) {
 			in.Path = filepath.Join(root, in.Path)
