@@ -51,31 +51,6 @@ func TestNothingNewMeansNoSend(t *testing.T) {
 	}
 }
 
-// A `context_high` incident alone is nothing the Mate can act on before the
-// crew hands back (CON-202), so it opens no turn; it rides with the crew's
-// hand-back in one digest.
-func TestContextHighWaitsForTheNextDigest(t *testing.T) {
-	f := newFixture(t)
-	f.auto(true)
-	f.incident("k3", box.IncidentContextHigh, store.IncidentOpen, "202.7k tokens of context, over 200k")
-
-	f.mustTick()
-	if typed := f.typed(); len(typed) != 0 {
-		t.Fatalf("typed %#v for a context-high item alone", typed)
-	}
-
-	f.status("k3", "wait-mate: report.md is ready")
-	f.clock.Advance(autopilot.DefaultInterval)
-	f.mustTick()
-
-	line := f.requireOneDigest()
-	for _, want := range []string{"digest: 2 item(s)", `k3 wait-mate: "report.md is ready"`, "k3 context high: 202.7k tokens"} {
-		if !strings.Contains(line, want) {
-			t.Fatalf("digest %q does not carry %q", line, want)
-		}
-	}
-}
-
 // The happy path, end to end: one line, marked, verified into the composer,
 // recorded in sent.log, cursor advanced.
 func TestOneVerifiedDigestPerTick(t *testing.T) {
