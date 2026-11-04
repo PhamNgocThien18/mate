@@ -142,6 +142,30 @@ Chạy riêng, một run mỗi arm, sau khi ba run chính đã xong. Mốc ngắ
 - [ ] Workspace `~/bench` dựng xong, `crew-dispatch.json` ghim model, `mate usage bench` in được bảng rỗng.
 - [ ] Mẫu `runs/<mã>.md` có sẵn các mục 5.1–5.6.
 
+## 10. Đăng ký trước run đầu (2026-11-04)
+
+Captain chọn ứng viên 1 "Sổ trực ca" và giữ trần 150 triệu token / 8 giờ (04/11, 10:30).
+
+| Mục | Giá trị |
+| --- | --- |
+| Claude Code | 2.1.309, model alias `opus` = `claude-opus-5-5` qua cliproxy `127.0.0.1:8317` (settings.json của captain) |
+| mate | `b32971a` (2026-11-03) |
+| Model, effort cho cả hai arm | `opus`, `high`. A: `claude --model opus --effort high`; B: `~/bench/.mate/crew-dispatch.json` ghim mọi rule, default, review, review_small về `claude/opus/high`; Mate của B chạy `mate_harness: claude` |
+| Repo khởi đầu | `~/bench-spec/starter`, commit `3be9b61b5acf0bd614c5181bd6c906591bfd33f3`: `go.mod` (module `duty`, go 1.27), `AGENTS.md` 7 dòng, `Makefile` (`check` = gofmt, vet, test), `docs/spec.md`, `docs/faq.md`, `cmd/duty/.keep` |
+| SHA-256 `docs/spec.md` | `b41fa2c41f7993748e923f99db17e5fec4c3032e85437b0bcb6e074551b5f7ae` |
+| SHA-256 `docs/faq.md` | `1ea9258408adae8cf8368c09660205aff07a7c45238cf013bf52c382e975689c` |
+| SHA-256 `AGENTS.md` | `8dab256247a1a78da25ca9bce237b97ca054f82e312834b31a5a7369414a729b` |
+| Acceptance test | `~/bench-spec/acceptance` (repo `~/bench-spec`, commit `27fe204`), `./run.sh <repo>` chạy C01–C17, in `đạt x/17`. Trên repo khởi đầu: 0/17 (chưa có code), đúng kỳ vọng |
+| Đếm token A | `go run ./scripts/claudeusage <session.jsonl>`: một lần gọi = một `message.id`, bản ghi cuối của id thắng (parser `internal/harness/claude` đo thấy snapshot của subagent lớn dần), TOTAL = input + cache_read + cache_write + output, thinking riêng; gom `<session>/subagents/*.jsonl`; `--since/--until` cho session teammate |
+| Workspace B | `~/bench` (`mate init`), project `duty` → `~/bench/duty/duty` (clone của repo khởi đầu), `review: on`, `next_work: pick`, tracker: `backlog.md`, dashboard `127.0.0.1:7778` |
+| Mẫu log | `~/bench-spec/runs/TEMPLATE.md` |
+
+Hai quyết định ngoài bản protocol đầu, ghi để khỏi quên:
+
+- Spec và FAQ nằm trong repo khởi đầu (`docs/`), nên cả hai arm thấy cùng một file trên đĩa; chỉ bộ acceptance test là giấu.
+- Effort `high` cho cả hai vì đó là effort một người dùng thường để nguyên khi mở Claude Code; crew của mate mặc định `medium`, nên B phải ghim lên để bằng A.
+- Nếu sau run phát hiện một acceptance test sai so với spec, sửa test rồi chạy lại acceptance trên commit cuối của mọi run đã có; ghi vào log của từng run. Không chạy lại arm.
+
 ## Pilot
 
 Chưa chạy. Điền sau khi có số thật, mỗi run một bảng, kèm ngày giờ, commit và mọi sai khác so với protocol.
