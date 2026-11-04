@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
@@ -143,5 +145,43 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "needs a real terminal") {
 		t.Fatalf("stderr = %q, want it to say a terminal is required", stderr.String())
+	}
+}
+
+// The console's runtime runs the herdr findTool resolves, also one the
+// console's PATH cannot reach - here in XDG_BIN_HOME, where herdr's installer
+// can put it - while baseDeps, which every other command builds on, still
+// runs the herdr on PATH (CON-189).
+func TestConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
+	if !callersOf(t)["runConsole"]["consoleHerdr"] {
+		t.Fatal("the console does not build its deps with consoleHerdr")
+	}
+	bin := t.TempDir()
+	herdr := filepath.Join(bin, "herdr")
+	// It leaves herdr.ran behind when it runs, and answers nothing Herdr
+	// would: what matters here is which executable ran.
+	if err := os.WriteFile(herdr, []byte("#!/bin/sh\n: > \"$0.ran\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("XDG_BIN_HOME", bin)
+	if got := findTool(os.Getenv, "herdr"); got != herdr {
+		t.Fatalf("findTool resolved %q, want %q", got, herdr)
+	}
+	ran := func() bool {
+		_, err := os.Stat(herdr + ".ran")
+		return err == nil
+	}
+	listAgents := func(deps spawn.Deps) {
+		_, _ = deps.Runtime.ListAgents(context.Background(), runtime.SessionHandle{Name: "con-189"})
+	}
+
+	listAgents(baseDeps())
+	if ran() {
+		t.Fatal("baseDeps ran the herdr PATH cannot reach; only the console runs that one")
+	}
+	listAgents(baseDeps(consoleHerdr(os.Getenv)))
+	if !ran() {
+		t.Fatal("the console's runtime did not run the herdr findTool resolved")
 	}
 }
