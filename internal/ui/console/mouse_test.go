@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -257,6 +258,57 @@ func TestClickOnAHarnessRowPicksIt(t *testing.T) {
 	cmd()
 	if len(got) != 1 || got[0].Harness != query.HarnessKind("codex") {
 		t.Fatalf("requests = %+v, want one create with codex", got)
+	}
+}
+
+// The wheel over the actions sheet or the harness picker moves its cursor
+// and stops at either end, running nothing. Over the new-project form,
+// which has no cursor, it does nothing.
+func TestTheWheelMovesTheCursorOfTheActionMenusSheets(t *testing.T) {
+	wheel := func(m Model, down bool, n int) Model {
+		t.Helper()
+		for i := 0; i < n; i++ {
+			top, _ := bxSlot(t, m, slotSheet).body()
+			var cmd tea.Cmd
+			if m, cmd = send(t, m, bxWheel(4, top, down)); cmd != nil {
+				t.Fatalf("the wheel over %v ran something", m.sheetOpen())
+			}
+		}
+		return m
+	}
+
+	m, _, spy := bxPayments(t, 40, 36)
+	m, _ = send(t, m, key("a"))
+	last := len(m.actions.entries) - 1
+	if m = wheel(m, true, 1); m.actions.index != 1 {
+		t.Fatalf("wheel down over the actions sheet: cursor %d, want 1", m.actions.index)
+	}
+	if m = wheel(m, true, last+2); m.actions.index != last {
+		t.Fatalf("wheel down past the last entry: cursor %d, want %d", m.actions.index, last)
+	}
+	if m = wheel(m, false, last+2); m.actions.index != 0 || m.sheetOpen() != sheetActions || len(spy.calls) != 0 {
+		t.Fatalf("wheel up past the first entry: cursor %d sheet %v stage calls %d, want 0, the sheet, none",
+			m.actions.index, m.sheetOpen(), len(spy.calls))
+	}
+
+	p, got := actRunner(t, actMateTree(absentMate("this Project has no Mate"), actMateCaps(true, false, false)), "Mate created", nil)
+	p, _ = send(t, p, key("enter"))
+	p, _ = send(t, p, key("s"))
+	rows := len(p.harnessOrder())
+	if p = wheel(p, true, rows+2); p.actions.harnessIndex != rows-1 {
+		t.Fatalf("wheel down past the last harness: cursor %d, want %d", p.actions.harnessIndex, rows-1)
+	}
+	if p = wheel(p, false, rows+2); p.actions.harnessIndex != 0 || p.sheetOpen() != sheetHarness || len(*got) != 0 {
+		t.Fatalf("wheel up past the first harness: cursor %d sheet %v requests %d, want 0, the picker, none",
+			p.actions.harnessIndex, p.sheetOpen(), len(*got))
+	}
+
+	f, _ := actRunner(t, actEmptyWorkspace(), "added", nil)
+	f, _ = send(t, f, key("n"))
+	f = actType(t, f, "ledger")
+	before := f.actions
+	if f = wheel(f, true, 2); !reflect.DeepEqual(f.actions, before) {
+		t.Fatalf("the wheel over the new-project form changed the menu:\n got %+v\nwant %+v", f.actions, before)
 	}
 }
 
