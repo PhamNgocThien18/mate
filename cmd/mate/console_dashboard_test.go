@@ -115,3 +115,19 @@ func TestADashboardPressIsTheSheetsRequest(t *testing.T) {
 		}
 	}
 }
+
+// A console that cannot split names the two pages to open, on loopback,
+// with the LAN address when there is one; without a dashboard it says how
+// to start one (CON-150).
+func TestHeadlessHint(t *testing.T) {
+	cases := []struct{ url, want string }{
+		{"http://127.0.0.1:7777", "Mates run headless here, open in a browser: Mate Office http://127.0.0.1:7777/office/ · Agent City http://127.0.0.1:7777/city/"},
+		{"http://127.0.0.1:7777/ http://192.168.1.5:7777", "Mates run headless here, open in a browser: Mate Office http://127.0.0.1:7777/office/ · Agent City http://127.0.0.1:7777/city/ · LAN http://192.168.1.5:7777"},
+		{"", "Mates run headless here: run mate dashboard and open Mate Office or Agent City in a browser"},
+	}
+	for _, c := range cases {
+		if got := headlessHint(c.url); got != c.want {
+			t.Errorf("headlessHint(%q) = %q, want %q", c.url, got, c.want)
+		}
+	}
+}

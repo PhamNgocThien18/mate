@@ -240,6 +240,15 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		notice = "dashboard " + url
 		dashboardURL = url
 	}
+	// A console that cannot split says where its headless Mates are
+	// instead of the bare dashboard URL.
+	noHost := host.NoHostHint(os.Getenv)
+	if h == nil {
+		noHost = headlessHint(dashboardURL)
+		if dashboardURL != "" {
+			notice = noHost
+		}
+	}
 	addNotice := func(text string) {
 		if notice != "" {
 			notice += "; "
@@ -268,8 +277,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if pluginNotice != "" {
 		addNotice(pluginNotice)
 	}
-	if h == nil {
-		addNotice("no split terminal: Mates start headless")
+	if h == nil && dashboardURL == "" {
+		addNotice(noHost)
 	}
 	var columns *consoleColumns
 	if h != nil {
@@ -302,7 +311,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).
 		WithCommandView(consolePluginView(links, hostOpener(), runConsoleLauncher, consoleCommandView(ws, columns, commands, runConsoleLauncher))).
-		WithNoHostHint(host.NoHostHint(os.Getenv)).
+		WithNoHostHint(noHost).
 		WithKindGlyphs(probeKindGlyphs(os.Getenv)).
 		WithHarnessIcons(probeNerdIcons(os.Getenv, execOutput)).
 		WithNotice(notice).

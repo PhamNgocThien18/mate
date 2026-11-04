@@ -146,6 +146,11 @@ func (m Model) showEntry(r row) menuEntry {
 	e.enabled = true
 	if m.stage == nil {
 		e.about = "No next pane: " + m.noHostHint() + ", and Enter fills the pane beside it."
+		if m.noHost != "" {
+			// WithNoHostHint's text is the whole advice, not a way to
+			// get the pane.
+			e.about = "No next pane: " + m.noHost + "."
+		}
 		return e
 	}
 	e.about = "Tells the host to run herdr agent attach " + stageLabel(target) +

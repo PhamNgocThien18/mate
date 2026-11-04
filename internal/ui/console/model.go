@@ -476,7 +476,7 @@ func (m Model) WithCommandView(fn CommandViewFunc) Model {
 }
 
 // WithNoHostHint replaces the advice Enter gives while there is no host
-// pane, such as what to do instead over ssh.
+// pane, such as where to talk to the Mates instead (CON-150).
 func (m Model) WithNoHostHint(text string) Model {
 	m.noHost = text
 	return m

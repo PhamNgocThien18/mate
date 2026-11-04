@@ -34,6 +34,11 @@ func TestDetect(t *testing.T) {
 			want: ITerm,
 		},
 		{
+			name: "herdr desktop app says ghostty",
+			env:  map[string]string{"TERM_PROGRAM": "ghostty", "HC_TERMINAL_ID": "7"},
+			want: None,
+		},
+		{
 			name: "blank wezterm pane is ignored",
 			env:  map[string]string{"WEZTERM_PANE": "  ", "TERM_PROGRAM": "ghostty"},
 			want: Ghostty,

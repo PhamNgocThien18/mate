@@ -18,12 +18,20 @@ const (
 
 // Detect inspects the environment and stops at the first match:
 // WEZTERM_PANE, TERM_PROGRAM=ghostty, TERM_PROGRAM=iTerm.app.
+//
+// Herdr's desktop app is built on libghostty and sets TERM_PROGRAM=ghostty
+// too, but its panes are not Ghostty.app's: the AppleScript driver would
+// lay columns out in whatever Ghostty.app window is in front. Its
+// HC_TERMINAL_ID says the terminal is Herdr's, which has no driver.
 func Detect(getenv func(string) string) Kind {
 	if getenv == nil {
 		return None
 	}
 	if strings.TrimSpace(getenv("WEZTERM_PANE")) != "" {
 		return WezTerm
+	}
+	if strings.TrimSpace(getenv("HC_TERMINAL_ID")) != "" {
+		return None
 	}
 	switch getenv("TERM_PROGRAM") {
 	case "ghostty":
