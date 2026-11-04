@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -169,4 +170,21 @@ func dashboardTalk(ctx context.Context, ws *store.Workspace, req dashboard.Actio
 		return fmt.Sprintf("session of news #%d closed; what was said in it stays", req.News), true, nil
 	}
 	return "", false, nil
+}
+
+// headlessHint is what a console in a terminal it cannot split says
+// instead of a next pane (CON-150): its Mates run headless, and the
+// captain talks to them in Mate Office or Agent City. dashboardURL is
+// startConsoleDashboard's, "" when the dashboard did not start.
+func headlessHint(dashboardURL string) string {
+	fields := strings.Fields(dashboardURL)
+	if len(fields) == 0 {
+		return "Mates run headless here: run mate dashboard and open Mate Office or Agent City in a browser"
+	}
+	base := strings.TrimRight(fields[0], "/")
+	hint := "Mates run headless here, open in a browser: Mate Office " + base + "/office/ · Agent City " + base + "/city/"
+	if len(fields) > 1 {
+		hint += " · LAN " + fields[1]
+	}
+	return hint
 }

@@ -134,6 +134,18 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if rt, ok := deps.Runtime.(*runtime.Herdr); ok {
 		rt.Binary = findTool(os.Getenv, "herdr")
 	}
+	h := host.Open(host.Detect(os.Getenv), host.Options{Env: os.Getenv, SelfCols: func() int {
+		cols, _, err := term.GetSize(stdoutFile.Fd())
+		if err != nil {
+			return 0
+		}
+		return cols
+	}})
+	// A terminal the console cannot split (neither WezTerm nor Ghostty) has
+	// no column to show a pane Mate in, so every Mate this console starts,
+	// restarts, refreshes or recovers runs headless and is talked to in the
+	// box or on the dashboard.
+	deps.HeadlessOnly = h == nil
 	// One observer for the whole run too, so the observer chain's one
 	// minute memory of what Jev said is shared by the health column, the
 	// sends and the settles of this console. Nil is the fixture observer.
@@ -209,13 +221,6 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 		return loadFrom(fresh)(loadCtx)
 	}
-	h := host.Open(host.Detect(os.Getenv), host.Options{Env: os.Getenv, SelfCols: func() int {
-		cols, _, err := term.GetSize(stdoutFile.Fd())
-		if err != nil {
-			return 0
-		}
-		return cols
-	}})
 	notice := ""
 	dashboardURL := ""
 	// The dashboard comes up with the console, after the observer has made
@@ -234,6 +239,15 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		defer stopDashboard()
 		notice = "dashboard " + url
 		dashboardURL = url
+	}
+	// A console that cannot split says where its headless Mates are
+	// instead of the bare dashboard URL.
+	noHost := host.NoHostHint(os.Getenv)
+	if h == nil {
+		noHost = headlessHint(dashboardURL)
+		if dashboardURL != "" {
+			notice = noHost
+		}
 	}
 	addNotice := func(text string) {
 		if notice != "" {
@@ -262,6 +276,9 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// console runs on without plugin links.
 	if pluginNotice != "" {
 		addNotice(pluginNotice)
+	}
+	if h == nil && dashboardURL == "" {
+		addNotice(noHost)
 	}
 	var columns *consoleColumns
 	if h != nil {
@@ -294,7 +311,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).
 		WithCommandView(consolePluginView(links, hostOpener(), runConsoleLauncher, consoleCommandView(ws, columns, commands, runConsoleLauncher))).
-		WithNoHostHint(host.NoHostHint(os.Getenv)).
+		WithNoHostHint(noHost).
 		WithKindGlyphs(probeKindGlyphs(os.Getenv)).
 		WithHarnessIcons(probeNerdIcons(os.Getenv, execOutput)).
 		WithNotice(notice).

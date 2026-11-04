@@ -21,9 +21,10 @@ import (
 // HostStopWait is how long a stop lets a headless Mate finish its turn.
 const HostStopWait = 2 * time.Minute
 
-// headlessMode decides a start's mode: the request's, else the mode the
-// last run of this Mate recorded, else project.yaml's `mate.headless`.
-func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfig, fallback string, canHeadless bool) (bool, error) {
+// headlessMode decides a start's mode: the request's, else headless when
+// headlessOnly (Deps.HeadlessOnly), else the mode the last run of this
+// Mate recorded, else project.yaml's `mate.headless`.
+func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfig, fallback string, headlessOnly, canHeadless bool) (bool, error) {
 	switch req.Mode {
 	case ModeHeadless:
 		if !canHeadless {
@@ -40,6 +41,9 @@ func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfi
 	case ModePane, ModeHeadless, "":
 	default:
 		return false, errUsage(fmt.Sprintf("project.yaml mate.mode %q is not a Mate mode (want %s or %s)", cfg.Mode, ModePane, ModeHeadless))
+	}
+	if headlessOnly {
+		return canHeadless, nil
 	}
 	// The mode of the last run, then project.yaml, then fallback
 	// (Deps.DefaultMode: headless in the binary since 2026-10-15). A

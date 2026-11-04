@@ -280,6 +280,10 @@ func TestEnterWithoutAHostGivesTheHint(t *testing.T) {
 	if m.msg.text != "no next pane: over ssh, do this" {
 		t.Fatalf("message = %q, want the hint after the no-host line", m.msg.text)
 	}
+	m, _ = send(t, m, key("a"))
+	if about := actEntry(t, m, "enter").about; about != "No next pane: over ssh, do this." {
+		t.Fatalf("menu says %q, want the hint as the whole advice", about)
+	}
 }
 
 // t names the project of the row it is pressed on, from the list, the
