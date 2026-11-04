@@ -119,6 +119,13 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if err := (runtime.TTYHandoff{Stdin: stdinFile, Stdout: stdoutFile}).CheckTerminal(); err != nil {
 		return consoleTerminalRefusal(err)
 	}
+	// One workspace, one console (CON-162): before anything starts, so a
+	// refused console has opened no observer, daemon or database.
+	unlockConsole, err := liveConsoleClaim(stdinFile, stdoutFile).take(ws)
+	if err != nil {
+		return err
+	}
+	defer unlockConsole()
 
 	ctx := context.Background()
 	// One set of live dependencies for the whole Console run: the Herdr
