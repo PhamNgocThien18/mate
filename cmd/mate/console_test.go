@@ -159,10 +159,10 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 // baseDeps() as before CON-189; its runtime looks for herdr on PATH only, so
 // it never reaches that one.
 func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
-	const console = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
+	const consoleCall = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
 	calls := callsTo(t, "baseDeps")
-	if !slices.Contains(calls["runConsole"], console) {
-		t.Errorf("runConsole builds its deps with %q, want %s", calls["runConsole"], console)
+	if got := calls["runConsole"]; !slices.Equal(got, []string{consoleCall}) {
+		t.Errorf("runConsole calls %q, want only %s", got, consoleCall)
 	}
 	for fn, list := range calls {
 		for _, call := range list {
