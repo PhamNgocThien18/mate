@@ -3,8 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,14 +153,25 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 	}
 }
 
-// The console's runtime runs the herdr findTool resolves, also one the
-// console's PATH cannot reach - here in XDG_BIN_HOME, where herdr's installer
-// can put it - while baseDeps, which every other command builds on, still
-// runs the herdr on PATH (CON-189).
-func TestConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
-	if !callersOf(t)["runConsole"]["consoleHerdr"] {
-		t.Fatal("the console does not build its deps with consoleHerdr")
+// Only the console names the herdr its runtime runs: the one findTool
+// resolves, also one the console's PATH cannot reach - here in XDG_BIN_HOME,
+// where herdr's installer can put it. Every other command builds on
+// baseDeps() as before CON-189; its runtime looks for herdr on PATH only, so
+// it never reaches that one.
+func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
+	const console = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
+	calls := callsTo(t, "baseDeps")
+	if !slices.Contains(calls["runConsole"], console) {
+		t.Errorf("runConsole builds its deps with %q, want %s", calls["runConsole"], console)
 	}
+	for fn, list := range calls {
+		for _, call := range list {
+			if fn != "runConsole" && call != "baseDeps()" {
+				t.Errorf("%s calls %s; only the console names a herdr", fn, call)
+			}
+		}
+	}
+
 	bin := t.TempDir()
 	herdr := filepath.Join(bin, "herdr")
 	// It leaves herdr.ran behind when it runs, and answers nothing Herdr
@@ -178,10 +194,45 @@ func TestConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 
 	listAgents(baseDeps())
 	if ran() {
-		t.Fatal("baseDeps ran the herdr PATH cannot reach; only the console runs that one")
+		t.Fatal("baseDeps() ran the herdr PATH cannot reach")
 	}
-	listAgents(baseDeps(consoleHerdr(os.Getenv)))
+	listAgents(baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr"))))
 	if !ran() {
-		t.Fatal("the console's runtime did not run the herdr findTool resolved")
+		t.Fatal("the console's deps did not run the herdr findTool resolved")
 	}
+}
+
+// callsTo is every call to callee in this package's non-test files, as
+// written, by the function it is in.
+func callsTo(t *testing.T, callee string) map[string][]string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]string{}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
+					if id, ok := call.Fun.(*ast.Ident); ok && id.Name == callee {
+						out[fn.Name.Name] = append(out[fn.Name.Name], types.ExprString(call))
+					}
+				}
+				return true
+			})
+		}
+	}
+	return out
 }

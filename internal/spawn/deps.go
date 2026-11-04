@@ -179,8 +179,6 @@ type Deps struct {
 type LiveOption func(*liveOptions)
 
 type liveOptions struct {
-	// herdrBinary is the herdr executable the adapter runs; empty is the
-	// "herdr" on PATH.
 	herdrBinary string
 }
 

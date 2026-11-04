@@ -133,7 +133,13 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// adapter and the agent-name registry it shares, so a Mate started from
 	// the action menu and the stream opened on it a keystroke later agree
 	// about which names are reserved.
-	deps := baseDeps(consoleHerdr(os.Getenv))
+	//
+	// Point the runtime at the `herdr` findTool resolves - the one the stage
+	// column runs by absolute path, which can be in ~/.local/bin when the
+	// Console's PATH cannot reach it. Without this, a session check would
+	// consult a different executable than the attach and could refuse an
+	// attach that would have worked (measured 2026-09-30).
+	deps := baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))
 	h := host.Open(host.Detect(os.Getenv), host.Options{Env: os.Getenv, SelfCols: func() int {
 		cols, _, err := term.GetSize(stdoutFile.Fd())
 		if err != nil {
@@ -337,15 +343,6 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 	}
 	return nil
-}
-
-// consoleHerdr points the console's runtime at the `herdr` findTool
-// resolves - the one the stage column runs by absolute path, which can be
-// in ~/.local/bin when the Console's PATH cannot reach it. Without this, a
-// session check would consult a different executable than the attach and
-// could refuse an attach that would have worked (measured 2026-09-30).
-func consoleHerdr(getenv func(string) string) spawn.LiveOption {
-	return spawn.WithHerdrBinary(findTool(getenv, "herdr"))
 }
 
 // consoleTerminalFiles requires the caller's own stdout to be a real

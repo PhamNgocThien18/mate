@@ -60,8 +60,8 @@ func jevThreshold(value string) (float64, error) {
 }
 
 // baseDeps supplies the runtime and harness registry for this binary. opts
-// go to spawn.LiveDeps: the console names the `herdr` its runtime runs
-// (consoleHerdr); every other command passes none and runs the one on PATH.
+// go to spawn.LiveDeps; only the console passes one, naming the `herdr` its
+// runtime runs.
 func baseDeps(opts ...spawn.LiveOption) spawn.Deps { return spawn.LiveDeps(harnesses, opts...) }
 
 // liveDeps is baseDeps plus the observer `.mate/.env` asks for, for a command
