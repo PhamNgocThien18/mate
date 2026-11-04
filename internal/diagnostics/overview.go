@@ -293,6 +293,18 @@ func (p *projection) buildOverview(observations []workObservation, callKinds map
 			step.ExecutionIDs = appendUnique(step.ExecutionIDs, o.executionID)
 		}
 	}
+	// The machine time of a step is its calls' commands, counted the way
+	// summarizeTime counts the task's: native work, never a wrapper's wait.
+	callSpans := map[string][]interval{}
+	for _, e := range p.out.Executions {
+		if e.IsWrapper || e.Poll || e.CallID == "" {
+			continue
+		}
+		if span, ok := p.executionInterval(e); ok {
+			callSpans[e.CallID] = append(callSpans[e.CallID], span)
+		}
+	}
+	stepSpans := [][]interval{}
 	seenCalls := map[string]bool{}
 	for _, call := range p.in.Calls {
 		if !include(call.ID) || seenCalls[call.ID] {
@@ -327,7 +339,9 @@ func (p *projection) buildOverview(observations []workObservation, callKinds map
 		// steps and categories are two readings of one assignment.
 		if n := len(out.Steps); n == 0 || out.Steps[n-1].Kind != kind {
 			out.Steps = append(out.Steps, Step{Kind: kind, Label: workLabels[kind], CallIDs: []string{}, SegmentIDs: []string{}, Skills: []string{}, Parts: []string{}})
+			stepSpans = append(stepSpans, nil)
 		}
+		stepSpans[len(stepSpans)-1] = append(stepSpans[len(stepSpans)-1], callSpans[call.ID]...)
 		step := &out.Steps[len(out.Steps)-1]
 		step.ModelCalls++
 		step.Tokens.Add(call.Tokens)
@@ -342,6 +356,10 @@ func (p *projection) buildOverview(observations []workObservation, callKinds map
 	}
 	for i := range out.Steps {
 		out.Steps[i].ElapsedMs = duration(out.Steps[i].StartedAt, out.Steps[i].EndedAt)
+		if len(stepSpans[i]) > 0 {
+			ms := unionMs(stepSpans[i])
+			out.Steps[i].ToolElapsedMs = &ms
+		}
 		sort.Strings(out.Steps[i].Parts)
 	}
 	for _, kind := range order {

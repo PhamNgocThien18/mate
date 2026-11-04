@@ -42,6 +42,12 @@ type projection struct {
 	// as the work observations saw it.
 	callExecutions map[string]int
 	callSkills     map[string][]string
+	// childGap is the harness saying it cannot see a child agent's usage.
+	// It is only worth saying when the crew started one (finish).
+	childGap bool
+	// keptOut are the large_output findings whose output the next call's
+	// context shows never reached the model; they never make the top.
+	keptOut map[string]bool
 }
 
 // Project is a deterministic, read-only projection. Native usage records are
@@ -54,6 +60,7 @@ func Project(in Input, opts Options) Performance {
 		capabilities: map[string]bool{}, missing: map[string]bool{}}
 	p.latestPrompt = map[string]string{}
 	p.parents, p.callExecutions, p.callSkills = map[string]bool{}, map[string]int{}, map[string][]string{}
+	p.keptOut = map[string]bool{}
 	p.out = Performance{Version: Version, GeneratedAt: stamp(opts.Now),
 		PromptTurns: []Prompt{}, Segments: []Segment{}, Findings: []Finding{},
 		Executions: []Execution{}, Processes: []Process{}, TopSegmentIDs: []string{}, TopFindingIDs: []string{},
@@ -140,6 +147,10 @@ func (p *projection) readFacts() {
 			p.out.Freshness.LastObservedAt = later(p.out.Freshness.LastObservedAt, stamp(f.ObservedAt))
 		}
 		for _, gap := range f.Gaps {
+			if gap == "child_usage_unavailable" {
+				p.childGap = true
+				continue
+			}
 			p.missing[gapText(gap)] = true
 		}
 		switch f.Kind {
@@ -377,6 +388,9 @@ func (p *projection) makeSegments() {
 }
 
 func (p *projection) finish() {
+	if p.childGap && p.startedChildAgent() {
+		p.missing[gapText("child_usage_unavailable")] = true
+	}
 	if !p.capabilities["native execution status"] {
 		p.missing["Native execution status is unavailable; wrapper success does not establish command success."] = true
 	}
@@ -427,6 +441,9 @@ func (p *projection) finish() {
 		if a.Severity != b.Severity {
 			return a.Severity == "warning"
 		}
+		if p.keptOut[a.ID] != p.keptOut[b.ID] {
+			return !p.keptOut[a.ID]
+		}
 		var at, bt int64
 		if a.Tokens != nil {
 			at = a.Tokens.Total
@@ -442,8 +459,11 @@ func (p *projection) finish() {
 		}
 		return a.ID < b.ID
 	})
-	for i, f := range p.out.Findings {
-		if i == 3 {
+	// The top is the heaviest kind there is: warnings when there are any,
+	// else info, never an output the model did not take in.
+	warned := len(p.out.Findings) > 0 && p.out.Findings[0].Severity == "warning"
+	for _, f := range p.out.Findings {
+		if len(p.out.TopFindingIDs) == 3 || (warned && f.Severity != "warning") || p.keptOut[f.ID] {
 			break
 		}
 		p.out.TopFindingIDs = append(p.out.TopFindingIDs, f.ID)
@@ -512,6 +532,21 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// startedChildAgent reports whether the recording has a call to a tool that
+// starts a child agent: Claude's Task or Agent, Codex's spawn_agent.
+func (p *projection) startedChildAgent() bool {
+	for _, e := range p.out.Executions {
+		tool := strings.ToLower(e.Tool)
+		if tool == "task" || tool == "agent" || strings.Contains(tool, "spawn_agent") {
+			return true
+		}
+		if e.IsWrapper && wrapperInvokes(e.Command, "spawn_agent") {
+			return true
+		}
+	}
+	return false
 }
 
 func gapText(code string) string {

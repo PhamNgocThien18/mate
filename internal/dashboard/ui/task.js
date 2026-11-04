@@ -170,9 +170,9 @@ function mateTaskView(h) {
       stepsTable(body, j)
     ]));
     if (j.journey.workflow) out.appendChild(h.el("section", { class: "section", "aria-label": "The project's workflow" }, [
-      h.el("h2", {}, [h.txt("Repo workflow"), h.el("small", { text: "the steps this repo asks every crew to take" })]),
+      h.el("h2", {}, [h.txt("Repo workflow"), h.el("small", { text: "the steps this repo asks a crew to take" })]),
       h.el("p", { class: "workflow-about muted", text: "The steps come from the workflow list in the project's project.yaml. Each one is ticked from the crew's recording: " +
-        "a command it ran, a file it read, a skill it loaded, or a line of its hand-back. Under each step is what would have counted." }),
+        "a command it ran, a file it read, a skill it loaded, or a line of its hand-back (a scout's report). Under each step is what would have counted." }),
       workflowTable(j.journey.workflow),
       workflowLegend()
     ]));
@@ -206,7 +206,7 @@ function mateTaskView(h) {
   var WORKFLOW_MEANS = [
     ["done", "found in the recording"],
     ["missed", "looked for and not found"],
-    ["n/a", "does not apply to this task: no changed file it is about, or the repo added it after the task started"],
+    ["n/a", "does not apply to this task: it is asked of another kind of crew (a scout is not asked to gate), no changed file it is about, or the repo added it after the task started"],
     ["unknown", "could not be checked: nothing recorded to look in, or a bad pattern"]
   ];
 
@@ -590,9 +590,12 @@ function mateTaskView(h) {
         h.el("pre", { class: "journey-text", text: b.task || "(no # Task section)" })], "journey-details");
   }
 
+  // A scout hands back a report, which has no criteria table to count.
   function handbackDetails(hb) {
+    var report = hb.kind === "report";
     var passed = (hb.criteria || []).filter(function (c) { return c.pass; }).length;
-    var label = "The hand-back · " + (hb.criteria && hb.criteria.length ? passed + "/" + hb.criteria.length + " criteria pass" : "no criteria table") +
+    var label = (report ? "The report" : "The hand-back") +
+      (hb.criteria && hb.criteria.length ? " · " + passed + "/" + hb.criteria.length + " criteria pass" : report ? "" : " · no criteria table") +
       ((hb.deviations || []).length ? " · " + h.count(hb.deviations.length, "deviation") : "") +
       ((hb.still_open || []).length ? " · " + h.count(hb.still_open.length, "still open") : "") +
       (hb.learning ? " · learning: " + h.excerpt(hb.learning, 60) : "");
@@ -611,7 +614,7 @@ function mateTaskView(h) {
     }
     if ((hb.deviations || []).length) children.push(h.el("p", { class: "answer-sub" }, [h.el("b", { text: "Deviations: " }), h.txt(hb.deviations.join(" · "))]));
     if ((hb.still_open || []).length) children.push(h.el("p", { class: "answer-sub" }, [h.el("b", { text: "Still open: " }), h.txt(hb.still_open.join(" · "))]));
-    children.push(h.savedDetails("journey:handback-md", "the whole hand-back · " + h.fmtBytes(hb.bytes), [h.el("pre", { class: "journey-text", text: hb.markdown })], "journey-details"));
+    children.push(h.savedDetails("journey:handback-md", (report ? "the whole report · " : "the whole hand-back · ") + h.fmtBytes(hb.bytes), [h.el("pre", { class: "journey-text", text: hb.markdown })], "journey-details"));
     return h.savedDetails("journey:handback", label, children, "journey-details");
   }
 

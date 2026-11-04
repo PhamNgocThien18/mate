@@ -171,6 +171,16 @@ test("the spawn row opens the brief and the PR row opens the hand-back", async (
   assert.ok(keyed(app.view, "data-detail", "journey:handback-md"), "the whole markdown is one more click away");
 });
 
+test("a scout's hand-back is its report, which has no criteria table to miss", async () => {
+  const body = closedCrew();
+  Object.assign(body.journey.handback, { kind: "report", path: "/w/.mate/projects/mihuv2/crews/hu-246/report.md", criteria: [], learning: "follow-up (rev 1)" });
+  const app = await boot(body, "#/p/mihuv2/t/hu-246");
+  const handback = keyed(app.view, "data-detail", "journey:handback");
+  assert.match(handback.querySelector("summary").textContent, /^The report · 1 deviation · 1 still open · learning: follow-up \(rev 1\)/);
+  assert.doesNotMatch(handback.querySelector("summary").textContent, /criteria/);
+  assert.match(keyed(app.view, "data-detail", "journey:handback-md").querySelector("summary").textContent, /^the whole report · /);
+});
+
 test("the swimlane draws every lane: stages, Mate turns, incidents, long commands, failures, idle and one arrow per step", async () => {
   const app = await boot(closedCrew(), "#/p/mihuv2/t/hu-246");
   const svg = app.view.querySelector(".journey-svg");

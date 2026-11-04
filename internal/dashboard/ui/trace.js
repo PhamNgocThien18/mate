@@ -166,7 +166,7 @@ function mateTraceView(h) {
       recorded.forEach(function (prompt) {
         prompt.overview.steps.forEach(function (s) {
           blocks.push(block("stage-" + (blocks.length + 1), s.kind, s.parts, s.tokens, s.model_calls, s.executions, s.elapsed_ms, s.started_at, s.ended_at,
-            s.open, s.segment_ids || [], s.call_ids || [], prompt, "stage"));
+            s.open, s.segment_ids || [], s.call_ids || [], prompt, "stage", s.tool_elapsed_ms));
         });
       });
     } else {
@@ -175,7 +175,7 @@ function mateTraceView(h) {
         var tools = (s.execution_ids || []).map(function (id) { return h.byID(p.executions, id); })
           .filter(function (e) { return e && !e.is_wrapper && !e.poll; }).length;
         blocks.push(block(s.id, s.kind, [s.kind], s.model_calls === 0 ? null : s.tokens, s.model_calls, tools, s.elapsed_ms, s.started_at, s.ended_at,
-          s.id === p.current_segment_id, [s.id], s.call_ids || [], prompt, "segment"));
+          s.id === p.current_segment_id, [s.id], s.call_ids || [], prompt, "segment", s.tool_elapsed_ms));
       });
     }
     blocks.forEach(function (b, i) { b.n = i + 1; });
@@ -197,9 +197,11 @@ function mateTraceView(h) {
     return { blocks: blocks, byCall: byCall, source: recorded.length ? "stage" : "segment", prompts: prompts, recorded: recorded.length > 0 };
   }
 
-  function block(id, kind, parts, tokens, calls, tools, elapsed, started, ended, open, segmentIDs, callIDs, prompt, source) {
+  // toolMs is the time the block's commands ran: its share of waiting on
+  // the machine.
+  function block(id, kind, parts, tokens, calls, tools, elapsed, started, ended, open, segmentIDs, callIDs, prompt, source, toolMs) {
     return { id: id, n: 0, kind: kind || "unknown", parts: parts || [], tokens: tokens || null, calls: calls || 0, tools: tools,
-      elapsed: elapsed, started_at: started, ended_at: ended, open: !!open, segmentIDs: segmentIDs, callIDs: callIDs, prompt: prompt,
+      elapsed: elapsed, toolMs: Number(toolMs) || 0, started_at: started, ended_at: ended, open: !!open, segmentIDs: segmentIDs, callIDs: callIDs, prompt: prompt,
       source: source, pins: [], failed: false };
   }
 
@@ -211,6 +213,7 @@ function mateTraceView(h) {
   // A count the recording always has: zero is a dash, never "0".
   function dashed(n) { return n == null ? "?" : n ? String(n) : "–"; }
   function dashedTokens(n) { return n ? h.fmtTokens(n) : "–"; }
+  function dashedMs(ms) { return ms ? h.fmtMs(ms) : "–"; }
   function unknownable(text) {
     return text === "?" ? h.el("span", { class: "sc-unknown", title: "not recorded", text: "?" }) : h.txt(text);
   }
@@ -669,13 +672,16 @@ function mateTraceView(h) {
 
   // Cache read is the conversation re-read on every call, 95-99% of a long
   // task's tokens; work is what the call added - input, cache write and
-  // output. The table shows both per kind (CON-75). Mixed is one row that
-  // says which kinds its calls mixed; no token is split among them. A kind
-  // with no call is not listed. Clicking a row filters the strip.
+  // output. The table shows both per kind (CON-75), and the time the kind's
+  // commands ran, so the header's "waiting on the machine" has a home
+  // (CON-201). Mixed is one row that says which kinds its calls mixed; no
+  // token is split among them. A kind with no call is not listed. Clicking
+  // a row filters the strip.
   function effortSection(p, model) {
     var blocks = model.blocks;
     var section = h.el("section", { class: "section effort", "aria-label": "Effort by work type" });
     section.appendChild(sectionHead("Where the effort went", "Each block's calls belong to one kind of work, so the kinds add up to the task. " +
+      "Time is how long the kind's commands ran, its part of waiting on the machine. " +
       "Cache read is the conversation re-read on each call; Work is input, cache write and output - what the call added. The bar draws work solid and cache read faded. " +
       "Mixed is one row and names the kinds its calls mixed; no token is split among them. Click a row to filter the strip.",
       kindFilter === "all" ? null : "strip filtered to " + h.kindLabel(kindFilter)));
@@ -684,11 +690,11 @@ function mateTraceView(h) {
       return section;
     }
     var sums = {}, extra = [], combos = [];
-    var total = { calls: 0, tools: 0, tokens: 0, cache: 0 };
+    var total = { calls: 0, tools: 0, time: 0, tokens: 0, cache: 0 };
     blocks.forEach(function (b) {
       var kind = b.kind;
       if (!sums[kind]) {
-        sums[kind] = { calls: 0, tools: 0, tokens: 0, cache: 0 };
+        sums[kind] = { calls: 0, tools: 0, time: 0, tokens: 0, cache: 0 };
         if (EFFORT_ORDER.indexOf(kind) === -1) extra.push(kind);
       }
       if (kind === "mixed") {
@@ -696,8 +702,8 @@ function mateTraceView(h) {
         if (combo && combos.indexOf(combo) === -1) combos.push(combo);
       }
       var t = blockTokens(b), c = blockCache(b), tools = Number(b.tools) || 0;
-      sums[kind].calls += b.calls; sums[kind].tools += tools; sums[kind].tokens += t; sums[kind].cache += c;
-      total.calls += b.calls; total.tools += tools; total.tokens += t; total.cache += c;
+      sums[kind].calls += b.calls; sums[kind].tools += tools; sums[kind].time += b.toolMs; sums[kind].tokens += t; sums[kind].cache += c;
+      total.calls += b.calls; total.tools += tools; total.time += b.toolMs; total.tokens += t; total.cache += c;
     });
     function share(tokens) { return total.tokens > 0 && tokens > 0 ? h.fmtPct(100 * tokens / total.tokens) : "–"; }
     function bar(row, kind) {
@@ -720,6 +726,7 @@ function mateTraceView(h) {
           mixes ? h.el("span", { class: "sc-parts", text: mixes }) : null]),
         h.el("span", { class: "sc-num", role: "cell", text: dashed(row.calls) }),
         h.el("span", { class: "sc-num", role: "cell", text: dashed(row.tools) }),
+        h.el("span", { class: "sc-num", role: "cell", text: dashedMs(row.time) }),
         h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(row.tokens) }),
         h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(row.cache) }),
         h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(row.tokens - row.cache) }),
@@ -731,6 +738,7 @@ function mateTraceView(h) {
       h.el("span", { role: "cell", text: "Total" }),
       h.el("span", { class: "sc-num", role: "cell", text: dashed(total.calls) }),
       h.el("span", { class: "sc-num", role: "cell", text: dashed(total.tools) }),
+      h.el("span", { class: "sc-num", role: "cell", text: dashedMs(total.time) }),
       h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(total.tokens) }),
       h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(total.cache) }),
       h.el("span", { class: "sc-num", role: "cell", text: dashedTokens(total.tokens - total.cache) }),
@@ -739,8 +747,9 @@ function mateTraceView(h) {
     ]));
     section.appendChild(h.el("div", { class: "card sc-card" }, [
       h.el("div", { class: "sc-table sc-efforts", role: "table", "aria-label": "Effort by work type" }, [
-        h.el("div", { class: "sc-row sc-th", role: "row" }, ["Type", "Mdl", "Tool", "Tokens", "Cache read", "Work", "", "Share"].map(function (label, i) {
-          return h.el("span", { role: "columnheader", class: i > 0 && i !== 6 ? "sc-num" : null, title: label === "Mdl" ? "model (API) calls" : label === "Tool" ? "tool calls" : null, text: label });
+        h.el("div", { class: "sc-row sc-th", role: "row" }, ["Type", "Mdl", "Tool", "Time", "Tokens", "Cache read", "Work", "", "Share"].map(function (label, i) {
+          return h.el("span", { role: "columnheader", class: i > 0 && i !== 7 ? "sc-num" : null,
+            title: label === "Mdl" ? "model (API) calls" : label === "Tool" ? "tool calls" : label === "Time" ? "how long the tools ran" : null, text: label });
         }))
       ].concat(rows))
     ]));

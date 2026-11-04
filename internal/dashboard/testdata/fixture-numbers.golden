@@ -683,6 +683,7 @@
             "started_at": "2026-09-19T10:43:38.918000000Z",
             "ended_at": "2026-09-19T10:44:54.850000000Z",
             "elapsed_ms": 75932,
+            "tool_elapsed_ms": 32063,
             "model_calls": 5,
             "executions": 5,
             "tokens": {
@@ -722,6 +723,7 @@
             "started_at": "2026-09-19T10:44:59.316000000Z",
             "ended_at": "2026-09-19T10:44:59.378000000Z",
             "elapsed_ms": 62,
+            "tool_elapsed_ms": 62,
             "model_calls": 1,
             "executions": 1,
             "tokens": {
@@ -750,6 +752,7 @@
             "started_at": "2026-09-19T10:45:10.472000000Z",
             "ended_at": "2026-09-19T10:45:13.034000000Z",
             "elapsed_ms": 2562,
+            "tool_elapsed_ms": 53,
             "model_calls": 1,
             "executions": 1,
             "tokens": {
@@ -779,6 +782,7 @@
             "started_at": "2026-09-19T10:45:23.225000000Z",
             "ended_at": "2026-09-19T10:45:23.225000000Z",
             "elapsed_ms": 0,
+            "tool_elapsed_ms": null,
             "model_calls": 1,
             "executions": 0,
             "tokens": {
@@ -1104,6 +1108,7 @@
             "started_at": "2026-09-19T10:45:45.503000000Z",
             "ended_at": "2026-09-19T10:45:47.100000000Z",
             "elapsed_ms": 1597,
+            "tool_elapsed_ms": 89,
             "model_calls": 1,
             "executions": 1,
             "tokens": {
@@ -1133,6 +1138,7 @@
             "started_at": "2026-09-19T10:45:57.782000000Z",
             "ended_at": "2026-09-19T10:46:00.581000000Z",
             "elapsed_ms": 2799,
+            "tool_elapsed_ms": 813,
             "model_calls": 1,
             "executions": 1,
             "tokens": {
@@ -1161,6 +1167,7 @@
             "started_at": "2026-09-19T10:46:10.857000000Z",
             "ended_at": "2026-09-19T10:46:30.963000000Z",
             "elapsed_ms": 20106,
+            "tool_elapsed_ms": 20106,
             "model_calls": 1,
             "executions": 1,
             "tokens": {
@@ -1824,6 +1831,7 @@
               "started_at": "2026-09-19T10:44:11.839000000Z",
               "ended_at": "2026-09-19T10:44:28.719000000Z",
               "elapsed_ms": 16880,
+              "tool_elapsed_ms": 0,
               "model_calls": 3,
               "executions": 3,
               "tokens": {
@@ -1856,6 +1864,7 @@
               "started_at": "2026-09-19T10:44:28.719000000Z",
               "ended_at": "2026-09-19T10:44:33.343000000Z",
               "elapsed_ms": 4624,
+              "tool_elapsed_ms": 0,
               "model_calls": 1,
               "executions": 1,
               "tokens": {
@@ -1884,6 +1893,7 @@
               "started_at": "2026-09-19T10:44:33.343000000Z",
               "ended_at": "2026-09-19T10:44:35.919000000Z",
               "elapsed_ms": 2576,
+              "tool_elapsed_ms": null,
               "model_calls": 1,
               "executions": 0,
               "tokens": {
@@ -2336,6 +2346,7 @@
               "started_at": "2026-09-19T10:46:00.170000000Z",
               "ended_at": "2026-09-19T10:46:05.863000000Z",
               "elapsed_ms": 5693,
+              "tool_elapsed_ms": 0,
               "model_calls": 1,
               "executions": 1,
               "tokens": {
@@ -2364,6 +2375,7 @@
               "started_at": "2026-09-19T10:46:05.863000000Z",
               "ended_at": "2026-09-19T10:46:11.397000000Z",
               "elapsed_ms": 5534,
+              "tool_elapsed_ms": null,
               "model_calls": 1,
               "executions": 1,
               "tokens": {
@@ -2392,6 +2404,7 @@
               "started_at": "2026-09-19T10:46:11.397000000Z",
               "ended_at": "2026-09-19T10:46:15.449000000Z",
               "elapsed_ms": 4052,
+              "tool_elapsed_ms": 0,
               "model_calls": 1,
               "executions": 1,
               "tokens": {
@@ -2423,6 +2436,7 @@
               "started_at": "2026-09-19T10:46:15.449000000Z",
               "ended_at": "2026-09-19T10:46:24.439000000Z",
               "elapsed_ms": 8990,
+              "tool_elapsed_ms": 0,
               "model_calls": 2,
               "executions": 2,
               "tokens": {
@@ -2453,6 +2467,7 @@
               "started_at": "2026-09-19T10:46:24.439000000Z",
               "ended_at": "2026-09-19T10:46:27.140000000Z",
               "elapsed_ms": 2701,
+              "tool_elapsed_ms": null,
               "model_calls": 1,
               "executions": 0,
               "tokens": {
@@ -3496,7 +3511,6 @@
         "response identity"
       ],
       "missing": [
-        "Child-agent usage is unavailable from this transcript.",
         "Launch profile was not recorded; current configuration cannot reconstruct it.",
         "Native commands do not carry confirmed parent-wrapper identities.",
         "Observed instruction inputs have measured bytes; their token count is unknown."

@@ -108,7 +108,7 @@ func TestCommandRulesFromTheRecording(t *testing.T) {
 		{"review then commit stays mixed", "git diff --check && git add a.swift && git commit -m x", "mixed"},
 		{"git status after mate is its own research", "mate crew spawn shop crew --brief b.md && git status", "mixed"},
 		{"filter over the log this command wrote", "xcodebuild build > /tmp/b.log 2>&1; rg -n 'error:' /tmp/b.log | tail -30", "test"},
-		{"redirecting research output is still research", "go test ./... ; rg foo src > out.txt", "mixed"},
+		{"redirecting research output is still research", "mate crew list ; rg foo src > out.txt", "mixed"},
 	}
 	for _, c := range cases {
 		kind, _, label := classifyCall([]Execution{{Tool: "exec_command", Command: c.command}}, "")

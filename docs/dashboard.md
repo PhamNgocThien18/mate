@@ -416,12 +416,12 @@ A branch that is gone is not an error: the crew was torn down and its work lande
 | Field | Meaning |
 | --- | --- |
 | `brief` | `crews/<crew>/brief.md`: `captain_words` (the `## Captain's words` section) and `task` (the `# Task` body up to the next level-one heading); the role and rules boilerplate is not returned. `null` when there is no brief. |
-| `handback` | `crews/<crew>/handback.md` verbatim in `markdown`, plus `closes` (the tracker lines at the top), `criteria[]{name, result, pass, command, output}` from the table whose header starts with `criterion`, `deviations[]`, `still_open[]`, and `learning` (the text after `Learning:`). `null` when the crew has not handed back. |
+| `handback` | `crews/<crew>/handback.md` verbatim in `markdown` (`kind` `handback`), or for a scout without one its `report.md` (`kind` `report`), which is what a scout hands back. Plus `closes` (the tracker lines at the top), `criteria[]{name, result, pass, command, output}` from the table whose header starts with `criterion`, `deviations[]`, `still_open[]`, and `learning` (the text after `Learning:`). `null` when the crew has not handed back. |
 | `meta` | The crew's `.meta`, the keys the page reads: `pr_url`, `pr_state`, `pr_sync`, `merge_commit`, `lane`, `size`, `teardown`, `cleanup`, `launched_at`, `started_at`, `stopped_at`, `state`, `worktree`, `repo`. |
 | `reviews[]` | `{crew, verdict}` for each reviewer `mate review` started for this task; the verdict is the reviewer's report's, `pending` while it has none. |
 | `mate_turns[]` | The Mate's exchanges (section 3's shape) that touched this crew: one whose activities name it (spawned, answered, merged, closed) or whose prompt opens with the crew's name (its digests). Each is the whole exchange: what else the Mate did in it is not separated out, and `activities` says what it did. They are computed once per `last_event_id` and shared across task pages. |
 | `incidents[]` | This crew's lines of `incidents.log`: `at`, `kind`, `state` (`open` or `resolved`), `text`. |
-| `workflow[]` | project.yaml's `workflow` steps checked against the recording: `{step, state, evidence, at}` with `state` `done`, `missed`, `n/a` (the step's `files` matched nothing the crew changed) or `unknown` (a bad pattern, or `files` could not be checked). `null` when the project declares none. A step is done when its `command` matches a native, non-poll command the crew ran, its `read` matches a path it read (a file tool's target or a command naming the path), its `skill` matches a skill it loaded, or its `handback` matches a line of the hand-back. |
+| `workflow[]` | project.yaml's `workflow` steps checked against the recording: `{step, state, evidence, at}` with `state` `done`, `missed`, `n/a` (the step is asked of another role, its `files` matched nothing the crew changed, or its `since` is after the spawn) or `unknown` (a bad pattern, or `files` could not be checked). A step's `roles` (`ship`, `scout`, `review`) say which crews it is asked of; without `roles` it is asked of ship crews only, so a scout is never marked missed for a commit or a gate. `null` when the project declares none. A step is done when its `command` matches a native, non-poll command the crew ran, its `read` matches a path it read (a file tool's target or a command naming the path), its `skill` matches a skill it loaded, or its `handback` matches a line of the hand-back. |
 | `changed_files[]` | The files the crew's work touched: its branch against its base while the branch exists, else its merge commit's. `null` when neither could be read. |
 | `missing[]` | What this answer could not read: `brief`, `hand-back`, `meta`, `incidents`, `project.yaml`, `changed files`, `Mate's turns: <why>`. |
 
@@ -439,12 +439,12 @@ for billed token buckets. It never adds native response usage to ledger usage.
 | `segments` | Contiguous activity in call order, with `kind` from the work vocabulary (`research`, `instructions`, `write_code`, `edit_code`, `review`, `test`, `coordination`, `wait`, `response`, `mixed`, `unknown`), concrete `label`/`target`, `call_ids`, `execution_ids`, buckets, nullable elapsed/tool-union/invocation time, repeat count and versioned classification rule. Each ledger call is assigned once. A running execution before usage arrives can have zero attributed calls. |
 | `current_segment_id`, `top_segment_ids` | Current observed work when identifiable, and up to five segments ranked by total tokens. A completed run has no current segment. |
 | `top_output_segment_ids`, `top_output_call_ids` | Up to five segments and up to five ledger calls ranked by output + thinking, ties by id. Total tokens mostly rank the longest context; these rank what the model itself wrote. |
-| `findings`, `top_finding_ids` | Versioned polling, repeated-read, repeated-error/repair, failed-command, long-execution, output/context and decision-wait observations. The first screen shows at most three. Findings include explanatory text, confidence, count, source evidence, related calls/segments/executions and a review suggestion. Their call sets can overlap; do not add their tokens together. |
+| `findings`, `top_finding_ids` | Versioned polling, repeated-read, repeated-error/repair, failed-command, long-execution, output/context and decision-wait observations. The first screen shows at most three: warnings when there are any, else info, and never a large output the next call's context shows the model did not take in (it grew by under a tenth of the output's size as text, as with an image). Findings include explanatory text, confidence, count, source evidence, related calls/segments/executions and a review suggestion. Their call sets can overlap; do not add their tokens together. |
 | `executions` | Native commands and observed tools, with exact command/cwd, native process/wrapper links when known, start/end, nullable duration/exit/output measurements, output hash/preview, polling and wrapper flags, and source locator. Wrapper success never overrides a nested native failure. |
 | `processes` | One process per session identity, actual job command when known, execution/poll IDs, unchanged/progress/unknown-output poll counts and tokens of the associated polling calls. Polls are not additional builds/tests. |
 | `time` | Prompt elapsed, union of tool spans, sum of invocation durations, union of decision waits, and time not explained by measured tool/wait spans. Lanes overlap. None is called API latency or total thinking time. Missing measurements are `null`. Legacy synthesized `thinking` actions are excluded. |
 | `recent_tokens`, `recent_window_ms` | Actual usage reported in the last five minutes, never an interpolated burn rate. |
-| `freshness` | Separate last observed/ingested/usage stamps, age, stale flag, adapter capabilities and explicit missing-data reasons. `telemetry_cursor.observed_at` supplies the observer heartbeat even when no transcript bytes changed. |
+| `freshness` | Separate last observed/ingested/usage stamps, age, stale flag, adapter capabilities and explicit missing-data reasons. "Child-agent usage is unavailable" is a reason only when the crew started a child agent (Task, Agent, spawn_agent). `telemetry_cursor.observed_at` supplies the observer heartbeat even when no transcript bytes changed. |
 | `profile` | Recorded launch snapshot, if available: repo revision/dirty state, requested model/effort, harness and configured document hashes/sizes. Historical runs without a snapshot remain unknown. |
 | `runtime`, `observed_inputs`, `progress` | Actually reported model/effort/harness version, actually observed instruction-input hashes/bytes, and file-change evidence. Configured files and observed inputs are distinct; bytes are not exact billed token attribution. |
 | `overview` | The Crew-level work overview: the same categories as `prompt_turns[].overview` summed over every prompt by the same classifier. Category `tokens` add up to `tokens` and `model_calls` to `model_calls`; `sequence` is empty (the per-prompt sequences carry order) and `coverage` ends with "across N prompts". |
@@ -470,7 +470,12 @@ The types include research/inspection, writing files, editing files, review,
 tests/builds, coordination, waiting/polling and reading instructions.
 Classification uses actual tool operations, literal commands and native file
 changes. A request to run tests does not establish that tests ran. An edit is
-not automatically called a bug fix. Unclassified work remains explicit.
+not automatically called a bug fix. Unclassified work remains explicit. One
+command line that builds or tests (xcodebuild, `go test`, a script named
+`build.sh` or `run-tests.sh`, a wrapper such as `sim-run.sh … xcodebuild`) is
+a test/build even when it wrote, patched or read files first: the build is
+its minutes. A build beside a review, a git write or a poll stays mixed, and
+so do the separate tools one wrapper invokes.
 
 `overview.categories` contain `kind`, `label`, `model_calls`,
 `execution_count`, nullable `tokens`/`elapsed_ms`, related call/segment/execution
@@ -479,6 +484,10 @@ exactly one category. A call covering several kinds belongs to `mixed`; its
 usage is not divided among tools. The other categories can still show those
 tools as evidence with unattributed usage. Category token buckets add up to
 the prompt ledger. Execution intervals can overlap across categories.
+
+`overview.steps` are runs of consecutive calls of one kind; besides tokens
+and calls each carries `tool_elapsed_ms`, the union of its commands' spans,
+so the steps of a kind say where the header's "waiting on the machine" went.
 
 `overview.sequence` retains successive observed types, including returns such
 as test → edit → test. One operation containing several types becomes one
