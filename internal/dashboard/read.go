@@ -723,7 +723,7 @@ func (s *Server) inbox(project string) ([]InboxItem, string) {
 	view := field.Value
 	out := make([]InboxItem, 0, len(view.Inbox))
 	for _, e := range view.Inbox {
-		out = append(out, InboxItem{
+		item := InboxItem{
 			Seq:       e.Seq,
 			At:        db.FormatTime(e.At),
 			Kind:      string(e.Kind),
@@ -733,7 +733,11 @@ func (s *Server) inbox(project string) ([]InboxItem, string) {
 			Verb:      e.Verb,
 			Text:      e.Text,
 			Attention: e.Attention,
-		})
+		}
+		if e.Resolvable() {
+			item.AssignKey = e.AssignKey
+		}
+		out = append(out, item)
 	}
 	return out, ""
 }
