@@ -179,29 +179,43 @@ func wrapAfterSlash(s string, w int) []string {
 // wrapWords breaks s into lines of at most w cells, at spaces where it
 // can and inside a word only when one word is wider than a line.
 func wrapWords(s string, w int) []string {
+	return wrapHanging(s, w, w)
+}
+
+// wrapHanging is wrapWords with a first line of first cells and every later
+// line of rest cells: text that starts after a label on its first line and
+// runs under it on the next ones.
+func wrapHanging(s string, first, rest int) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
-	if w <= 0 {
+	if first <= 0 || rest <= 0 {
 		return []string{s}
 	}
 	var out []string
+	width := func() int {
+		if len(out) == 0 {
+			return first
+		}
+		return rest
+	}
 	cur := ""
 	for _, word := range strings.Fields(s) {
-		for cells(word) > w {
+		for cells(word) > width() {
 			if cur != "" {
 				out = append(out, cur)
 				cur = ""
+				continue
 			}
-			head := cutCells(word, w)
+			head := cutCells(word, width())
 			out = append(out, head)
 			word = word[len(head):]
 		}
 		switch {
 		case cur == "":
 			cur = word
-		case cells(cur)+1+cells(word) <= w:
+		case cells(cur)+1+cells(word) <= width():
 			cur += " " + word
 		default:
 			out = append(out, cur)

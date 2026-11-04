@@ -3,6 +3,7 @@ package console
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -272,12 +273,23 @@ func (m Model) workRowLines(w query.WorkItem, on bool, width int) []gline {
 		right = right.add("okayed", tDim)
 	}
 	right = right.pad(1)
-	left := gl().pad(1).join(box).pad(1).add(w.Title, tFg)
-	first := lead.join(spread(left, right, width-1, m.g)).selected(on)
-	out := []gline{first}
-	indent := 6
-	if w.Last != "" {
-		out = append(out, gl().pad(indent).add(truncateEnd(w.Last, max0(width-indent-1), m.g), tDim).selected(on))
+	// Nothing is cut (CON-163): the console is 40 columns and a title or
+	// the Mate's last line rarely fits one. The title wraps beside its
+	// status and runs on under itself; the last line and the history wrap
+	// at the same indent, a note's text hanging under its first word.
+	left := gl().pad(1).join(box).pad(1)
+	indent := left.width() + 1
+	text := max0(width - indent - 1)
+	title := wrapHanging(w.Title, max0(text-right.width()-1), text)
+	if len(title) == 0 {
+		title = []string{""}
+	}
+	out := []gline{lead.join(spread(left.add(title[0], tFg), right, width-1, m.g)).selected(on)}
+	for _, part := range title[1:] {
+		out = append(out, gl().pad(indent).add(part, tFg).selected(on))
+	}
+	for _, part := range wrapWords(w.Last, text) {
+		out = append(out, gl().pad(indent).add(part, tDim).selected(on))
 	}
 	if m.work.expanded[w.ID] {
 		for _, n := range w.Notes {
@@ -288,13 +300,51 @@ func (m Model) workRowLines(w query.WorkItem, on bool, width int) []gline {
 			if since := m.since(n.At); since != "" {
 				l = l.add(" "+m.g.Dot+" "+since, tDim)
 			}
-			if n.Text != "" {
-				l = l.add(" "+m.g.Dot+" ", tDim).add(n.Text, tFg)
+			if strings.TrimSpace(n.Text) == "" {
+				out = append(out, l.cut(width, m.g).selected(on))
+				continue
 			}
-			out = append(out, l.cut(width, m.g).selected(on))
+			l = l.add(" "+m.g.Dot+" ", tDim)
+			parts := wrapHanging(n.Text, max0(width-l.width()-1), max0(text-2))
+			out = append(out, l.add(parts[0], tFg).selected(on))
+			for _, part := range parts[1:] {
+				out = append(out, gl().pad(indent+2).add(part, tFg).selected(on))
+			}
 		}
 	}
 	return out
+}
+
+// workWindow is the sheet body at h rows, scrolled so the selected row is
+// in view: a wrapped board is often taller than the pane under the list.
+func (m Model) workWindow(p framePlan, h int) []gline {
+	lines, rowAt := m.workSheetLines(p)
+	top := m.workTop(rowAt, h)
+	return lines[top:minInt(len(lines), top+h)]
+}
+
+// workTop is the first sheet line drawn; the mouse reads it too. It stays
+// at the top, headings included, until the selected row would fall below
+// the pane, then scrolls just enough to show the whole row.
+func (m Model) workTop(rowAt []int, h int) int {
+	if len(rowAt) <= h || h <= 0 {
+		return 0
+	}
+	sel := clampInt(m.work.sel, 0, max0(len(m.workVisible())-1))
+	first, last := -1, -1
+	for i, r := range rowAt {
+		if r == sel {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 {
+		return 0
+	}
+	top := clampInt(last-h+1, 0, len(rowAt)-h)
+	return minInt(top, first)
 }
 
 // workCountsLine is the detail pane's one-line summary of a Mate's board:
