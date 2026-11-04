@@ -322,11 +322,6 @@ func (p *Pilot) digest(ctx context.Context, project string, now time.Time) error
 			// Nothing new. The daemon is not a heartbeat.
 			return outbox.Request{}, false, nil
 		}
-		if !Wakes(items) {
-			// Only items the Mate acts on at a later hand-back (CON-202).
-			// The cursor stays put, so they ride with the next digest.
-			return outbox.Request{}, false, nil
-		}
 		return outbox.Request{
 			Key:    Key(items),
 			Text:   Line(items, crewsDir),
