@@ -16,27 +16,34 @@ updates the paragraph it changes.
 
 Seven layers, lowest first. Every package with a non-test `.go` file under
 `cmd/`, `internal/` and `assets/` belongs to exactly one, except the
-test-only packages of rule 3.
+test-only packages of rule 3. The Packages column is authoritative: a
+package not listed has no layer yet, and a subpackage does not inherit its
+parent's layer (`harness` is read, `harness/claude` integration;
+`timeline/scene` is read, `timeline` service). The "What belongs" column
+describes the layer; it does not decide it.
 
 | Layer | What belongs | Packages |
 | -- | -- | -- |
-| 1 leaf (lá) | Types, rules and formats with no I/O of mate's own; OS shims | `assets`, `brief`, `capability`, `config`, `consolecmd`, `crewstate`, `memory`, `names`, `observability`, `platform`, `process`, `telemetry` |
-| 2 storage (lưu trữ) | Owns a file or database under `.mate/` | `store`, `db`, `plugin`, `learnings` |
+| 1 leaf (lá) | Types, rules, formats and OS shims that import no other layer | `assets`, `brief`, `capability`, `config`, `consolecmd`, `crewstate`, `memory`, `names`, `observability`, `platform`, `process`, `telemetry` |
+| 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `diagnostics`, `dispatch`, `harness`, `runtime` |
-| 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/{claude,codex,grok,pi,catalog}`, `screen`, `screen/{fixture,jev,chain}`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
+| 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
 | 5 service (dịch vụ) | Application logic that combines the layers below | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `core` |
 | 6 UI (giao diện) | What the captain looks at | `ui/console`, `dashboard` (Office and City; web pages in `internal/dashboard/ui/`) |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
-Package paths are under `internal/` except `assets` and `cmd/mate`.
+Package paths are under `internal/` except `assets` and `cmd/mate`. Some
+packages below storage still read or write a file under `.mate/` (section
+3, Owner column); the layer follows the imports, not the file.
 
 ### Import rules
 
 1. A package imports only packages of its own layer or a lower one. The rule
    reads non-test files, all build constraints included.
-2. A port (an interface several layers use) sits in the lowest layer that
+2. Placing a package (a guide for the table, not checked by itself): a port
+   (an interface several layers use) sits at or below the lowest layer that
    imports it; its concrete adapters sit in integration. Today: `process` in
-   leaf; `runtime` (the `Adapter`/`ReadAdapter` port) in read, because
+   leaf (it imports nothing of mate's); `runtime` (the `Adapter`/`ReadAdapter` port) in read, because
    `query` reads liveness through `runtime.ReadAdapter`; `harness` (the
    contract and Registry) in read, because `runtime` and `dispatch` import
    it; `screen` (the `Observer` port) in integration, because its lowest
@@ -74,7 +81,7 @@ per-package table in code and a list of today's violations.
 | Process | Started by | Code | Runs |
 | -- | -- | -- | -- |
 | Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Holds the engine, the Office/City server and the notification loop |
-| Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane (stage, file review, command tabs); ends when the console's pid is gone |
+| Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone |
 | Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane, Mate and Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`) |
 | Mate, headless | `spawn` (`internal/spawn/headless.go`) | `mate mate host <project>`, `internal/matehost` | One per headless Mate, in its Herdr pane: a REPL; each turn is one `claude -p` |
@@ -95,10 +102,15 @@ both.
 
 How processes exchange state:
 
-- **Files under `.mate/`.** The main channel. Appends and read-modify-writes
-  take an advisory `flock` through `internal/platform` (`platform.Lock`,
-  `platform.TryLock`); every such lock fails where flock is missing
-  (CON-177).
+- **Files under `.mate/`.** The main channel. mate's own log appends
+  (`.status`, `sent.log`, `incidents.log`; a Crew's `echo` takes no lock)
+  and the read-modify-writes of the outbox,
+  news, work, backlog and notifications logs take an advisory `flock`
+  through `internal/platform` (`platform.Lock`, `platform.TryLock`); every
+  such lock fails where flock is missing (CON-177). `.meta` files and
+  `workspace.yaml` are replaced whole (temp file, then rename) with no
+  cross-process lock: `store.Workspace.UpdateCrewMeta` re-reads and
+  rewrites, so two processes updating one meta can lose an update.
   Section 3 lists the files.
 - **SQLite, one writer.** `.mate/mate.db` is derived from the files and can
   be rebuilt (`mate reindex`). `db.Open` takes `.mate/mate.db.lock`; a second
@@ -108,12 +120,14 @@ How processes exchange state:
   and one JSON response per connection (`matehost.Client`); the outbox
   delivers to a headless Mate through it (`OpDeliver`), and spawn, Office
   chat and City ask it for state, history and answers. The console drives
-  each pane runner over its own socket (`panerun`, `pane.sock`).
+  each pane runner over its own socket in a temp directory
+  (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
 - **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)
   against the server's socket (`<config>/herdr/sessions/<s>/herdr.sock`):
   start, read, send keys, attach. `send.Send` types a line into a pane only
-  after the screen observer (`screen.Observer`) reads a composer: the
-  fixture reads first, and Jev only a screen the fixture cannot, when
+  after the fixture observer reads an empty composer; a send never asks Jev
+  (`internal/screen/chain/chain.go`). The observer and the startup settle
+  ask Jev only about a screen the fixture cannot read, when it is
   configured.
 - **HTTP.** Office and City call the console's server (`internal/dashboard`,
   default `127.0.0.1:7777`, LAN only with `allow_remote`).
@@ -148,13 +162,13 @@ true yet.
 | `projects/<p>/crews/<c>.meta` | `store` | spawn, `mate crew …`, prwatch, autopilot | query, watch, timeline, recovery |
 | `projects/<p>/crews/<c>.status` | `store` | the Crew (`echo >> $MATE_STATUS`), prwatch, merge | box, watch, timeline, `mate wake` |
 | `projects/<p>/crews/<c>/brief.md`, `report.md`, `handback.md` | `store` | spawn (brief); the Crew | the Mate, spawn, the console stage, dashboard |
-| `projects/<p>/crews/<c>.prwatch` | `prwatch` | the PR watcher (its pid) | `prwatch.Ensure` and `prwatch.Sweep` |
-| `projects/<p>/mate/mate.meta` | `store` | spawn, hook (session id), refresh | query, watch, timeline |
-| `projects/<p>/mate/.manual` | `store` | the console's `m` key; autopilot releases it | autopilot, timeline |
+| `projects/<p>/crews/<c>.prwatch` | `prwatch` | `prwatch.Ensure` (the watcher's pid, in whoever starts it); the watcher removes it | `prwatch.Ensure` and `prwatch.Sweep` |
+| `projects/<p>/mate/mate.meta` | `store` | spawn, hook (session id) | query, watch, timeline, refresh |
+| `projects/<p>/mate/.manual`, `.auto` | `store` | the console's `m` key (`store.Workspace.SetMode`); autopilot releases `.manual` | autopilot, timeline; Auto means no `.manual` |
 | `projects/<p>/mate/.outbox`, `.outbox.lock` | `store` | `assign` from the console, autopilot (digests), stow, prwatch | outbox sender, query |
 | `projects/<p>/mate/.auto-cursor`, `.wake-cursor` | `store` | outbox (on a digest), `mate wake` | autopilot, `mate wake` |
 | `projects/<p>/mate/memory.md`, `backlog.md` | `memory` format, `store` I/O | the Mate (`mate remember`, `mate backlog`) | `mate recall` |
-| `projects/<p>/mate/news.jsonl` | `matehost` | `mate news`, `mate friction`, the host (answers) | query, dashboard, REPL, notifications |
+| `projects/<p>/mate/news.jsonl` | `matehost` | `mate news`; the friction check of `mate wake`, `land` and `merge`; the host (answers) | query, dashboard, REPL, notifications |
 | `projects/<p>/mate/work.jsonl` | `matehost` | `mate work`, `mate land`, the console (the captain's tick) | query, dashboard, REPL |
 | `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City |
 | `projects/<p>/mate/learnings/<c>.md` | `learnings` | the Mate; the app (`## Usage (app)`, predictions) | `mate wake`, `mate learnings` |
@@ -169,10 +183,10 @@ ones CON-179 names; the last three came with CON-184, CON-206 and CON-207.
 
 | Test | Rule |
 | -- | -- |
-| `internal/harness/ratchet_test.go` | Outside `internal/harness/...`, no non-test file names a harness: no import of a harness package, no harness-named identifier of package `harness`, no string literal that is a harness name as a whole token. Ceiling 0; `ratchetAllow` lists three exceptions, each with a reason, and an entry that matches nothing fails |
-| `internal/screen/ratchet_test.go` | Every `Observe` call in `send`, `spawn` and `outbox` is followed in the same function by a deterministic check (string compare or highlight confirmation) before a key is sent; a Jev reading alone never triggers an action |
-| `internal/ui/console/boundary_test.go` | `internal/ui/console` imports none of `store`, `runtime`, `harness`, `process`, `box`, `send`, `spawn`, `watch`, `autopilot`, `outbox`, `host`, `core`, `coreclient`, `dashboard`. It sees `query` types, the `coreapi` contract and closures from `cmd/mate` |
-| `internal/ui/console/tool_keys_test.go` | The keys the console's tree handlers own, `ownedKeys`, and `consolecmd.ReservedKeys` are the same list; a key the console does not own reaches a configured tool from every pane |
+| `internal/harness/ratchet_test.go` | Outside `internal/harness/...`, no non-test file names a harness: no import of a harness package, no harness-named identifier of package `harness`, no string literal that carries, as a whole token, a harness name or a name its profile declares (config directory, instruction file, env keys: `.claude`, `CLAUDE.md`, `CODEX_HOME`). Ceiling 0; `ratchetAllow` lists three exceptions, each with a reason, and an entry that matches nothing fails |
+| `internal/screen/ratchet_test.go` | Every `Observe` call in `send`, `spawn` and `outbox` is listed in `observeSites` with the deterministic check (string compare or highlight confirmation) that must follow it in the same function, or, for a helper, in each caller the entry names; a Jev reading alone never triggers an irreversible key |
+| `internal/ui/console/boundary_test.go` | `internal/ui/console` imports none of `store`, `runtime`, `harness`, `process`, `box`, `send`, `spawn`, `watch`, `autopilot`, `outbox`, `host`, `core`, `coreclient`, `dashboard` (or their subpackages), nor any path containing `herdr`; test files included. It sees `query` types, the `coreapi` contract and closures from `cmd/mate` |
+| `internal/ui/console/tool_keys_test.go` | Three lists are equal: `ownedKeys`, the keys the tree's handlers (`onKey`, `onListKey`, `onDetailKey`, `onBoxKey`) compare against in their source, and `consolecmd.ReservedKeys`; a key the console does not own reaches a configured tool from every pane |
 | `internal/platform/ratchet_test.go` | Outside `internal/platform`, no `syscall.Flock`/`LOCK_*`/`O_NOFOLLOW`/`Kill`/`Getpgid`, `Setsid`/`Setpgid`, `runtime.GOOS`, import of `x/sys/unix` or `creack/pty`, or `"osascript"`, except the files in `platformAdapters` |
 | `internal/coreapi/boundary_test.go` | `internal/coreapi` imports the standard library and `internal/query` only |
 | `internal/core/boundary_test.go` | Nothing `internal/core` links, transitively, is under `cmd/` or `internal/ui/` |
@@ -183,7 +197,7 @@ ones CON-179 names; the last three came with CON-184, CON-206 and CON-207.
 (`internal/harness/contract.go`: `Launcher`, `ScreenProfile`, and the optional
 interfaces such as `MCPConfigurer` and `GracefulStopper`). Register it in
 `catalog.Default` (`internal/harness/catalog/catalog.go`), the one list of
-harnesses; only `cmd/mate` imports `catalog`. The contract suite in
+harnesses; in `cmd/` and `internal/`, only `cmd/mate` imports `catalog`. The contract suite in
 `internal/harness/catalog/contract_test.go` then runs over it, and the
 harness ratchet keeps its name out of every other package. Live tests use
 `internal/harness/harnesstest`. Design: `docs/plans/harness-registry-2026-09-30.md`.

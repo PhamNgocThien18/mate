@@ -46,9 +46,9 @@ _Trong code_: `crewstate.StateWaitMate`; `store.Workspace.CrewHandback`
 Tài nguyên máy mà các Crew của một repo tranh nhau, do captain đặt tên (ví dụ chỗ build iOS). Crew giữ lane khi vừa spawn hoặc đang làm.
 _Trong code_: `store.RepoConfig.Lane`; `spawn.MetaLane`; `cmd/mate/lanes.go`
 
-**Work**:
+**Work** (bảng trực):
 Bảng việc Mate công bố cho captain: việc captain giao và việc Mate đề xuất, mỗi dòng đang làm, đang chờ hay đã xong. Là thông báo, không phải câu hỏi.
-_Avoid_: duty, bảng trực
+_Avoid_: duty (code không dùng từ này)
 _Trong code_: `matehost.Work`; lệnh `mate work`
 
 ### Trao đổi giữa captain, Mate và Crew
