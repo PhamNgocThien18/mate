@@ -29,3 +29,14 @@ func TestAttachArgvTakesTheAgentOver(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+// A headless Mate's stage runs its REPL as a client of the host, in a pane
+// ^C does not close (CON-224).
+func TestREPLArgvRunsTheMatesREPLInThePane(t *testing.T) {
+	t.Parallel()
+	got := REPLArgv("/opt/mate", "/ws", "shop")
+	want := []string{"/opt/mate", "mate", "repl", "shop", "--workspace", "/ws", "--in-pane"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

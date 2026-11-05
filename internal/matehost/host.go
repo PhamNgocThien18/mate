@@ -78,6 +78,9 @@ type State struct {
 	TurnSource    string    `json:"turn_source,omitempty"`
 	TurnStartedAt time.Time `json:"turn_started_at,omitzero"`
 	Stopping      bool      `json:"stopping,omitempty"`
+	// Held is what the captain sent that waits out its undo, oldest first
+	// (hold.go, CON-222).
+	Held []Held `json:"held,omitempty"`
 }
 
 // Event is what the host tells its REPL.
@@ -145,6 +148,20 @@ type Host struct {
 	idle     chan struct{}
 	// seq numbers the events (Event.Seq).
 	seq int64
+	// The console's last open requests (news.focus, work.focus), with
+	// when the host read them: a REPL that subscribes soon after is given
+	// them too (focusFresh).
+	focusNews   int
+	focusNewsAt time.Time
+	focusWorkAt time.Time
+	// held is what the captain sent that waits out its undo (hold.go);
+	// heldSeq numbers it; after starts its timer.
+	held    []heldItem
+	heldSeq int
+	after   afterFunc
+	// releaseMu runs one release at a time (release); it is taken before
+	// mu, never after it.
+	releaseMu sync.Mutex
 
 	// Sessions (session.go): the open ones by news, and what they run with.
 	sessions  map[int]*session
@@ -179,6 +196,10 @@ type Options struct {
 	Forks   harness.ForkTurns
 	Allow   []string
 	MateBin string
+	// After starts the timer of a held item (hold.go); nil is
+	// time.AfterFunc. Tests give their own clock. It is called under the
+	// host's lock, so it must not run fn before it returns.
+	After func(d time.Duration, fn func()) (stop func() bool)
 }
 
 // New makes a host for runner.
@@ -188,6 +209,10 @@ func New(runner *Runner, opts Options) *Host {
 		subs: map[*lineStream]struct{}{}, subQueue: subscribeQueue, subWriteTimeout: subscribeWriteTimeout}
 	if h.now == nil {
 		h.now = time.Now
+	}
+	h.after = opts.After
+	if h.after == nil {
+		h.after = realAfter
 	}
 	close(h.idle)
 	return h
@@ -218,7 +243,9 @@ type message struct {
 	News                 int
 }
 
-// Submit is a captain message: it runs now, or after the turn in flight.
+// Submit runs a captain message now, or after the turn in flight. What
+// the captain sends from a UI is held first (Say), and comes here when its
+// undo is over.
 func (h *Host) Submit(text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -229,7 +256,7 @@ func (h *Host) Submit(text string) {
 
 // AnswerNews is the captain answering news id: a turn that tells the Mate
 // which news it answers, shown in that news, run now or queued like any
-// captain message.
+// captain message. An answer from a UI is held first (Answer).
 func (h *Host) AnswerNews(id int, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -240,13 +267,9 @@ func (h *Host) AnswerNews(id int, text string) error {
 	}
 	var n News
 	err := withNewsLog(h.newsPath, func(list []News, f *os.File) error {
-		var ok bool
-		if n, ok = findNews(list, id); !ok {
-			return fmt.Errorf("%w: #%d", ErrNoNews, id)
-		}
-		if n.Closed() {
-			// An answer would open it again and spend a Mate turn closing it.
-			return fmt.Errorf("news #%d is already closed", id)
+		var err error
+		if n, err = answerable(list, id); err != nil {
+			return err
 		}
 		return writeNewsEvent(f, newsEvent{At: h.now(), Op: opAnswer, ID: id, Text: text})
 	})
@@ -286,8 +309,9 @@ func (h *Host) submit(msg message) {
 }
 
 // Deliver is an app line. It is refused rather than queued while anything
-// runs or waits, so the outbox keeps the line and its own retry and wedged
-// rules (docs/mvp.md M21). It returns once the turn has started.
+// runs or waits, a captain message held for its undo included, so the
+// outbox keeps the line and its own retry and wedged rules (docs/mvp.md
+// M21). It returns once the turn has started.
 func (h *Host) Deliver(text string) error {
 	h.mu.Lock()
 	switch {
@@ -297,7 +321,7 @@ func (h *Host) Deliver(text string) error {
 	case h.run != nil:
 		h.mu.Unlock()
 		return ErrBusy
-	case len(h.queue) > 0:
+	case len(h.queue) > 0 || h.heldWordsLocked():
 		h.mu.Unlock()
 		return ErrQueued
 	}
@@ -522,7 +546,7 @@ func (h *Host) State() State {
 }
 
 func (h *Host) stateLocked() State {
-	s := State{Busy: h.run != nil, Queued: len(h.queue), Draft: h.draft, Stopping: h.stopping}
+	s := State{Busy: h.run != nil, Queued: len(h.queue), Draft: h.draft, Stopping: h.stopping, Held: h.heldLocked()}
 	if h.cur != nil {
 		s.TurnSource, s.TurnStartedAt = h.cur.Source, h.started
 	}
@@ -533,8 +557,9 @@ func (h *Host) stateLocked() State {
 // Mate, in the pane the host already runs in (context refresh, CON-133).
 // Closing the pane to start again ended every `herdr agent attach` on it,
 // the console's stage among them. It is refused while a turn runs or
-// waits, so no turn is split across two sessions and nothing writes the
-// old transcript once it returns.
+// waits, a captain message held for its undo included, so no turn is
+// split across two sessions and nothing writes the old transcript once it
+// returns.
 func (h *Host) Reload(l Launch) error {
 	if err := l.valid(); err != nil {
 		return err
@@ -548,7 +573,7 @@ func (h *Host) Reload(l Launch) error {
 	case h.run != nil:
 		h.mu.Unlock()
 		return ErrBusy
-	case len(h.queue) > 0:
+	case len(h.queue) > 0 || h.heldWordsLocked():
 		h.mu.Unlock()
 		return ErrQueued
 	case l.Project != cur.Project || l.Agent != cur.Agent || l.Harness != cur.Harness:
@@ -566,11 +591,14 @@ func (h *Host) Reload(l Launch) error {
 
 // Stop refuses every new message and waits up to wait for the turn in
 // flight; force, or a turn still running when wait is up, kills it. Queued
-// captain messages are dropped. It reports whether a turn had to be killed.
+// captain messages, and what is held for its undo, are dropped. It reports
+// whether a turn had to be killed.
 func (h *Host) Stop(wait time.Duration, force bool) (killed bool) {
 	h.mu.Lock()
 	h.stopping = true
 	h.queue = nil
+	dropped := len(h.held)
+	h.dropHeldLocked()
 	run, idle := h.run, h.idle
 	for _, s := range h.sessions {
 		if s.run != nil {
@@ -578,6 +606,10 @@ func (h *Host) Stop(wait time.Duration, force bool) (killed bool) {
 		}
 	}
 	ev := h.eventLocked(nil)
+	if dropped > 0 {
+		// What the captain sent is not dropped without a word.
+		ev.Note = fmt.Sprintf("Mate đang dừng: %d mục anh gửi chưa tới Mate đã bị bỏ", dropped)
+	}
 	h.mu.Unlock()
 	h.emit(ev)
 	if run == nil {
@@ -785,6 +817,7 @@ func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 		if at, ok := readFocusAt(workFocusPath); ok && h.newsPath != "" && at.After(askedWork) {
 			askedWork = at
 			h.mu.Lock()
+			h.focusWorkAt = h.now()
 			ev := h.eventLocked(nil)
 			h.mu.Unlock()
 			ev.FocusWork = true
@@ -793,6 +826,7 @@ func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 		if f, ok := readNewsFocus(focusPath); ok && h.newsPath != "" && f.At.After(asked.At) {
 			asked = f
 			h.mu.Lock()
+			h.focusNews, h.focusNewsAt = f.ID, h.now()
 			ev := h.eventLocked(nil)
 			h.mu.Unlock()
 			ev.Focus = f.ID

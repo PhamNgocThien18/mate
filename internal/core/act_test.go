@@ -166,8 +166,8 @@ func TestChatAndPeekRunDuringAStopOrAMerge(t *testing.T) {
 			t.Errorf("%s during a stop and a merge: %v", req.Action, err)
 		}
 	}
-	if got := len(calls.all()); got != 5 {
-		t.Errorf("the Mate's host was asked %d times, want once per chat action", got)
+	if got := len(calls.all()); got != 6 {
+		t.Errorf("the Mate's host was asked %d times, want once per chat action and once for the tick", got)
 	}
 	// The stop and the merge still hold their targets.
 	for _, req := range []coreapi.ActionRequest{stopMate, mergeCrew} {
@@ -214,6 +214,64 @@ func TestTheChatRunsOnTheMatesHost(t *testing.T) {
 	}
 	if got := h.count(); got != 0 {
 		t.Fatalf("the chat reached Options.Act %d times", got)
+	}
+}
+
+// The host holds what the captain sends for its undo (CON-222): a say, an
+// answer and a tick are held there, an undo takes one back by its id, and
+// each line says so. None reaches Options.Act.
+func TestTheHostHoldsTheCaptainsWords(t *testing.T) {
+	w := hostWorkspace(t)
+	calls := holdingHost(t, w.MateDir("shop"))
+	h := newHeldActs()
+	e := New(Options{Workspace: w, Act: h.act})
+	defer e.Stop()
+	for _, tc := range []struct {
+		req  coreapi.ActionRequest
+		line string
+		call hostCall
+	}{
+		{coreapi.ActionRequest{Action: coreapi.ActionSay, Target: "shop", Input: "ship it"}, "goes to the Mate of shop in 5 s · undo until then", hostCall{Op: matehost.OpSubmit, Text: "ship it"}},
+		{coreapi.ActionRequest{Action: coreapi.ActionAnswer, Target: "shop", News: 7, Input: "[a]"}, "answer to news #7 goes to the Mate of shop in 5 s · undo until then", hostCall{Op: matehost.OpAnswer, News: 7, Text: "[a]"}},
+		{coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"}, "OK of work #3 of shop goes in 5 s · undo until then", hostCall{Op: matehost.OpWorkOkay, Work: 3}},
+		{coreapi.ActionRequest{Action: coreapi.ActionUndo, Target: "shop", Input: "4"}, "took back the answer to news #7 · nothing sent", hostCall{Op: matehost.OpUndo, Held: 4}},
+	} {
+		line, err := e.Act(context.Background(), tc.req)
+		if err != nil || line != tc.line {
+			t.Errorf("%s = %q, %v; want %q", tc.req.Action, line, err, tc.line)
+		}
+		if got := calls.last(); got != tc.call {
+			t.Errorf("%s reached the host as %+v, want %+v", tc.req.Action, got, tc.call)
+		}
+	}
+	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionUndo, Target: "shop", Input: "9"}); !errors.Is(err, matehost.ErrNotHeld) {
+		t.Errorf("undo of an item gone = %v, want ErrNotHeld", err)
+	}
+	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionUndo, Target: "shop", Input: "x"}); err == nil {
+		t.Error("undo naming no item ran")
+	}
+	if got := h.count(); got != 0 {
+		t.Fatalf("the host's work reached Options.Act %d times", got)
+	}
+}
+
+// A tick with no headless Mate's host to hold it - no Mate, no host to
+// dial, a host older than work-okay - runs at once through Options.Act, as
+// before the undo.
+func TestTheTickRunsInTheConsoleWithoutAHost(t *testing.T) {
+	okay := coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"}
+	old := hostWorkspace(t)
+	serveFakeHost(t, old.MateDir("shop"), func(hostCall) string { return `{"error":"unknown op \"work-okay\""}` })
+	for name, w := range map[string]*store.Workspace{"no Mate": shopWorkspace(t), "no host": hostWorkspace(t), "an older host": old} {
+		h := newHeldActs()
+		e := New(Options{Workspace: w, Act: h.act})
+		if _, err := e.Act(context.Background(), okay); err != nil {
+			t.Errorf("%s: okay = %v", name, err)
+		}
+		if got := h.count(); got != 1 {
+			t.Errorf("%s: Options.Act ran %d times, want the tick once", name, got)
+		}
+		e.Stop()
 	}
 }
 
@@ -357,6 +415,8 @@ type hostCall struct {
 	Op   string `json:"op"`
 	Text string `json:"text"`
 	News int    `json:"news"`
+	Work int    `json:"work"`
+	Held int    `json:"held"`
 }
 
 type hostCalls struct {
@@ -379,9 +439,42 @@ func (h *hostCalls) last() hostCall {
 }
 
 // fakeHost answers on the socket of the Mate in mateDir the way a headless
-// Mate's host does, every request as done, and records what each asked. It
-// speaks only matehost's wire format, so a change there shows up here.
+// Mate's host from before the undo (CON-222) did, every request as done at
+// once, and records what each asked. It speaks only matehost's wire
+// format, so a change there shows up here.
 func fakeHost(t *testing.T, mateDir string) *hostCalls {
+	t.Helper()
+	return serveFakeHost(t, mateDir, func(hostCall) string { return `{"ok":true,"state":{},"interrupted":true}` })
+}
+
+// holdingHost is fakeHost as a host with the undo answers: what the
+// captain sends is held as item 4, and an undo gives back item 4, an answer
+// to news 7.
+func holdingHost(t *testing.T, mateDir string) *hostCalls {
+	t.Helper()
+	return serveFakeHost(t, mateDir, func(c hostCall) string {
+		var held matehost.Held
+		switch c.Op {
+		case matehost.OpSubmit:
+			held = matehost.Held{ID: 4, Kind: matehost.HeldSay, Text: c.Text}
+		case matehost.OpAnswer:
+			held = matehost.Held{ID: 4, Kind: matehost.HeldAnswer, Text: c.Text, News: c.News}
+		case matehost.OpWorkOkay:
+			held = matehost.Held{ID: 4, Kind: matehost.HeldOkay, Work: c.Work}
+		case matehost.OpUndo:
+			if c.Held != 4 {
+				return `{"error":"already sent: nothing to undo","code":"not-held"}`
+			}
+			held = matehost.Held{ID: 4, Kind: matehost.HeldAnswer, Text: "[a]", News: 7}
+		default:
+			return `{"ok":true,"state":{}}`
+		}
+		data, _ := json.Marshal(map[string]any{"ok": true, "state": map[string]any{}, "held": held})
+		return string(data)
+	})
+}
+
+func serveFakeHost(t *testing.T, mateDir string, reply func(hostCall) string) *hostCalls {
 	t.Helper()
 	if err := os.MkdirAll(mateDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -403,7 +496,7 @@ func fakeHost(t *testing.T, mateDir string) *hostCalls {
 				h.mu.Lock()
 				h.calls = append(h.calls, call)
 				h.mu.Unlock()
-				_, _ = conn.Write([]byte(`{"ok":true,"state":{},"interrupted":true}` + "\n"))
+				_, _ = conn.Write([]byte(reply(call) + "\n"))
 			}
 			conn.Close()
 		}

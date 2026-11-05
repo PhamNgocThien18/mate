@@ -2,7 +2,8 @@
 // the rules rather than from the code. Today they cover the Mate's work
 // board (CON-158): the Work tab and its badge, the groups and row states,
 // the tick with its undo, the link from a waiting row to its topic, and
-// that nothing on the board counts as a need (CON-154).
+// that nothing on the board counts as a need (CON-154); and the undo of a
+// message, an answer and a tick, which the Mate's host holds (CON-222).
 //
 // Run with: node --test internal/dashboard/ui_city_test.cjs
 // TestCityBehaviour in ui_city_test.go runs it as part of `go test`
@@ -176,6 +177,12 @@ async function boot(opts = {}) {
 
   const requests = [], pendingEvents = [], intervals = new Map(), winListeners = {};
   let timer = 0;
+  // The page's clock: a second passes when a test ticks.
+  let nowMs = fx.now_ms;
+  // What the Mate's host holds (opts.held: items with `due`, in the page's
+  // ms), as GET /chat says it: how long each has left, those whose time is
+  // up gone, as the host sends them.
+  const heldNow = (project) => (opts.held ? opts.held(project) : []).filter(x => x.due > nowMs).map(({ due, ...x }) => ({ ...x, left_ms: due - nowMs }));
   const context = vm.createContext({
     document: doc, Node, console, innerWidth: 1280, devicePixelRatio: 1,
     location: { hash: "", pathname: "/city/", search: "" }, history: { replaceState() {} },
@@ -189,7 +196,7 @@ async function boot(opts = {}) {
       requests.push({ url, method: (init && init.method) || "GET", body: init && init.body ? JSON.parse(init.body) : null });
       const answer = (status, body) => Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(JSON.parse(JSON.stringify(body))) });
       if (init && init.method === "POST") {
-        const res = opts.press ? opts.press(JSON.parse(init.body)) : { status: 404, body: { error: "not found " + url } };
+        const res = opts.press ? opts.press(JSON.parse(init.body), nowMs) : { status: 404, body: { error: "not found " + url } };
         return answer(res.status || 200, res.body);
       }
       if (url.startsWith("/api/events")) return new Promise(resolve => pendingEvents.push(resolve));
@@ -202,13 +209,14 @@ async function boot(opts = {}) {
       else if (p === "/api/board") body = { days: 7, projects: [] };
       else if (p === "/api/plugins") body = { apps: [] };
       else if (p === "/api/actions") body = { read_only: opts.readOnly || undefined, projects: Object.fromEntries(Object.keys(fx.projects).map(n => [n, buttons(n, opts.readOnly)])) };
-      else if ((m = /^\/api\/projects\/([^/]+)\/chat$/.exec(p))) body = { project: m[1], headless: true, items: [], state: null };
+      else if ((m = /^\/api\/projects\/([^/]+)\/chat$/.exec(p))) body = { project: m[1], headless: true, items: [], state: {}, held: heldNow(m[1]) };
       else if ((m = /^\/api\/projects\/([^/]+)$/.exec(p))) body = fx.projects[m[1]];
       if (!body) return answer(404, { error: "not found " + p });
       return answer(200, body);
     }
   });
-  vm.runInContext("Date.now = function () { return " + fx.now_ms + "; };", context);
+  context.pageNow = () => nowMs;
+  vm.runInContext("Date.now = function () { return pageNow(); };", context);
   const stubs = `
     const THREE = anything(), OrbitControls = anything(), PALETTE = anything(), HARNESSES = {};
     const lights = () => {};
@@ -230,7 +238,8 @@ async function boot(opts = {}) {
     doc, dbody, requests, flush,
     async click(node) { assert.ok(node, "the thing to click exists"); node.click(); await flush(); },
     // tick: one second of every countdown.
-    async tick(n = 1) { for (let i = 0; i < n; i++) for (const fn of [...intervals.values()]) fn(); await flush(); },
+    async tick(n = 1) { for (let i = 0; i < n; i++) { nowMs += 1000; for (const fn of [...intervals.values()]) fn(); await flush(); } },
+    now: () => nowMs,
     async answerEvents() { pendingEvents.shift()({ ok: true, status: 200, json: () => Promise.resolve({ last_event_id: 900, events: [], now: [] }) }); await flush(); },
     // openMate: the Mate of `project` through Go to, then its `tab`.
     async openMate(project, tab) {
@@ -293,35 +302,108 @@ test("the board says when there is nothing, when the Mate keeps none, and when i
   assert.equal(broken.dbody.querySelector(".note").text, "The board could not be read: work.jsonl: permission denied");
 });
 
-test("ticking a done row waits five seconds for an undo, then okays it", async () => {
-  const presses = [];
-  const c = await boot({ press: body => { presses.push(body); return { body: { line: "okayed #1" } }; } });
+// holdingHost is the Mate's host as the page reaches it through POST
+// /api/actions: a say, an answer and an okay are held for five seconds (the
+// host's rule, not the page's), and an undo takes one back.
+function holdingHost() {
+  const host = { presses: [], held: [], next: 7 };
+  host.press = (body, now) => {
+    host.presses.push(body);
+    const hold = (x, line) => { host.held.push({ id: host.next++, due: now + 5000, ...x }); return { body: { line } }; };
+    if (body.action === "okay") return hold({ kind: "okay", work: body.work }, `OK of work #${body.work} of shop goes in 5 s · undo until then`);
+    if (body.action === "say") return hold({ kind: "say", text: body.text }, "goes to the Mate of shop in 5 s · undo until then");
+    if (body.action === "answer") return hold({ kind: "answer", news: body.news, text: body.text }, `answer to news #${body.news} goes to the Mate of shop in 5 s · undo until then`);
+    if (body.action === "undo") {
+      const x = host.held.find(y => y.id === body.held && y.due > now);
+      if (!x) return { status: 422, body: { error: "already sent: nothing to undo" } };
+      host.held = host.held.filter(y => y !== x);
+      return { body: { line: "took back" } };
+    }
+    return { status: 404, body: { error: "not here" } };
+  };
+  return host;
+}
+
+test("ticking a done row okays it at once; the Mate's host holds it for an undo, and the row counts it down", async () => {
+  const host = holdingHost();
+  const c = await boot({ press: host.press, held: () => host.held });
   await c.openMate("shop", "work");
   const box = c.row(1).querySelector("input[type=checkbox]");
   box.checked = true;
   box.dispatch("change");
   await c.flush();
+  assert.deepEqual(host.presses, [{ action: "okay", project: "shop", work: 1 }], "the tick goes to the host at once: the page keeps no timer of its own");
   let row = c.row(1);
-  assert.ok(row.text.includes("Okaying in 5s"), "the row counts down");
+  assert.ok(row.text.includes("Okaying in 5s"), "the row counts down what the host holds");
   assert.ok(row.querySelector("input[type=checkbox]").disabled, "the checkbox is held while it counts");
   await c.tick(2);
   row = c.row(1);
-  assert.ok(row.text.includes("Okaying in 3s"), "a second at a time");
-  assert.equal(presses.length, 0, "nothing is sent while the undo is open");
+  assert.ok(row.text.includes("Okaying in 3s"), "a second at a time, by the page's clock");
   await c.click(row.querySelectorAll("button").find(b => b.text === "Undo"));
+  assert.deepEqual(host.presses[1], { action: "undo", project: "shop", held: 7 }, "Undo asks the host for the item it holds");
   row = c.row(1);
   assert.ok(!row.text.includes("Okaying"), "undo puts the row back");
   assert.equal(row.querySelector("input[type=checkbox]").disabled, false);
-  assert.equal(presses.length, 0, "and nothing was sent");
 
   const again = c.row(1).querySelector("input[type=checkbox]");
   again.checked = true;
   again.dispatch("change");
   await c.flush();
+  const reads = c.requests.filter(r => r.url === "/api/work").length;
   await c.tick(5);
-  assert.deepEqual(presses, [{ action: "okay", project: "shop", work: 1 }], "after the countdown the tick is one okay on the row");
-  assert.ok(c.requests.filter(r => r.url === "/api/work").length >= 2, "and the board is read again");
-  assert.ok(c.dbody.querySelector(".result") && c.dbody.querySelector(".result").text.includes("okayed #1"), "the server's line shows on the board");
+  assert.equal(host.presses.length, 3, "one okay more, nothing when its time is up");
+  assert.ok(!c.row(1).text.includes("Okaying"), "the host has sent it: the row stops counting");
+  assert.ok(c.requests.filter(r => r.url === "/api/work").length > reads, "and the board is read again");
+  assert.ok(c.dbody.querySelector(".result") && c.dbody.querySelector(".result").text.includes("OK of work #1 of shop goes in 5 s"), "the server's line shows on the board");
+});
+
+test("a message goes to the Mate's host at once; the chat counts down what it holds, and Undo puts the text back", async () => {
+  const host = holdingHost();
+  const c = await boot({ press: host.press, held: () => host.held });
+  await c.openMate("shop");
+  const ta = c.doc.getElementById("chat-shop");
+  ta.value = "chạy lại make shot";
+  ta.dispatch("input");
+  await c.click(c.dbody.querySelectorAll("button").find(b => b.text === "Send"));
+  assert.deepEqual(host.presses, [{ action: "say", project: "shop", text: "chạy lại make shot" }], "the say goes at once");
+  let held = c.dbody.querySelector(".msg.pending");
+  assert.ok(held && held.text.includes("chạy lại make shot") && held.text.includes("Sending in 5s"), "the held message counts down");
+  assert.equal(c.doc.getElementById("chat-shop").value, "", "the composer is empty while it is held");
+  await c.tick(1);
+  assert.ok(c.dbody.querySelector(".msg.pending").text.includes("Sending in 4s"));
+  await c.click(c.dbody.querySelector(".msg.pending button"));
+  assert.deepEqual(host.presses[1], { action: "undo", project: "shop", held: 7 });
+  assert.equal(c.dbody.querySelector(".msg.pending"), null, "nothing is held any more");
+  assert.equal(c.doc.getElementById("chat-shop").value, "chạy lại make shot", "the text is back in the composer");
+
+  // Two in a row: both are held, each with its own Undo.
+  for (const text of ["một", "hai"]) {
+    const box = c.doc.getElementById("chat-shop");
+    box.value = text;
+    box.dispatch("input");
+    await c.click(c.dbody.querySelectorAll("button").find(b => b.text === "Send"));
+  }
+  assert.equal(c.dbody.querySelectorAll(".msg.pending").length, 2, "a second message does not wait for the first");
+  await c.tick(5);
+  assert.equal(c.dbody.querySelectorAll(".msg.pending").length, 0, "once their time is up the host has sent them");
+});
+
+test("an answer to a topic is held by the Mate's host; Undo puts it back in its box", async () => {
+  const byId = (id) => c.dbody.querySelectorAll("textarea, button").find(n => n.id === id);
+  const host = holdingHost();
+  const c = await boot({ press: host.press, held: () => host.held });
+  await c.openMate("shop", "work");
+  await c.click(c.row(2).querySelector(".side button"));
+  const own = byId("own-shop#14");
+  own.value = "sáu làn";
+  own.dispatch("input");
+  await c.click(byId("send-shop#14"));
+  assert.deepEqual(host.presses, [{ action: "answer", project: "shop", news: 14, text: "sáu làn" }], "the answer goes at once");
+  const held = c.dbody.querySelector(".msg.pending");
+  assert.ok(held && held.text.includes("sáu làn") && held.text.includes("Sending in 5s"), "the topic shows the held answer");
+  await c.click(held.querySelector("button"));
+  assert.deepEqual(host.presses[1], { action: "undo", project: "shop", held: 7 });
+  assert.equal(byId("own-shop#14").value, "sáu làn", "the answer is back in its box");
 });
 
 test("a read-only dashboard shows the rows but holds the tick", async () => {

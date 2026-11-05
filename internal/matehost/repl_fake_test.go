@@ -28,6 +28,35 @@ type fakeConn struct {
 	// host's event would carry them (refresh).
 	forks    bool
 	sessions []SessionInfo
+	// held is what the fake holds for its undo, as the host would; now is
+	// the REPL's clock, which it counts held items down by.
+	held  []Held
+	now   func() time.Time
+	undid []int
+}
+
+// hold keeps p as the host holds what the captain sends.
+func (f *fakeConn) hold(p Held) Held {
+	now := time.Now()
+	if f.now != nil {
+		now = f.now()
+	}
+	p.ID, p.At, p.Due = len(f.held)+len(f.undid)+1, now, now.Add(UndoDelay)
+	f.held = append(f.held, p)
+	return p
+}
+
+func (f *fakeConn) Undo(_ context.Context, id int) (Held, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, p := range f.held {
+		if p.ID == id {
+			f.held = slices.Delete(f.held, i, i+1)
+			f.undid = append(f.undid, id)
+			return p, nil
+		}
+	}
+	return Held{}, refused(ErrNotHeld)
 }
 
 var errFakeNoStream = errors.New("fakeConn streams nothing")
@@ -35,11 +64,11 @@ var errFakeNoStream = errors.New("fakeConn streams nothing")
 func (f *fakeConn) Subscribe(context.Context) (<-chan Event, error) { return nil, errFakeNoStream }
 func (f *fakeConn) History(context.Context, int) ([]Item, error)    { return nil, errFakeNoStream }
 
-func (f *fakeConn) Submit(_ context.Context, text string) error {
+func (f *fakeConn) Submit(_ context.Context, text string) (Held, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.submitted = append(f.submitted, text)
-	return nil
+	return f.hold(Held{Kind: HeldSay, Text: text}), nil
 }
 
 func (f *fakeConn) Interrupt(context.Context) (bool, error) {
@@ -74,11 +103,11 @@ func (f *fakeConn) SeenNews(_ context.Context, id int) error {
 	return nil
 }
 
-func (f *fakeConn) AnswerNews(_ context.Context, id int, text string) error {
+func (f *fakeConn) AnswerNews(_ context.Context, id int, text string) (Held, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.answers = append(f.answers, text)
-	return nil
+	return f.hold(Held{Kind: HeldAnswer, Text: text, News: id}), nil
 }
 
 func (f *fakeConn) OpenSession(_ context.Context, id int) error {
@@ -110,11 +139,11 @@ func (f *fakeConn) CloseSession(_ context.Context, id int) error {
 	return nil
 }
 
-func (f *fakeConn) OkayWork(_ context.Context, id int) error {
+func (f *fakeConn) OkayWork(_ context.Context, id int) (Held, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.okayed = append(f.okayed, id)
-	return nil
+	return f.hold(Held{Kind: HeldOkay, Work: id}), nil
 }
 
 // session runs fn on open session id, under the fake's lock.
@@ -148,7 +177,7 @@ func (s *syncCalls) Go(call func(ctx context.Context) tea.Msg) {
 
 // withFake gives m a fake host it is connected to, its calls made at once.
 func withFake(m Model) (Model, *fakeConn) {
-	f := &fakeConn{}
+	f := &fakeConn{now: func() time.Time { return m.now() }}
 	m.conn, m.calls, m.linked = f, &syncCalls{}, true
 	return m, f
 }

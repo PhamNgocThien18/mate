@@ -122,9 +122,10 @@ const (
 	ActionOpenNews Action = "open_news"
 	// ActionOkayWork is the captain's tick on a done row of a Project's work
 	// board (CON-158): Space on it in the console's work sheet, or a page's
-	// `okay`. Input is the row id. The tick is final (matehost.OkayWork),
-	// and it asks nothing: a done row leaving the board is the whole of its
-	// effect.
+	// `okay`. Input is the row id. A headless Mate's host holds it for its
+	// undo (ActionUndo, CON-222); after that, or at once where no host
+	// answers, the tick is final (matehost.OkayWork), and it asks nothing:
+	// a done row leaving the board is the whole of its effect.
 	ActionOkayWork Action = "okay_work"
 	// ActionOpenWork asks a Project's headless Mate REPL to show its work
 	// board as a page (CON-198): `w` on a Mate or Project row. A Mate with
@@ -141,12 +142,16 @@ const (
 	// turn in flight or, with News, the session of that news instead.
 	// ActionAnswer answers the news, ActionFork asks its session a question
 	// the session answers read-only, and ActionForkClose closes the
-	// session; what was said in it stays.
+	// session; what was said in it stays. The Mate's host holds a say, an
+	// answer and an okay_work for their undo (matehost.UndoDelay, CON-222);
+	// ActionUndo takes one back before it goes, Input naming it
+	// (matehost.Held.ID).
 	ActionSay       Action = "say"
 	ActionInterrupt Action = "interrupt"
 	ActionAnswer    Action = "answer"
 	ActionFork      Action = "fork"
 	ActionForkClose Action = "fork_close"
+	ActionUndo      Action = "undo"
 	// TODO: v1 also had retry, discard and switch_harness. mate has no
 	// retry (a Crew runs once), and no discard action: throwing work away
 	// is `mate crew stop --discard`, on the captain's explicit word.

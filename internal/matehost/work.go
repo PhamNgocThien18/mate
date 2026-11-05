@@ -172,12 +172,15 @@ func ReopenWork(path string, id int, text string, now time.Time) error {
 // OkayWork is the captain's tick on a done row: it leaves the board. Only
 // the app calls it, never the Mate.
 func OkayWork(path string, id int, now time.Time) error {
-	return workOp(path, workEvent{At: now, Op: workOpOkay, ID: id}, func(w Work) error {
-		if w.Status != WorkDone {
-			return fmt.Errorf("work #%d is %s, not done", id, w.Status)
-		}
-		return nil
-	})
+	return workOp(path, workEvent{At: now, Op: workOpOkay, ID: id}, okayable)
+}
+
+// okayable refuses a tick on a row that is not done.
+func okayable(w Work) error {
+	if w.Status != WorkDone {
+		return fmt.Errorf("work #%d is %s, not done", w.ID, w.Status)
+	}
+	return nil
 }
 
 func workOp(path string, ev workEvent, check func(Work) error) error {

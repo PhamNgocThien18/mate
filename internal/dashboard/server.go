@@ -29,7 +29,7 @@ const DefaultAddr = "127.0.0.1:7777"
 // for a branch that was deleted.
 type Deps struct {
 	// Diff is `mate diff <project> <crew>`, verbatim - cmd/mate wires
-	// its own crewDiffText here so the page and the terminal can never
+	// spawn.CrewDiff here so the page and the terminal can never
 	// disagree about what a branch contains.
 	Diff func(ctx context.Context, project, crew string) (string, error)
 	// BranchExists reports whether a crew's branch is still in the repo

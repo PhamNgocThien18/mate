@@ -107,6 +107,14 @@ func (l *clientLoop) press(keys ...any) {
 	press(l.t, &l.m, keys...)
 }
 
+// holds is whether the REPL shows the host holding an item of kind with
+// text.
+func holds(kind, text string) func(Model) bool {
+	return func(m Model) bool {
+		return slices.ContainsFunc(m.state.Held, func(p Held) bool { return p.Kind == kind && p.Text == text })
+	}
+}
+
 func hasText(items []Item, text string) bool {
 	return slices.ContainsFunc(items, func(it Item) bool { return it.Text == text })
 }
@@ -142,12 +150,16 @@ func TestREPLClientDrivesTheHostOverTheSocket(t *testing.T) {
 	l.until("connected", func(m Model) bool { return m.linked && len(m.news) == 1 && len(m.work) == 1 })
 
 	l.press("xin chào", tea.KeyEnter)
+	l.until("the message held", holds(HeldSay, "xin chào"))
+	f.timers.fire(t)
 	if it := f.done(t, 1)[0]; it.Text != "xin chào" || it.Reply != "re: xin chào" {
 		t.Fatalf("the message's turn: %+v", it)
 	}
 	l.until("the reply shown", func(m Model) bool { return hasText(m.items, "xin chào") && m.running == nil })
 
 	l.press("slow, ngắt giúp anh", tea.KeyEnter)
+	l.until("the slow message held", holds(HeldSay, "slow, ngắt giúp anh"))
+	f.timers.fire(t)
 	l.until("the slow turn running", func(m Model) bool {
 		return m.state.Busy && m.running != nil && m.running.Text == "slow, ngắt giúp anh"
 	})
@@ -174,15 +186,10 @@ func TestREPLClientDrivesTheHostOverTheSocket(t *testing.T) {
 		t.Fatalf("the host still has sessions %+v", s)
 	}
 
-	// An answer goes after its undo delay.
+	// An answer is held in the host, and goes when its undo is over.
 	l.press(tea.KeyTab, "nhận cả XOA", tea.KeyEnter)
-	if l.m.pending == nil {
-		t.Fatalf("no answer pending (note %q)", l.m.note)
-	}
-	clock = clock.Add(undoDelay + time.Second)
-	next, _ := l.m.Update(tickMsg(clock))
-	l.m = next.(Model)
-	drain(&l.m)
+	l.until("the answer held", holds(HeldAnswer, "nhận cả XOA"))
+	f.timers.fire(t)
 	if it := f.done(t, 3)[2]; it.News != 1 || it.Text != "nhận cả XOA" {
 		t.Fatalf("the answer's turn: %+v", it)
 	}
@@ -193,6 +200,8 @@ func TestREPLClientDrivesTheHostOverTheSocket(t *testing.T) {
 		t.Fatalf("^L left mode %v", l.m.mode)
 	}
 	l.press(tea.KeySpace)
+	l.until("the OK held", holds(HeldOkay, ""))
+	f.timers.fire(t)
 	list, _ := LoadWork(work)
 	if w, _ := findWork(list, 1); w.Status != WorkOkayed {
 		t.Fatalf("Space left #1 %q", w.Status)
@@ -241,6 +250,8 @@ func TestREPLKilledMidTurnLeavesTheTurnRunning(t *testing.T) {
 	}()
 
 	first := <-starts
+	waitHost(t, "the REPL's message held", func() bool { return len(f.host.State().Held) == 1 })
+	f.timers.fire(t)
 	waitHost(t, "the REPL's message running", func() bool { return f.host.State().Busy })
 	if err := first.Kill(); err != nil {
 		t.Fatal(err)
@@ -401,6 +412,14 @@ func TestTwoREPLsShareTheChatAndTheDraft(t *testing.T) {
 	b.press(" một nháp")
 	a.until("a showing b's draft", func(m Model) bool { return string(m.input) == "chung một nháp" })
 	a.press(tea.KeyEnter)
+	// Both show the one message the host holds for its undo.
+	for name, l := range map[string]*clientLoop{"a": a, "b": b} {
+		l.until(name+" showing the held message", holds(HeldSay, "chung một nháp"))
+	}
+	if a.m.state.Held[0].ID != b.m.state.Held[0].ID {
+		t.Fatalf("a holds %+v, b %+v", a.m.state.Held, b.m.state.Held)
+	}
+	f.timers.fire(t)
 	f.done(t, 1)
 	for name, l := range map[string]*clientLoop{"a": a, "b": b} {
 		l.until(name+" showing the turn, its composer empty", func(m Model) bool {
@@ -489,40 +508,34 @@ func TestREPLKeepsTheNewestState(t *testing.T) {
 	}
 }
 
-// An answer whose undo delay ends with the host away is not lost: it goes
-// back to its frame, and so does one the host could not be reached for.
+// An answer written while the host is away is not lost: it stays in its
+// frame, and so does one the host could not be reached for.
 func TestREPLGivesBackAnAnswerTheHostNeverGot(t *testing.T) {
-	m, _ := withFake(newsModel(100, 30))
-	clock := m.now()
-	m.now = func() time.Time { return clock }
-	press(t, &m, tea.KeyCtrlT, tea.KeyEnter, tea.KeyTab, "dùng a", tea.KeyEnter)
-	if m.pending == nil {
-		t.Fatal("no answer pending")
-	}
+	m, f := withFake(newsModel(100, 30))
 	m.linked = false
-	clock = clock.Add(undoDelay + time.Second)
-	m.tickNews()
-	if m.pending != nil || m.drafts[3] != "dùng a" || !strings.Contains(m.note, "#3") {
-		t.Fatalf("offline flush: pending %+v, draft %q, note %q", m.pending, m.drafts[3], m.note)
+	press(t, &m, tea.KeyCtrlT, tea.KeyEnter, tea.KeyTab, "dùng a", tea.KeyEnter)
+	if len(f.answers) != 0 || string(m.input) != "dùng a" || !strings.Contains(m.note, "#3") {
+		t.Fatalf("offline answer: sent %q, input %q, note %q", f.answers, string(m.input), m.note)
 	}
 
 	m.linked = true
-	m.drafts[3] = ""
-	m.conn = unreachableConn{m.conn.(*fakeConn)}
-	m.pending = &pendingAnswer{id: 3, text: "dùng b", at: clock}
-	clock = clock.Add(undoDelay + time.Second)
-	m.tickNews()
-	drain(&m)
-	if m.drafts[3] != "dùng b" || !strings.Contains(m.note, "không nối được với Mate") {
-		t.Fatalf("failed answer: draft %q, note %q", m.drafts[3], m.note)
+	m.setInput(nil)
+	m.conn = unreachableConn{f}
+	press(t, &m, "dùng b", tea.KeyEnter)
+	if m.drafts[3] != "dùng b" || !strings.Contains(m.note, "không nối được với Mate") || len(m.state.Held) != 0 {
+		t.Fatalf("failed answer: draft %q, note %q, held %+v", m.drafts[3], m.note, m.state.Held)
 	}
 }
 
 type unreachableConn struct{ *fakeConn }
 
-func (unreachableConn) AnswerNews(context.Context, int, string) error { return unreachable }
+func (unreachableConn) AnswerNews(context.Context, int, string) (Held, error) {
+	return Held{}, unreachable
+}
 
-func (refusingConn) Submit(context.Context, string) error { return refused(ErrStopping) }
+func (refusingConn) Submit(context.Context, string) (Held, error) {
+	return Held{}, refused(ErrStopping)
+}
 
 // A REPL opened before its host waits for it, saying so, and connects once
 // it is there.

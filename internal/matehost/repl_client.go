@@ -19,24 +19,27 @@ import (
 
 // Conn is the REPL's way to its host: what the REPL calls, each as the Host
 // method it is named after. REPLConn is the socket's; tests give a fake.
+// What the captain sends (Submit, AnswerNews, OkayWork) the host holds for
+// its undo (Host.Say, Host.Answer, Host.Okay) and Undo takes back.
 type Conn interface {
 	// Subscribe is the host's events from now on, starting with one of how
 	// things stand (Client.Subscribe); History its last n finished items.
 	Subscribe(ctx context.Context) (<-chan Event, error)
 	History(ctx context.Context, n int) ([]Item, error)
 
-	Submit(ctx context.Context, text string) error
+	Submit(ctx context.Context, text string) (Held, error)
 	Interrupt(ctx context.Context) (bool, error)
 	// SetDraft records the draft; from is the REPL's id (Event.DraftBy).
 	SetDraft(ctx context.Context, text, from string) error
 	TakeLast(ctx context.Context) (string, bool, error)
 	SeenNews(ctx context.Context, id int) error
-	AnswerNews(ctx context.Context, id int, text string) error
+	AnswerNews(ctx context.Context, id int, text string) (Held, error)
 	OpenSession(ctx context.Context, id int) error
 	AskSession(ctx context.Context, id int, text string) error
 	InterruptSession(ctx context.Context, id int) (bool, error)
 	CloseSession(ctx context.Context, id int) error
-	OkayWork(ctx context.Context, id int) error
+	OkayWork(ctx context.Context, id int) (Held, error)
+	Undo(ctx context.Context, id int) (Held, error)
 }
 
 // REPLConn is c as the REPL's Conn. An op the host refuses comes back as
@@ -55,12 +58,12 @@ func (r replConn) History(ctx context.Context, n int) ([]Item, error) {
 	return resp.Items, err
 }
 
-func (r replConn) Submit(ctx context.Context, text string) error {
+func (r replConn) Submit(ctx context.Context, text string) (Held, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil
+		return Held{}, nil
 	}
-	_, err := r.c.call(ctx, request{Op: OpSubmit, Text: text})
-	return err
+	resp, err := r.c.call(ctx, request{Op: OpSubmit, Text: text})
+	return heldOf(resp), err
 }
 
 func (r replConn) Interrupt(ctx context.Context) (bool, error) {
@@ -77,12 +80,12 @@ func (r replConn) TakeLast(ctx context.Context) (string, bool, error) { return r
 
 func (r replConn) SeenNews(ctx context.Context, id int) error { return r.c.SeenNews(ctx, id) }
 
-func (r replConn) AnswerNews(ctx context.Context, id int, text string) error {
+func (r replConn) AnswerNews(ctx context.Context, id int, text string) (Held, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil
+		return Held{}, nil
 	}
-	_, err := r.c.call(ctx, request{Op: OpAnswer, News: id, Text: text})
-	return err
+	resp, err := r.c.call(ctx, request{Op: OpAnswer, News: id, Text: text})
+	return heldOf(resp), err
 }
 
 func (r replConn) OpenSession(ctx context.Context, id int) error { return r.c.OpenSession(ctx, id) }
@@ -103,7 +106,9 @@ func (r replConn) CloseSession(ctx context.Context, id int) error {
 	return err
 }
 
-func (r replConn) OkayWork(ctx context.Context, id int) error { return r.c.OkayWork(ctx, id) }
+func (r replConn) OkayWork(ctx context.Context, id int) (Held, error) { return r.c.OkayWork(ctx, id) }
+
+func (r replConn) Undo(ctx context.Context, id int) (Held, error) { return r.c.Undo(ctx, id) }
 
 // replHistory is how many items the REPL shows again when it connects.
 const replHistory = 200

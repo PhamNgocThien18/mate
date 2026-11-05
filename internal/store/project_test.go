@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -294,5 +295,35 @@ func TestUpdateCrewMetaKeepsEveryOtherKey(t *testing.T) {
 	}
 	if got["branch"] != "mate/k3" || got["pr_url"] != "u" || got["state"] != "working" {
 		t.Fatalf("meta = %v", got)
+	}
+}
+
+// TestEnsureProjectDocSeedsOnceAndNeverOverwrites: PROJECT.md is the
+// template the first time, and from then on whatever the captain or a scout
+// wrote. A name that is not a project name is refused before any path is
+// built from it.
+func TestEnsureProjectDocSeedsOnceAndNeverOverwrites(t *testing.T) {
+	w := newProjectWorkspace(t)
+	if err := w.EnsureProjectDoc("shop"); err != nil {
+		t.Fatalf("EnsureProjectDoc: %v", err)
+	}
+	doc, err := os.ReadFile(w.ProjectDoc("shop"))
+	if err != nil {
+		t.Fatalf("PROJECT.md not seeded: %v", err)
+	}
+	if string(doc) != memory.ProjectTemplate("shop") {
+		t.Fatalf("PROJECT.md = %q, want the template", doc)
+	}
+	if err := os.WriteFile(w.ProjectDoc("shop"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.EnsureProjectDoc("shop"); err != nil {
+		t.Fatalf("EnsureProjectDoc again: %v", err)
+	}
+	if doc, _ := os.ReadFile(w.ProjectDoc("shop")); string(doc) != "edited\n" {
+		t.Fatalf("PROJECT.md = %q, want the edit kept", doc)
+	}
+	if err := w.EnsureProjectDoc("../shop"); err == nil {
+		t.Fatal("EnsureProjectDoc accepted a name that is not a project name")
 	}
 }
