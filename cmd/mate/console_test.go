@@ -202,6 +202,32 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	}
 }
 
+// The console runs its background loops through internal/core (CON-207):
+// it builds their parts with engineOptions, which `mate core` can share
+// (CON-211), and the engine starts them in order and stops them in reverse.
+// A Start, Stop or Close of runConsole's own would be a loop or the
+// timeline database outside that order again.
+func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
+	calls := callersOf(t)["runConsole"]
+	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop"} {
+		if !calls[want] {
+			t.Errorf("runConsole does not call %s", want)
+		}
+	}
+	for call := range calls {
+		for _, method := range []string{".Start", ".Stop", ".Close"} {
+			if strings.HasSuffix(call, method) && !strings.HasPrefix(call, "engine.") {
+				t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
+			}
+		}
+	}
+	for _, builder := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "consoleOutbox"} {
+		if calls[builder] {
+			t.Errorf("runConsole builds a loop with %s; engineOptions builds them all", builder)
+		}
+	}
+}
+
 // callsTo is every call to callee in this package's non-test files, as
 // written, by the function it is in.
 func callsTo(t *testing.T, callee string) map[string][]string {

@@ -5,10 +5,12 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/prwatch"
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/refresh"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -21,6 +23,63 @@ import (
 // internal/autopilot (its boundary test), so this package is the one place
 // that can hold both a live runtime and a snapshot.
 
+// engineOptions builds the parts internal/core's engine runs for an open
+// workspace (CON-207): the observer with the timeline it records, the outbox
+// sender and the auto daemon, and recovery. The console runs them under an
+// engine for as long as it is open; `mate core` is to run the same ones
+// (CON-211). The builders stay in this package, beside the commands that
+// build the same parts for one shot of their own (consoleOutbox,
+// consoleSessionRef, mateRefresher).
+//
+// Each loop opens its own *store.Workspace over ws's directory, for the
+// reason consoleWatcher gives; recovery repairs ws itself.
+func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
+	// The observer of mvp.md section 4b runs for as long as the workspace is
+	// open, and only then: it lives in this process, so quitting the console
+	// means nobody is watching the crews and no new incident is opened. What
+	// it already wrote stays in `incidents.log`.
+	//
+	// It is also the single writer of `.mate/mate.db` (mvp.md M5): the
+	// timeline is recorded at the end of each of its polls, and the database
+	// handle's advisory lock is released when the engine stops.
+	watcher, timelineDB, ingest, err := consoleWatcherWithTimeline(ws.Root(), deps)
+	if err != nil {
+		return core.Options{}, err
+	}
+	// The auto daemon of mvp.md section 5 runs beside it, and like it only
+	// while the workspace is open: a closed console sends nothing, which is
+	// the honest shape of a feature whose whole point is that it types into
+	// somebody's composer. It sends only for the projects whose `mate/.auto`
+	// exists, and it re-reads that flag every tick.
+	delivery, err := consolePilot(ws.Root(), deps)
+	if err != nil {
+		if timelineDB != nil {
+			_ = timelineDB.Close()
+		}
+		return core.Options{}, err
+	}
+	opts := core.Options{
+		Workspace: ws,
+		Watcher:   core.WatchLoop(watcher),
+		Ingest:    ingest,
+		Sender:    core.SenderLoop(delivery.sender),
+		Pilot:     core.PilotLoop(delivery.pilot),
+		// What a machine restart or a copied workspace left behind is put
+		// right in the background, without asking: the console is usable
+		// meanwhile and its status line says where recovery is (docs/mvp.md
+		// M17).
+		Recover: func(ctx context.Context, ws *store.Workspace, progress func(recovery.Progress)) recovery.Result {
+			return recovery.Run(ctx, ws, deps, progress)
+		},
+	}
+	// No handle - another process writes the timeline - is no timeline to
+	// close, which a nil *db.DB in the interface would not say.
+	if timelineDB != nil {
+		opts.Timeline = timelineDB
+	}
+	return opts, nil
+}
+
 // consoleDelivery is everything that types into a Mate's composer without a
 // keystroke of the captain's, for as long as the console is open: the outbox
 // sender loop (task 30), which delivers every queued `[assign]` and digest,
@@ -28,6 +87,10 @@ import (
 // together because neither is any use without the other: a daemon with no
 // sender queues digests nobody types, and a console without the sender
 // leaves every `[assign]` the Mate was too busy to take waiting forever.
+//
+// The engine runs the two as loops of its own, in this same order
+// (engineOptions); Start and Stop are for a run with no engine, such as the
+// live tests'.
 type consoleDelivery struct {
 	sender *outbox.Sender
 	pilot  *autopilot.Pilot

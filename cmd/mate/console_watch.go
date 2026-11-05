@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/crewstate"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/harness"
@@ -37,7 +38,8 @@ import (
 //
 // It records no timeline: a database handle holds an advisory lock for as
 // long as it is open, so the one place that opens it is the one place that
-// can close it. cmdConsole uses consoleWatcherWithTimeline for that reason.
+// can close it. engineOptions uses consoleWatcherWithTimeline for that
+// reason, and the engine it builds closes the handle (internal/core).
 func consoleWatcher(dir string, deps spawn.Deps) (*watch.Watcher, error) {
 	ws, err := store.Open(dir)
 	if err != nil {
@@ -222,7 +224,7 @@ func withTimelineStale(snap query.Snapshot, ingest *timeline.Ingester) query.Sna
 // only way it can tell "nothing was observed" apart from "nothing could be
 // observed"; without it every file-read row keeps looking fresh while Herdr
 // is down.
-func withRuntimeNotice(snap query.Snapshot, watcher *watch.Watcher) query.Snapshot {
+func withRuntimeNotice(snap query.Snapshot, watcher core.CrewHealth) query.Snapshot {
 	if watcher == nil {
 		return snap
 	}
