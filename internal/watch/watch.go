@@ -312,9 +312,10 @@ func (w *Watcher) Start(ctx context.Context) {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
-	w.done = make(chan struct{})
+	done := make(chan struct{})
+	w.done = done
 	w.mu.Unlock()
-	go w.run(runCtx)
+	go w.run(runCtx, done)
 }
 
 // Stop ends the polling goroutine and waits for the round in flight and
@@ -333,8 +334,10 @@ func (w *Watcher) Stop() {
 	w.AwaitObserver()
 }
 
-func (w *Watcher) run(ctx context.Context) {
-	defer close(w.done)
+// run closes done, the channel Start made, not w.done: Stop clears that
+// field, possibly before this goroutine has first run.
+func (w *Watcher) run(ctx context.Context, done chan struct{}) {
+	defer close(done)
 	for {
 		// A failed round is not fatal: Herdr may be restarting, a project
 		// directory may be half-written. The next round asks again, and

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/term"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/query"
@@ -154,41 +155,24 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	var observerErr error
 	deps.Observer, observerErr = configuredObserver(ws)
 
-	// The observer of mvp.md section 4b runs for as long as the workspace is
-	// open, and only then: it lives in this process, so quitting the console
-	// means nobody is watching the crews and no new incident is opened. What
-	// it already wrote stays in `incidents.log`.
-	//
-	// It is also the single writer of `.mate/mate.db` (mvp.md M5): the
-	// timeline is recorded at the end of each of its polls, and the database
-	// handle's advisory lock is released when the console quits.
-	watcher, timelineDB, ingest, err := consoleWatcherWithTimeline(dir, deps)
+	// The observer with the timeline it records, the delivery into the Mates
+	// and recovery run in this process for as long as the workspace is open:
+	// the engine starts them in their order and, when the console quits,
+	// stops them in the reverse (internal/core). engineOptions says what each
+	// one is for.
+	opts, err := engineOptions(ws, deps)
 	if err != nil {
 		return err
 	}
-	if timelineDB != nil {
-		defer timelineDB.Close()
-	}
-	watcher.Start(ctx)
-	defer watcher.Stop()
-
-	// The auto daemon of mvp.md section 5 runs beside it, and like it only
-	// while the workspace is open: a closed console sends nothing, which is
-	// the honest shape of a feature whose whole point is that it types into
-	// somebody's composer. It sends only for the projects whose `mate/.auto`
-	// exists, and it re-reads that flag every tick.
-	pilot, err := consolePilot(dir, deps)
-	if err != nil {
+	engine := core.New(opts)
+	if err := engine.Start(ctx); err != nil {
 		return err
 	}
-	pilot.Start(ctx)
-	defer pilot.Stop()
-
-	// What a machine restart or a copied workspace left behind is put right
-	// in the background, without asking: the console is usable meanwhile and
-	// its status line says where recovery is (docs/mvp.md M17).
-	recovery, stopRecovery := startConsoleRecovery(ctx, ws, deps)
-	defer stopRecovery()
+	defer engine.Stop()
+	// loadFrom reads their state through the engine, by the names it read
+	// the loops by when runConsole ran them itself.
+	watcher, ingest, pilot := engine.CrewHealth(), engine.Ingest(), engine.AutoStatus()
+	recovery := &consoleRecovery{now: time.Now, state: engine.Recovery}
 
 	// loadFrom is the console's snapshot read over one Workspace. The
 	// console reads through its own; the dashboard opens a fresh one per

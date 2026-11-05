@@ -649,9 +649,10 @@ func (s *Sender) Start(ctx context.Context) {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.done = make(chan struct{})
+	done := make(chan struct{})
+	s.done = done
 	s.mu.Unlock()
-	go s.run(runCtx)
+	go s.run(runCtx, done)
 }
 
 // Stop ends the loop and waits for the pass in flight.
@@ -667,8 +668,10 @@ func (s *Sender) Stop() {
 	<-done
 }
 
-func (s *Sender) run(ctx context.Context) {
-	defer close(s.done)
+// run closes done, the channel Start made, not s.done: Stop clears that
+// field, possibly before this goroutine has first run.
+func (s *Sender) run(ctx context.Context, done chan struct{}) {
+	defer close(done)
 	for {
 		// A failed pass is not fatal: Herdr may be restarting, a file may
 		// be mid-write. Nothing queued was lost, and the next pass asks

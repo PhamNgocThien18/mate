@@ -144,9 +144,10 @@ func (p *Pilot) Start(ctx context.Context) {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	p.done = make(chan struct{})
+	done := make(chan struct{})
+	p.done = done
 	p.mu.Unlock()
-	go p.run(runCtx)
+	go p.run(runCtx, done)
 }
 
 // Stop ends the ticking goroutine and waits for the tick in flight.
@@ -162,8 +163,10 @@ func (p *Pilot) Stop() {
 	<-done
 }
 
-func (p *Pilot) run(ctx context.Context) {
-	defer close(p.done)
+// run closes done, the channel Start made, not p.done: Stop clears that
+// field, possibly before this goroutine has first run.
+func (p *Pilot) run(ctx context.Context, done chan struct{}) {
+	defer close(done)
 	for {
 		// A failed tick is not fatal: Herdr may be restarting, a project
 		// directory may be half-written. Nothing was sent, no cursor moved,
