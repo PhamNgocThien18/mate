@@ -8,37 +8,28 @@ import (
 	"time"
 )
 
-// focusFixture is a host with one news, whose news.focus and work.focus
-// hold requests older than it, watching them; read waits for the host to
-// have read the next request the test makes. now is the host's clock, nil
-// for the real one.
+// focusFixture is a host with one news, watching its news.focus and
+// work.focus; read waits for the host to have read the next request the
+// test makes. The host's clock is the fixture's, moved by advance.
 type focusFixture struct {
 	dir   string
 	h     *Host
 	c     Client
 	asked chan struct{}
+	mu    sync.Mutex
+	clock time.Time
 }
 
-func newFocusFixture(t *testing.T, now func() time.Time) *focusFixture {
+func newFocusFixture(t *testing.T) *focusFixture {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, NewsName)
 	if _, err := OpenNews(path, News{Title: "Vượt ngân sách"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := RequestNewsFocus(dir, 1, time.Now().Add(-time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if err := RequestWorkFocus(dir, time.Now().Add(-time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	f := &focusFixture{dir: dir, h: New(&Runner{}, Options{News: path, Now: now}), asked: make(chan struct{}, 16)}
-	// WatchNews reads the news once before it reads the requests already
-	// there; a request written before that would count as one of them.
-	started := make(chan struct{})
-	var once sync.Once
+	f := &focusFixture{dir: dir, asked: make(chan struct{}, 64), clock: time.Now()}
+	f.h = New(&Runner{}, Options{News: path, Now: f.now})
 	f.h.Subscribe(func(ev Event) {
-		once.Do(func() { close(started) })
 		if ev.Focus > 0 || ev.FocusWork {
 			f.asked <- struct{}{}
 		}
@@ -47,14 +38,37 @@ func newFocusFixture(t *testing.T, now func() time.Time) *focusFixture {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go f.h.WatchNews(ctx, 10*time.Millisecond)
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("WatchNews never read the news")
+	// A request written before WatchNews has read the files counts as one
+	// made before the host, and is never emitted. Ask until one is: the
+	// host is past that read. Then the probe is let go stale.
+	for read := false; !read; {
+		if err := RequestWorkFocus(dir, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-f.asked:
+			read = true
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	// It reads them right after, before its first tick (10ms).
 	time.Sleep(50 * time.Millisecond)
+	for len(f.asked) > 0 {
+		<-f.asked
+	}
+	f.advance(focusFresh)
 	return f
+}
+
+func (f *focusFixture) now() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.clock
+}
+
+func (f *focusFixture) advance(d time.Duration) {
+	f.mu.Lock()
+	f.clock = f.clock.Add(d)
+	f.mu.Unlock()
 }
 
 func (f *focusFixture) read(t *testing.T, what string) {
@@ -79,14 +93,11 @@ func (f *focusFixture) first(t *testing.T) Event {
 // event carries the request while it is fresh; a REPL that connects later
 // is not sent back to it.
 func TestALateSubscriberGetsTheFreshFocus(t *testing.T) {
-	var mu sync.Mutex
-	clock := time.Now()
-	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return clock }
-	advance := func(d time.Duration) { mu.Lock(); clock = clock.Add(d); mu.Unlock() }
-	f := newFocusFixture(t, now)
+	f := newFocusFixture(t)
+	advance := f.advance
 
 	if ev := f.first(t); ev.Focus != 0 || ev.FocusWork {
-		t.Fatalf("before any request: first event focus #%d, work %v", ev.Focus, ev.FocusWork)
+		t.Fatalf("with no fresh request: first event focus #%d, work %v", ev.Focus, ev.FocusWork)
 	}
 
 	if err := RequestNewsFocus(f.dir, 1, time.Now()); err != nil {
@@ -114,12 +125,13 @@ func TestALateSubscriberGetsTheFreshFocus(t *testing.T) {
 	}
 }
 
-// The stage's case end to end (CON-224): the console asks for a news, the
-// host reads the request before the stage's REPL is up, and the REPL that
-// connects next opens that news; a `w` after it opens the Work page in the
-// same way.
+// The stage's case, from the host to the REPL client (CON-224; the
+// console and the pane runner are not in it): the console asks for a news,
+// the host reads the request before the stage's REPL is up, and the REPL
+// that connects next opens that news; a `w` after it opens the Work page
+// in the same way.
 func TestAREPLStartedAfterTheRequestOpensIt(t *testing.T) {
-	f := newFocusFixture(t, nil)
+	f := newFocusFixture(t)
 
 	if err := RequestNewsFocus(f.dir, 1, time.Now()); err != nil {
 		t.Fatal(err)
@@ -127,6 +139,7 @@ func TestAREPLStartedAfterTheRequestOpensIt(t *testing.T) {
 	f.read(t, "news")
 	startClient(t, f.c).until("news #1 open", func(m Model) bool { return m.mode == viewTopics && m.selID == 1 })
 
+	f.advance(time.Millisecond)
 	if err := RequestWorkFocus(f.dir, time.Now()); err != nil {
 		t.Fatal(err)
 	}

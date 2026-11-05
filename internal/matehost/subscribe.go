@@ -106,6 +106,13 @@ func (h *Host) serveSubscriber(conn net.Conn) {
 // stages it once the board is asked for, so the request can be read and
 // emitted before that REPL has subscribed. Its first event carries it
 // instead.
+//
+// 5 s is a guess, not a measurement: the host reads the files every
+// newsPoll (700 ms), and the REPL subscribes a moment after the stage
+// starts it, unless the stage column had to be made again first (up to
+// columnStartWait, 5 s, in cmd/mate). A REPL that connects within it for
+// another reason - the captain came back to the Mate's row, a REPL cut off
+// connects again - opens the request again.
 const focusFresh = 5 * time.Second
 
 // freshFocusLocked puts in a subscriber's first event the open request
