@@ -88,9 +88,11 @@ pages it serves. Since CON-165 it no longer imports `spawn`
 (`store.Workspace.CrewIsScout`).
 
 `usage` (CON-168) builds the pages `mate usage` prints; `cmd/mate/usage.go`
-only reads the flags. It is in service because `--why` reads through
-`dashboard.Server`, so that page and the Task page cannot disagree, and the
-ledger reads the crews through `spawn`. Its reads of `mate.db` are in
+only reads the flags. It also writes the `## Usage (app)` section of a
+crew's learning record when the crew closes (`usage.RecordAtClose`,
+CON-230), in the words of `--why`'s head. It is in service because `--why`
+reads through `dashboard.Server`, so that page and the Task page cannot
+disagree, and the ledger reads the crews through `spawn`. Its reads of `mate.db` are in
 `timeline/read`; it holds no SQL. Because `usage` imports `dashboard`,
 `dashboard` cannot import `usage`: the Office's usage page reusing the
 ledger needs `--why` split out of `usage` first.
@@ -217,7 +219,7 @@ true yet.
 | `projects/<p>/mate/news.jsonl` | `matehost` | `mate news`; the friction check of `mate wake`, `land` and `merge`; the host (answers) | query, dashboard, REPL, notifications |
 | `projects/<p>/mate/work.jsonl` | `matehost` | `mate work`, `mate land`, the console (the captain's tick) | query, dashboard, REPL |
 | `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City, notifications |
-| `projects/<p>/mate/learnings/<c>.md` | `learnings` | the Mate; the app (`## Usage (app)`, predictions) | `mate wake`, `mate learnings` |
+| `projects/<p>/mate/learnings/<c>.md` | `learnings` | the Mate; the app (`## Usage (app)` through `usage`, predictions) | `mate wake`, `mate learnings` |
 
 Crews work in `.worktrees/<project>-<crew>`, git worktrees that `spawn`
 creates and removes; `teardown` first stops what the worktree started.

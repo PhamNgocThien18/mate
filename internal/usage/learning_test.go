@@ -1,4 +1,4 @@
-package main
+package usage
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 // At a close the app writes the crew's usage into its learning record in
 // `usage --why`'s words (CON-130), starting the record when the Mate has
 // not, so no record is without numbers.
-func TestRecordUsageAtCloseStartsTheRecordWithTheLedgersNumbers(t *testing.T) {
+func TestRecordAtCloseStartsTheRecordWithTheLedgersNumbers(t *testing.T) {
 	w := usageWorkspace(t)
-	line := recordUsageAtClose(context.Background(), w, "shop", "k3", "crew stop")
+	line := RecordAtClose(context.Background(), w, "shop", "k3", "crew stop")
 	path := w.CrewLearning("shop", "k3")
 	if want := "learning: usage written in " + path; line != want {
 		t.Fatalf("line = %q, want %q", line, want)
@@ -38,24 +38,24 @@ func TestRecordUsageAtCloseStartsTheRecordWithTheLedgersNumbers(t *testing.T) {
 
 // A record the Mate already wrote keeps every section of its own; the
 // usage section is replaced in place, never doubled.
-func TestRecordUsageAtCloseReplacesOnlyItsOwnSection(t *testing.T) {
+func TestRecordAtCloseReplacesOnlyItsOwnSection(t *testing.T) {
 	w := usageWorkspace(t)
 	path := w.CrewLearning("shop", "k3")
-	if err := upsertLearningSection(path, "k3", learningUsageHeading, "stale numbers\n"); err != nil {
+	if err := UpsertLearningSection(path, "k3", LearningHeading, "stale numbers\n"); err != nil {
 		t.Fatal(err)
 	}
-	own := "# k3 learning\nSource: PR #9 @ abcdef0\nMetrics: crew only\nLearning: captured\n- a trap → docs/x.md; next check: y\n\n" + learningUsageHeading + "\nstale numbers\n\n## Predictions\n- p1 open\n"
+	own := "# k3 learning\nSource: PR #9 @ abcdef0\nMetrics: crew only\nLearning: captured\n- a trap → docs/x.md; next check: y\n\n" + LearningHeading + "\nstale numbers\n\n## Predictions\n- p1 open\n"
 	if err := os.WriteFile(path, []byte(own), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	recordUsageAtClose(context.Background(), w, "shop", "k3", "mate merge")
-	recordUsageAtClose(context.Background(), w, "shop", "k3", "crew stop")
+	RecordAtClose(context.Background(), w, "shop", "k3", "mate merge")
+	RecordAtClose(context.Background(), w, "shop", "k3", "crew stop")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if strings.Count(text, learningUsageHeading) != 1 {
+	if strings.Count(text, LearningHeading) != 1 {
 		t.Errorf("usage section doubled:\n%s", text)
 	}
 	if strings.Contains(text, "stale numbers") || strings.Contains(text, "measured at mate merge") {
@@ -73,9 +73,9 @@ func TestRecordUsageAtCloseReplacesOnlyItsOwnSection(t *testing.T) {
 
 // Without a readable timeline the record says unknown and how to fill it,
 // rather than nothing.
-func TestRecordUsageAtCloseWritesUnknownWithoutATimeline(t *testing.T) {
-	w := liveCrewWorkspace(t, "shop")
-	line := recordUsageAtClose(context.Background(), w, "shop", "k3", "crew stop")
+func TestRecordAtCloseWritesUnknownWithoutATimeline(t *testing.T) {
+	w := newWorkspace(t, "shop")
+	line := RecordAtClose(context.Background(), w, "shop", "k3", "crew stop")
 	if !strings.HasPrefix(line, "learning: usage unknown (db: no timeline at ") {
 		t.Fatalf("line = %q", line)
 	}
@@ -89,14 +89,14 @@ func TestRecordUsageAtCloseWritesUnknownWithoutATimeline(t *testing.T) {
 }
 
 func TestUpsertLearningSectionAppendsWhenMissing(t *testing.T) {
-	path := liveCrewWorkspace(t, "shop").CrewLearning("shop", "k3")
-	if err := upsertLearningSection(path, "k3", learningUsageHeading, "first\n"); err != nil {
+	path := newWorkspace(t, "shop").CrewLearning("shop", "k3")
+	if err := UpsertLearningSection(path, "k3", LearningHeading, "first\n"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("# k3 learning\nLearning: none\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := upsertLearningSection(path, "k3", learningUsageHeading, "second\n"); err != nil {
+	if err := UpsertLearningSection(path, "k3", LearningHeading, "second\n"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)

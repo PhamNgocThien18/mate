@@ -67,8 +67,7 @@ func writeWhy(ctx context.Context, out io.Writer, w *store.Workspace, handle *db
 // WriteWhyHead is the `--why` page's head - the task, its run, the token
 // buckets, the call shape and the timing lanes - shared with the usage
 // section the app writes into a crew's learning record at its close
-// (CON-130, cmd/mate's usageBlock), so the two never say a number
-// differently.
+// (CON-130, usageBlock), so the two never say a number differently.
 func WriteWhyHead(out io.Writer, ledger dashboard.Task, turns []dashboard.Turn, perf diagnostics.Performance) {
 	if ledger.Text != "" {
 		fmt.Fprintf(out, "task: %s\n", oneLine(ledger.Text, whyTextWidth))
