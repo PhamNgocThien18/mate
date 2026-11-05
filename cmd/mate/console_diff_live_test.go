@@ -87,7 +87,7 @@ func TestLiveConsoleDiffShowsACrewBranch(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Minute)

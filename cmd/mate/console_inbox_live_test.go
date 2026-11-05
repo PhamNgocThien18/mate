@@ -89,7 +89,7 @@ func TestLiveConsoleInboxResolve(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Minute)
 	defer cancel()
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Minute)

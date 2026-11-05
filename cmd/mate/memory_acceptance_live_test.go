@@ -133,7 +133,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Minute)
 	defer cancel()
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer stopCancel()

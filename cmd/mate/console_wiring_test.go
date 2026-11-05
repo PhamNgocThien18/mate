@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/panerun"
@@ -61,6 +62,17 @@ func consoleFixture(t *testing.T, project string) (*store.Workspace, spawn.Deps)
 	return w, deps
 }
 
+// engineAction is how a test presses an action the way every UI does:
+// through an engine's Act (CON-231), the engine not started - Act needs
+// none of its loops - over w and deps, with the console's own actions as
+// its Options.Act for the ones it does not run itself yet (CON-232).
+func engineAction(t testing.TB, w *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
+	t.Helper()
+	engine := core.New(core.Options{Workspace: w, Spawn: deps, Act: engineActions(w, deps, nil)})
+	t.Cleanup(engine.Stop)
+	return engine.Act
+}
+
 // TestConsoleActionStartAndStopMoveTheMateMeta is the seam mvp.md task 09
 // replaced: before it, every Console action refused by naming a task. A
 // start through ActionFunc must write `mate.meta`'s agent and pane, and a
@@ -68,7 +80,7 @@ func consoleFixture(t *testing.T, project string) (*store.Workspace, spawn.Deps)
 // session id a later resume needs.
 func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	ctx := context.Background()
 
 	if meta, err := w.ReadMateMeta("shop"); err != nil || meta[spawn.MetaAgent] != "" {
@@ -117,7 +129,7 @@ func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
 // Console must show that refusal, not a reworded or swallowed one.
 func TestConsoleActionStartPropagatesTheSpawnErrorVerbatim(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	ctx := context.Background()
 
 	if _, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
@@ -136,7 +148,7 @@ func TestConsoleActionStartPropagatesTheSpawnErrorVerbatim(t *testing.T) {
 // it re-asks Herdr about the agent mate.meta names and reports the answer.
 func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	ctx := context.Background()
 
 	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionRepair, Target: "shop", TargetKind: "mate"})
@@ -166,7 +178,7 @@ func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
 // does not tell a reader when the first line might land in the Mate's pane.
 func TestConsoleActionModeTogglesTheAutoFlagAndTheLabel(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	ctx := context.Background()
 
 	// Auto is the default (CON-115); the first press holds manual, the
@@ -311,7 +323,7 @@ func (r *recordingColumns) of(role string) []panerun.Command {
 // `e`, so Enter neither opens nor closes it.
 func TestConsoleStageResolvesMateMeta(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	if _, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -342,7 +354,7 @@ func TestConsoleStageResolvesMateMeta(t *testing.T) {
 // server was lost to a machine restart).
 func TestConsoleStageRefusesAnAgentWhoseHerdrIsGone(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	deps.Runtime.(*runtime.Fake).SessionNotRunning = true
@@ -478,7 +490,7 @@ func TestConsoleStageShowsACrewFromItsMeta(t *testing.T) {
 // A column the captain closed is laid out again, once, and asked again.
 func TestConsoleStageRemakesAClosedColumn(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	rec := newRecordingColumns(t)
@@ -507,7 +519,7 @@ func (layoutFunc) Close(context.Context, ...string) error        { return nil }
 // the layout alone sees the pane and makes nothing.
 func TestConsoleStageRemakesAColumnWhoseRunnerDied(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	rec := newRecordingColumns(t)

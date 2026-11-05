@@ -222,7 +222,7 @@ func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
 			crew.Status, tail())
 	}
 
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	line, err := action(ctx, coreapi.ActionRequest{
 		Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})

@@ -73,7 +73,7 @@ func TestLiveRestartMateStowsFirst(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 
 	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: stowProject, TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {

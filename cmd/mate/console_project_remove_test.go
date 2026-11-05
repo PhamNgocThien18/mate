@@ -17,7 +17,7 @@ func TestConsoleRemoveProjectStopsAgentsThenUnregisters(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
-	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	line, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestConsoleRemoveProjectKeepsTheProjectWhenACrewRefuses(t *testing.T) {
 	runGitOrFatal(t, crew.Worktree, "add", "work.txt")
 	runGitOrFatal(t, crew.Worktree, "commit", "-q", "-m", "work")
 
-	_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	_, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project",
 	})
 	if err == nil || !strings.Contains(err.Error(), "crew k3") {
