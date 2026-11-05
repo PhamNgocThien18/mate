@@ -12,6 +12,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/usage"
 )
 
 // landWorkspace is mergeCLIWorkspace with what a hand-back turn has on
@@ -39,7 +40,7 @@ func landWorkspace(t *testing.T) (*store.Workspace, string, string) {
 	if err := os.WriteFile(w.BacklogFile("shop"), []byte(backlog), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := upsertLearningSection(w.CrewLearning("shop", "k3"), "k3", learningUsageHeading, "tokens: 1 total\n"); err != nil {
+	if err := usage.UpsertLearningSection(w.CrewLearning("shop", "k3"), "k3", usage.LearningHeading, "tokens: 1 total\n"); err != nil {
 		t.Fatal(err)
 	}
 	return w, root, shot
@@ -88,7 +89,7 @@ func TestCmdLandMergesAndRecordsEverythingInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"# k3 learning", "Source: SH-12: add a feature; branch mate/k3 merged as ", "Learning: captured (feature.txt @abc)", "## Predictions\nnone", learningUsageHeading + "\n", "measured at mate land"} {
+	for _, want := range []string{"# k3 learning", "Source: SH-12: add a feature; branch mate/k3 merged as ", "Learning: captured (feature.txt @abc)", "## Predictions\nnone", usage.LearningHeading + "\n", "measured at mate land"} {
 		if !strings.Contains(string(record), want) {
 			t.Fatalf("record lacks %q:\n%s", want, record)
 		}
@@ -159,7 +160,7 @@ func TestCmdLandLeavesTheTrackerToTheMateWithoutALandCommand(t *testing.T) {
 func TestCmdLandKeepsARecordTheMateWrote(t *testing.T) {
 	w, root, _ := landWorkspace(t)
 	t.Setenv("MATE_CALLER", "")
-	own := "# k3 learning\nSource: the Mate wrote this.\nLearning: follow-up\n- a real finding\n\n## Predictions\n1. a claim; baseline x; next check y — outcome: open\n\n" + learningUsageHeading + "\ntokens: 1 total\n"
+	own := "# k3 learning\nSource: the Mate wrote this.\nLearning: follow-up\n- a real finding\n\n## Predictions\n1. a claim; baseline x; next check y — outcome: open\n\n" + usage.LearningHeading + "\ntokens: 1 total\n"
 	if err := os.WriteFile(w.CrewLearning("shop", "k3"), []byte(own), 0o644); err != nil {
 		t.Fatal(err)
 	}

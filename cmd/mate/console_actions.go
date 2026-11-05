@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/usage"
 )
 
 // consoleAction is the Console's ActionFunc: the only bridge from the
@@ -146,7 +147,7 @@ func stopCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, r
 	}
 	line := res.CrewLine(req.Target, req.Crew)
 	if !res.AlreadyClosed {
-		line += "\n" + recordUsageAtClose(ctx, ws, req.Target, req.Crew, "console stop")
+		line += "\n" + usage.RecordAtClose(ctx, ws, req.Target, req.Crew, "console stop")
 	}
 	return line, nil
 }
@@ -275,7 +276,7 @@ func mergeCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 	if err != nil {
 		return "", err
 	}
-	return res.Line() + "\n" + recordUsageAtClose(ctx, ws, req.Target, req.Crew, "console merge"), nil
+	return res.Line() + "\n" + usage.RecordAtClose(ctx, ws, req.Target, req.Crew, "console merge"), nil
 }
 
 // toggleModeAction flips `mate/.auto` (mvp.md section 5). The flag is the
