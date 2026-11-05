@@ -57,6 +57,8 @@ type request struct {
 	News int `json:"news,omitempty"`
 	// Work is the work board row a work op is about.
 	Work int `json:"work,omitempty"`
+	// From is the REPL a set-draft comes from (Host.SetDraftBy).
+	From string `json:"from,omitempty"`
 }
 
 type response struct {
@@ -263,7 +265,7 @@ func (h *Host) answer(req request) response {
 	case OpSessions:
 		return response{OK: true, Sessions: h.Sessions()}
 	case OpSetDraft:
-		h.SetDraft(req.Text)
+		h.SetDraftBy(req.Text, req.From)
 		return response{OK: true}
 	case OpTakeLast:
 		text, ok := h.TakeLast()

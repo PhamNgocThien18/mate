@@ -1,6 +1,7 @@
 package matehost
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -149,13 +150,9 @@ func (m *Model) okayWork(list []Work, i int) {
 		m.note = "chỉ dòng đã xong mới OK được"
 		return
 	}
-	id, host := list[i].ID, m.host
+	id := list[i].ID
 	m.note = fmt.Sprintf("✓ đã OK việc #%d", id)
-	go func() {
-		if err := host.OkayWork(id); err != nil {
-			host.emitNote(err)
-		}
-	}()
+	m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.OkayWork(ctx, id)) })
 }
 
 // clickWork moves the cursor to the row at screen row y of the page.

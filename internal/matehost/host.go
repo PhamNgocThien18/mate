@@ -89,6 +89,11 @@ type Event struct {
 	Queue []string
 	// DraftCleared is set when the console dropped the captain's draft.
 	DraftCleared bool
+	// DraftSet is set when a REPL changed the draft (State.Draft); DraftBy
+	// is that REPL's id, so it can tell its own change from another's
+	// (CON-223: two REPLs of one Mate share the draft).
+	DraftSet bool
+	DraftBy  string
 	// News is every news, oldest first.
 	News []News
 	// Note is something the REPL should tell the captain.
@@ -183,8 +188,9 @@ func New(runner *Runner, opts Options) *Host {
 // HistoryPath is the history file of the Mate in mateDir.
 func HistoryPath(mateDir string) string { return filepath.Join(mateDir, HistoryName) }
 
-// Subscribe sets the one listener for events in this process: the REPL.
-// Clients of the socket subscribe there (OpSubscribe) instead.
+// Subscribe sets the one listener for events in this process. The REPL is
+// a client of the socket (OpSubscribe, CON-223); this is for tests and
+// for whatever else lives beside the host.
 func (h *Host) Subscribe(fn func(Event)) {
 	h.mu.Lock()
 	h.notify = fn
@@ -455,10 +461,17 @@ func (h *Host) Interrupt() bool {
 }
 
 // SetDraft records what the captain has typed and not sent.
-func (h *Host) SetDraft(text string) {
+func (h *Host) SetDraft(text string) { h.SetDraftBy(text, "") }
+
+// SetDraftBy is SetDraft from the REPL whose id is by. Every REPL hears of
+// it (Event.DraftSet), so one open beside it shows the same draft.
+func (h *Host) SetDraftBy(text, by string) {
 	h.mu.Lock()
 	h.draft = text
+	ev := h.eventLocked(nil)
+	ev.DraftSet, ev.DraftBy = true, by
 	h.mu.Unlock()
+	h.emit(ev)
 }
 
 // ClearDraft drops the captain's draft; the REPL picks it up as an event.
@@ -798,6 +811,9 @@ func (h *Host) ArchiveNews(id int) {
 	_ = newsOp(h.newsPath, newsEvent{At: h.now(), Op: opArchive, ID: id}, true)
 	h.RefreshNews()
 }
+
+// Warn tells every REPL err, as a note.
+func (h *Host) Warn(err error) { h.emitNote(err) }
 
 func (h *Host) emitNote(err error) {
 	h.mu.Lock()

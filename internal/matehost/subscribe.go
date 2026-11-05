@@ -216,6 +216,8 @@ type wireEvent struct {
 	Item         *wireItem     `json:"item,omitempty"`
 	Queue        []string      `json:"queue"`
 	DraftCleared bool          `json:"draft_cleared,omitempty"`
+	DraftSet     bool          `json:"draft_set,omitempty"`
+	DraftBy      string        `json:"draft_by,omitempty"`
 	News         []News        `json:"news"`
 	Note         string        `json:"note,omitempty"`
 	Focus        int           `json:"focus,omitempty"`
@@ -227,7 +229,7 @@ type wireEvent struct {
 
 // MarshalJSON writes ev in its wire form.
 func (ev Event) MarshalJSON() ([]byte, error) {
-	w := wireEvent{Item: toWireItemPtr(ev.Item), Queue: ev.Queue, DraftCleared: ev.DraftCleared, News: ev.News, Note: ev.Note,
+	w := wireEvent{Item: toWireItemPtr(ev.Item), Queue: ev.Queue, DraftCleared: ev.DraftCleared, DraftSet: ev.DraftSet, DraftBy: ev.DraftBy, News: ev.News, Note: ev.Note,
 		Focus: ev.Focus, Work: ev.Work, FocusWork: ev.FocusWork, State: ev.State}
 	if ev.Sessions != nil {
 		w.Sessions = make([]wireSession, len(ev.Sessions))
@@ -244,7 +246,7 @@ func (ev *Event) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
-	*ev = Event{Item: fromWireItemPtr(w.Item), Queue: w.Queue, DraftCleared: w.DraftCleared, News: w.News, Note: w.Note,
+	*ev = Event{Item: fromWireItemPtr(w.Item), Queue: w.Queue, DraftCleared: w.DraftCleared, DraftSet: w.DraftSet, DraftBy: w.DraftBy, News: w.News, Note: w.Note,
 		Focus: w.Focus, Work: w.Work, FocusWork: w.FocusWork, State: w.State}
 	if w.Sessions != nil {
 		ev.Sessions = make([]SessionInfo, len(w.Sessions))

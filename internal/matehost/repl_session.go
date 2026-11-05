@@ -1,6 +1,7 @@
 package matehost
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -44,16 +45,44 @@ func (m *Model) openSession(id int) {
 		m.note = fmt.Sprintf("#%d đã xong; không mở session nữa", id)
 		return
 	}
-	if err := m.host.OpenSession(id); err != nil {
-		m.note = err.Error()
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		return replyMsg{op: opOpenSession, id: id, err: c.OpenSession(ctx, id)}
+	})
+}
+
+// sessionOpened shows the session the host opened. Its event may come
+// after this answer: the view waits for it (sessionShown).
+func (m *Model) sessionOpened(r replyMsg) {
+	if r.err != nil {
+		m.note = r.err.Error()
 		return
 	}
-	m.selID = id
-	m.switchTo(viewSession, id)
+	m.selID = r.id
+	m.switchTo(viewSession, r.id)
 	m.scroll, m.unseen = 0, 0
-	if s, ok := m.findSession(id); ok {
+	s, ok := m.findSession(r.id)
+	m.sessionShown = ok
+	if ok {
 		m.seeSession(s)
 	}
+}
+
+// sessionAsked takes the host's answer to a question to session r.id:
+// asked, the composer that held it is emptied; refused, it stays.
+func (m *Model) sessionAsked(r replyMsg) {
+	if r.err != nil {
+		m.note = r.err.Error()
+		return
+	}
+	if m.mode != viewSession || m.openID != r.id || strings.TrimSpace(string(m.input)) != r.text {
+		return
+	}
+	m.setInput(nil)
+	m.scroll, m.editProposal = 0, false
+}
+
+func (m Model) closeSession(id int) {
+	m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.CloseSession(ctx, id)) })
 }
 
 // sessionKey is a key while a session is shown; handled is false for keys
@@ -64,13 +93,18 @@ func (m Model) sessionKey(k tea.KeyMsg) (Model, bool) {
 	case tea.KeyEsc:
 		m.leaveSession()
 	case tea.KeyCtrlX:
-		m.host.CloseSession(id)
+		m.closeSession(id)
 		m.note = fmt.Sprintf("đã đóng session của #%d; topic vẫn chờ trả lời · f mở lại", id)
 		m.leaveSession()
 	case tea.KeyCtrlC:
+		s, _ := m.findSession(id)
 		switch {
-		case m.host.InterruptSession(id):
+		case s.Busy():
 			m.note = "đang ngắt lượt của session…"
+			m.call(func(ctx context.Context, c Conn) tea.Msg {
+				ok, err := c.InterruptSession(ctx, id)
+				return replyMsg{op: opInterruptSession, id: id, ok: ok, err: err}
+			})
 		case len(m.input) > 0:
 			m.setInput(nil)
 		}
@@ -82,12 +116,9 @@ func (m Model) sessionKey(k tea.KeyMsg) (Model, bool) {
 		if text == "" {
 			return m, true
 		}
-		if err := m.host.AskSession(id, text); err != nil {
-			m.note = err.Error()
-			return m, true
-		}
-		m.setInput(nil)
-		m.scroll, m.editProposal = 0, false
+		m.call(func(ctx context.Context, c Conn) tea.Msg {
+			return replyMsg{op: opAskSession, id: id, text: text, err: c.AskSession(ctx, id, text)}
+		})
 	case tea.KeyCtrlS:
 		m.settle()
 	case tea.KeyUp:
@@ -121,7 +152,7 @@ func (m *Model) settle() {
 	m.setInput(nil)
 	m.leaveSession()
 	m.answer(id, text, "Đã chốt từ session")
-	m.host.CloseSession(id)
+	m.closeSession(id)
 }
 
 // seeSession marks what session s said so far as seen.

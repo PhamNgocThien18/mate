@@ -1,6 +1,7 @@
 package matehost
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,18 +11,17 @@ import (
 // sessionModel is newsModel with a host that can open sessions.
 func sessionModel(w, h int) Model {
 	m := newsModel(w, h)
-	m.host.forks = forkTurns{}
-	m.host.news = m.news
+	m.conn.(*fakeConn).forks = true
 	return m
 }
 
 // refresh gives the model the host's sessions, as its event would.
 func refresh(m *Model) {
-	m.host.mu.Lock()
-	ev := m.host.eventLocked(nil)
-	m.host.mu.Unlock()
-	ev.News = m.news
-	m.applyEvent(ev)
+	f := m.conn.(*fakeConn)
+	f.mu.Lock()
+	sessions := slices.Clone(f.sessions)
+	f.mu.Unlock()
+	m.applyEvent(Event{News: m.news, Work: m.work, Queue: m.queue, State: m.state, Sessions: sessions})
 }
 
 // The design's session (v2): f on a frame opens its session in the chat's
@@ -57,12 +57,12 @@ func TestREPLSession(t *testing.T) {
 		}
 
 		// A run in flight, with one exchange before it.
-		m.host.mu.Lock()
-		s := m.host.sessions[3]
-		s.fork = "ab12cd34"
-		s.items = []Item{{At: m.now(), Source: SourceCaptain, Text: "fallback nghĩa là gì?", Reply: "Nghĩa là theo **hệ thống** khi THEME trống.", Done: true, Tokens: 1500}}
-		s.cur = &Item{At: m.now(), Source: SourceCaptain, Text: "vậy a ổn chứ?", Tools: []ToolRecord{{Name: "Read", Detail: ".env.example", Started: m.now()}}}
-		m.host.mu.Unlock()
+		f := m.conn.(*fakeConn)
+		f.session(3, func(s *SessionInfo) {
+			s.Fork = "ab12cd34"
+			s.Items = []Item{{At: m.now(), Source: SourceCaptain, Text: "fallback nghĩa là gì?", Reply: "Nghĩa là theo **hệ thống** khi THEME trống.", Done: true, Tokens: 1500}}
+			s.Running = &Item{At: m.now(), Source: SourceCaptain, Text: "vậy a ổn chứ?", Tools: []ToolRecord{{Name: "Read", Detail: ".env.example", Started: m.now()}}}
+		})
 		refresh(&m)
 		live := fits(t, "running", m)
 		for _, want := range []string{"session s-ab12", "1.5k tok", "fallback nghĩa là gì?", "Nghĩa là theo hệ thống", "vậy a ổn chứ?", "session đang trả lời · Read: .env.example", "^C ngắt"} {
@@ -83,10 +83,10 @@ func TestREPLSession(t *testing.T) {
 		}
 
 		// Done while the captain is away: the frame says so until reopened.
-		m.host.mu.Lock()
-		s.items = append(s.items, Item{At: m.now(), Source: SourceCaptain, Text: "vậy a ổn chứ?", Reply: "Ổn.", Done: true})
-		s.cur = nil
-		m.host.mu.Unlock()
+		f.session(3, func(s *SessionInfo) {
+			s.Items = append(s.Items, Item{At: m.now(), Source: SourceCaptain, Text: "vậy a ổn chứ?", Reply: "Ổn.", Done: true})
+			s.Running = nil
+		})
 		refresh(&m)
 		if done := fits(t, "done", m); !strings.Contains(done, "● session") || !strings.Contains(done, "đã trả lời · f xem") {
 			t.Errorf("page@%d does not show the session's unseen reply:\n%s", w, done)

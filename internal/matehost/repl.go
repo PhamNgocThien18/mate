@@ -1,7 +1,8 @@
 package matehost
 
 import (
-	"os"
+	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,13 +39,32 @@ type Config struct {
 	Model string
 	// Crews counts the project's open crews, for the header; nil hides it.
 	Crews func() (int, error)
+	// Quit lets ^C on an empty composer, with no turn running, end the
+	// REPL. The host's own pane leaves it false: that pane stays open.
+	Quit bool
 }
 
 // Model is the REPL's bubbletea model.
 type Model struct {
-	host *Host
-	cfg  Config
-	now  func() time.Time
+	// conn reaches the host; calls runs what the REPL asks of it (caller).
+	conn  Conn
+	calls caller
+	// id names this REPL to the host, so it tells its own draft changes
+	// from another REPL's (Event.DraftBy).
+	id  string
+	cfg Config
+	now func() time.Time
+
+	// linked is whether the REPL is connected to its host; lost whether
+	// it was and is no longer, or never managed to.
+	linked, lost bool
+	// draftSent counts the drafts sent on this connection, draftHeard
+	// those the host has told back (or that failed): while some are on
+	// their way, another REPL's draft does not replace the one typed.
+	draftSent, draftHeard int
+	// sessionShown is set once the session the REPL shows was in an
+	// event; until then an event without it does not close the view.
+	sessionShown bool
 
 	items   []Item
 	running *Item
@@ -96,25 +116,28 @@ type Model struct {
 	workAll  bool
 }
 
-// NewModel shows history (oldest first) and then what the host does.
-func NewModel(host *Host, cfg Config, history []Item) Model {
-	return Model{host: host, cfg: cfg, now: time.Now, items: history, crews: -1}
+// NewModel shows history (oldest first) and then what the host does, on
+// conn. RunREPL gives it the caller its calls run on.
+func NewModel(conn Conn, cfg Config, history []Item) Model {
+	return Model{conn: conn, id: newClientID(), cfg: cfg, now: time.Now, items: history, crews: -1}
 }
 
-// Program runs the REPL; the host's events reach it through Send, behind a
-// queue so that a host call made from Update never waits on Update itself
-// (CON-121).
-func Program(m Model) *tea.Program {
-	// Mouse reporting makes the wheel scroll the view; without it the
-	// terminal turns the wheel into ↑/↓ keys.
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
-	if in := newSeqInput(os.Stdin); in != nil {
-		opts = append(opts, tea.WithInput(in))
+// call runs fn on the host without Update waiting for it; what it returns
+// comes back to Update.
+func (m Model) call(fn func(ctx context.Context, c Conn) tea.Msg) {
+	if m.conn == nil || m.calls == nil {
+		return
 	}
-	p := tea.NewProgram(m, opts...)
-	f := newForwarder(func(ev Event) { p.Send(hostMsg(ev)) })
-	m.host.Subscribe(f.Put)
-	return p
+	conn := m.conn
+	m.calls.Go(func(ctx context.Context) tea.Msg { return fn(ctx, conn) })
+}
+
+// noted is a call's error as a message for the captain; no error, none.
+func noted(err error) tea.Msg {
+	if err == nil {
+		return nil
+	}
+	return err
 }
 
 func (m Model) Init() tea.Cmd { return tea.Batch(tick(), m.readCrews(0)) }
@@ -146,6 +169,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.readCrews(crewsEvery)
 	case hostMsg:
 		m.apply(Event(msg))
+	case linkUpMsg:
+		m.connected(msg)
+	case linkDownMsg:
+		m.linked, m.lost = false, true
+	case replyMsg:
+		m.reply(msg)
 	case error:
 		m.note = msg.Error()
 	case tea.KeyMsg:
@@ -219,8 +248,9 @@ func (m *Model) applyEvent(ev Event) {
 	m.sessions = ev.Sessions
 	if m.mode == viewSession {
 		if s, ok := m.findSession(m.openID); ok {
+			m.sessionShown = true
 			m.seeSession(s)
-		} else {
+		} else if m.sessionShown {
 			// Closed for idling, or by the host stopping.
 			m.leaveSession()
 		}
@@ -230,6 +260,9 @@ func (m *Model) applyEvent(ev Event) {
 	}
 	if ev.DraftCleared {
 		m.setInput(nil)
+	}
+	if ev.DraftSet {
+		m.heardDraft(ev)
 	}
 	if ev.Focus > 0 {
 		m.help = false
@@ -248,10 +281,78 @@ func (m *Model) applyEvent(ev Event) {
 		return
 	}
 	m.running = nil
+	if m.hasItem(*it) {
+		// Read with the history on connecting (linkUpMsg).
+		return
+	}
 	m.items = append(m.items, *it)
 	if m.scroll > 0 && it.InChat() && m.mode == viewChat {
 		m.unseen++
 	}
+}
+
+// hasItem reports whether it is one of the last items shown already.
+func (m Model) hasItem(it Item) bool {
+	for i := len(m.items) - 1; i >= max(0, len(m.items)-replHistory); i-- {
+		if o := m.items[i]; o.At.Equal(it.At) && o.Source == it.Source && o.Text == it.Text {
+			return true
+		}
+	}
+	return false
+}
+
+// connected takes a connection to the host: its history in place of what
+// was shown, and its first event as how things stand. The draft typed
+// while the host was away stays and is sent to it; a REPL opened with an
+// empty composer takes the draft the host keeps.
+func (m *Model) connected(up linkUpMsg) {
+	m.linked, m.lost = true, false
+	m.draftSent, m.draftHeard = 0, 0
+	m.items = up.history
+	m.running = nil
+	m.sessionShown = true
+	m.apply(up.first)
+	m.scroll = min(m.scroll, m.maxScroll())
+	switch {
+	case len(m.input) > 0:
+		m.pushDraft()
+	case up.first.State.Draft != "" && m.mode == viewChat:
+		m.input = []rune(up.first.State.Draft)
+		m.cursor = len(m.input)
+	}
+}
+
+// heardDraft is a draft change the host told of. One this REPL made is
+// counted; another REPL's replaces the chat's composer, unless a draft
+// of this one's is still on its way, which the host will take last.
+func (m *Model) heardDraft(ev Event) {
+	if ev.DraftBy == m.id {
+		m.draftHeard = min(m.draftHeard+1, m.draftSent)
+		return
+	}
+	if m.draftHeard < m.draftSent || m.mode != viewChat || m.help {
+		return
+	}
+	if text := ev.State.Draft; text != string(m.input) {
+		m.input = []rune(text)
+		m.cursor = len(m.input)
+	}
+}
+
+// pushDraft sends the composer to the host as the captain's draft.
+func (m *Model) pushDraft() {
+	if !m.linked {
+		// Sent when the host is back (connected).
+		return
+	}
+	m.draftSent++
+	text, id := string(m.input), m.id
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		if err := c.SetDraft(ctx, text, id); err != nil {
+			return replyMsg{op: opDraft, err: err}
+		}
+		return nil
+	})
 }
 
 // InChat reports whether a finished item takes room in the chat: a
@@ -293,17 +394,19 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.insert('\n')
 	case tea.KeyCtrlC:
 		switch {
-		case m.host.Interrupt():
-			m.note = "đang ngắt lượt này…"
+		case m.state.Busy:
+			m.interrupt()
 		case !empty:
 			m.setInput(nil)
+		case m.cfg.Quit:
+			return m, tea.Quit
 		default:
 			m.note = "pane này luôn mở; dừng Mate từ console"
 		}
 		return m, nil
 	case tea.KeyEsc:
-		if m.host.Interrupt() {
-			m.note = "đang ngắt lượt này…"
+		if m.state.Busy {
+			m.interrupt()
 		}
 		return m, nil
 	case tea.KeyF1:
@@ -313,9 +416,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.retry()
 		return m, nil
 	case tea.KeyCtrlX:
-		if _, ok := m.host.TakeLast(); !ok {
-			m.note = "không có tin nào đang xếp hàng"
-		}
+		m.call(func(ctx context.Context, c Conn) tea.Msg {
+			_, ok, err := c.TakeLast(ctx)
+			return replyMsg{op: opTakeLast, ok: ok, err: err}
+		})
 		return m, nil
 	case tea.KeyUp:
 		if empty {
@@ -376,14 +480,28 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	m.host.SetDraft(string(m.input))
+	m.pushDraft()
 	return m, nil
+}
+
+// interrupt stops the Mate's turn in flight. The REPL knows one runs from
+// the host's last event; the host stops whichever runs when it gets this.
+func (m *Model) interrupt() {
+	m.note = "đang ngắt lượt này…"
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		_, err := c.Interrupt(ctx)
+		return noted(err)
+	})
 }
 
 // send hands the composer to the host: a turn now, or the queue.
 func (m *Model) send() {
 	text := strings.TrimSpace(string(m.input))
 	if text == "" {
+		return
+	}
+	if !m.linked {
+		m.note = offlineSend
 		return
 	}
 	m.setInput(nil)
@@ -395,7 +513,18 @@ func (m *Model) send() {
 		// Shown at once; the host's start event replaces it.
 		m.running = &Item{At: m.now(), Source: SourceCaptain, Text: text}
 	}
-	go m.host.Submit(text)
+	m.submit(text)
+}
+
+// submit hands text to the host; a message the host never got goes back
+// to the composer.
+func (m *Model) submit(text string) {
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		if err := c.Submit(ctx, text); err != nil {
+			return replyMsg{op: opSubmit, text: text, err: err}
+		}
+		return nil
+	})
 }
 
 // retry sends again a captain message whose turn failed.
@@ -408,8 +537,12 @@ func (m *Model) retry() {
 		m.note = "không có lượt lỗi nào để thử lại"
 		return
 	}
+	if !m.linked {
+		m.note = offlineSend
+		return
+	}
 	m.running = &Item{At: m.now(), Source: SourceCaptain, Text: last.Text}
-	go m.host.Submit(last.Text)
+	m.submit(last.Text)
 }
 
 // scrollBy scrolls the chat n lines up (down if n < 0), no further up
@@ -423,5 +556,64 @@ func (m *Model) scrollBy(n int) {
 
 func (m *Model) setInput(r []rune) {
 	m.input, m.cursor = r, len(r)
-	m.host.SetDraft(string(r))
+	m.pushDraft()
+}
+
+// What the REPL says while it is not connected to its host.
+const (
+	offlineNote = "mất kết nối với Mate, đang nối lại…"
+	offlineSend = "chưa nối được với Mate; tin vẫn nằm trong ô soạn"
+)
+
+// Calls whose answer the REPL acts on (replyMsg).
+const (
+	opDraft = iota + 1
+	opSubmit
+	opTakeLast
+	opOpenSession
+	opAskSession
+	opInterruptSession
+)
+
+// replyMsg is the host's answer to a call the REPL acts on.
+type replyMsg struct {
+	op   int
+	id   int
+	text string
+	ok   bool
+	err  error
+}
+
+// reply acts on the host's answer to a call, as the REPL acted on the Host
+// method's return when it called the host in its own process.
+func (m *Model) reply(r replyMsg) {
+	switch r.op {
+	case opDraft:
+		// Never told back: no longer on its way.
+		m.draftHeard = min(m.draftHeard+1, m.draftSent)
+	case opSubmit:
+		// The message shown at once (send) never started.
+		if it := m.running; it != nil && it.Text == r.text && it.Reply == "" && len(it.Tools) == 0 {
+			m.running = nil
+		}
+		m.note = fmt.Sprintf("Mate chưa nhận tin: %v", r.err)
+		if len(m.input) == 0 && m.mode == viewChat {
+			m.setInput([]rune(r.text))
+		}
+	case opTakeLast:
+		switch {
+		case r.err != nil:
+			m.note = r.err.Error()
+		case !r.ok:
+			m.note = "không có tin nào đang xếp hàng"
+		}
+	case opOpenSession:
+		m.sessionOpened(r)
+	case opAskSession:
+		m.sessionAsked(r)
+	case opInterruptSession:
+		if r.err != nil {
+			m.note = r.err.Error()
+		}
+	}
 }

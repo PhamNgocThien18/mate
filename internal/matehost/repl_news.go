@@ -1,6 +1,7 @@
 package matehost
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"sort"
@@ -173,7 +174,7 @@ func (m *Model) openTopic(id int) {
 	m.selID = id
 	m.switchTo(viewTopics, id)
 	if n.Status == NewsNew {
-		go m.host.SeenNews(id)
+		m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.SeenNews(ctx, id)) })
 	}
 }
 
@@ -282,12 +283,7 @@ func (m *Model) flush() {
 	}
 	m.pending = nil
 	m.confirm, m.confirmAt = fmt.Sprintf("✓ #%d đã trả lời · Mate đang xử lý", p.id), m.now()
-	host := m.host
-	go func() {
-		if err := host.AnswerNews(p.id, p.text); err != nil {
-			host.emitNote(err)
-		}
-	}()
+	m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.AnswerNews(ctx, p.id, p.text)) })
 }
 
 // tickNews sends an answer whose undo delay is over.
