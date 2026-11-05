@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/creack/pty"
 	"github.com/nguyenngocanh94/mate/internal/observability"
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"golang.org/x/sys/unix"
 )
 
@@ -109,7 +110,7 @@ func (h *Herdr) Open(ctx context.Context, ref AgentSessionRef, size TerminalSize
 }
 
 // startRawPTY is pty.StartWithSize with the terminal made raw before the
-// child starts. Raw mode set after the start races the child's first write:
+// child starts, and the start left to platform.StartOnTerminal. Raw mode set after the start races the child's first write:
 // a fast child's "\n" reaches the master as "\r\n" (CON-182 caught it on Linux).
 func startRawPTY(cmd *exec.Cmd, size *pty.Winsize) (*os.File, error) {
 	master, tty, err := pty.Open()
@@ -126,8 +127,7 @@ func startRawPTY(cmd *exec.Cmd, size *pty.Winsize) (*os.File, error) {
 		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach PTY raw mode", err)
 	}
 	cmd.Stdin, cmd.Stdout = tty, tty
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
-	if err := cmd.Start(); err != nil {
+	if err := platform.StartOnTerminal(cmd); err != nil {
 		_ = master.Close()
 		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach failed to start", err)
 	}

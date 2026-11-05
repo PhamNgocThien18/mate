@@ -15,8 +15,8 @@ const errNoSignal unsupported = "signalling a process is not supported"
 // could reach the processes it starts.
 const errNoGroup unsupported = "starting a command in a new process group is not supported"
 
-// errNoSession is StartNewSession's: the command is not started, since it
-// could not outlive this process's terminal.
+// errNoSession is StartNewSession's and StartOnTerminal's: the command is not
+// started, since it could not get a session of its own.
 const errNoSession unsupported = "starting a command in a new session is not supported"
 
 func Signal(int, syscall.Signal) error { return errNoSignal }
@@ -26,3 +26,5 @@ func SignalGroup(int, syscall.Signal) error { return errNoSignal }
 func StartNewGroup(*exec.Cmd) error { return errNoGroup }
 
 func StartNewSession(*exec.Cmd) error { return errNoSession }
+
+func StartOnTerminal(*exec.Cmd) error { return errNoSession }

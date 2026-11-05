@@ -77,8 +77,8 @@ func TestPiMCPConfigIgnoresGlobal(t *testing.T) {
 }
 
 // requireNode skips a test that runs the extension under node when node is not
-// on PATH. expected-skips.txt allows that skip on linux only: the golang image
-// make check-linux uses has no node. A Mac without node still fails make check.
+// on PATH. expected-skips.txt allows that skip on linux only, until the image
+// make check-linux uses has node (CON-219). A Mac without node still fails.
 func requireNode(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("node"); err != nil {

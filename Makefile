@@ -65,7 +65,9 @@ vet-linux:
 # caller, so files the tests leave in the repo are not owned by root; a fresh
 # volume belongs to root, so a root helper hands it to the caller first. HOME
 # is an empty tmpfs outside /tmp: tests treat a home under the temp directory
-# as a lab home, not the operator's.
+# as a lab home, not the operator's. GOTOOLCHAIN=local keeps a run from
+# fetching a toolchain; -buildvcs=false because a worktree's .git file points
+# outside the mount.
 DOCKER ?= docker
 LINUX_GO_IMAGE ?= golang:1.27
 LINUX_GOMODCACHE_VOLUME ?= mate-linux-gomodcache

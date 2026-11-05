@@ -52,3 +52,12 @@ func StartNewSession(cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd.Start()
 }
+
+// StartOnTerminal starts cmd as the leader of a new session whose controlling
+// terminal is cmd.Stdin, the far end of a pseudo-terminal the caller set up:
+// the command gets that terminal's signals and hangup, not this process's.
+// It sets cmd.SysProcAttr, replacing what was there.
+func StartOnTerminal(cmd *exec.Cmd) error {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	return cmd.Start()
+}

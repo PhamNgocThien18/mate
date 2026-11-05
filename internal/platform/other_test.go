@@ -48,7 +48,7 @@ func TestEveryCallRefusesOffTheList(t *testing.T) {
 	}
 	refused("Signal", platform.Signal(os.Getpid(), 0))
 	refused("SignalGroup", platform.SignalGroup(os.Getpid(), syscall.SIGTERM))
-	for call, start := range map[string]func(*exec.Cmd) error{"StartNewGroup": platform.StartNewGroup, "StartNewSession": platform.StartNewSession} {
+	for call, start := range map[string]func(*exec.Cmd) error{"StartNewGroup": platform.StartNewGroup, "StartNewSession": platform.StartNewSession, "StartOnTerminal": platform.StartOnTerminal} {
 		cmd := exec.Command("true")
 		refused(call, start(cmd))
 		if cmd.Process != nil {

@@ -60,8 +60,8 @@ var platformAdapters = []platformEntry{
 		reason: "starts the Herdr server in a session of its own; the command is built, and its attributes tested, apart from its start, which platform.StartNewSession does in one call",
 	},
 	{
-		file: "internal/runtime/herdr_session_stream.go", uses: []string{`import "github.com/creack/pty"`, `import "golang.org/x/sys/unix"`, "syscall.Kill", "Setsid"},
-		reason: "runs a Herdr session stream on a pseudo-terminal and polls it; it starts the attach client itself, Setsid and Setctty as pty.StartWithSize would, so the terminal is raw before the child can write (CON-182); its syscall.Kill on the stream's process group could be platform.SignalGroup, debt left in a file CON-184 does not touch (CON-190 moves it)",
+		file: "internal/runtime/herdr_session_stream.go", uses: []string{`import "github.com/creack/pty"`, `import "golang.org/x/sys/unix"`, "syscall.Kill"},
+		reason: "runs a Herdr session stream on a pseudo-terminal and polls it; its syscall.Kill on the stream's process group could be platform.SignalGroup, debt left in a file CON-184 does not touch (CON-190 moves it)",
 	},
 }
 
