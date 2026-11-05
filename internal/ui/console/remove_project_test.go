@@ -3,6 +3,8 @@ package console
 import (
 	"strings"
 	"testing"
+
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 )
 
 // The Project row's Actions menu offers `Remove project…`; it asks first,
@@ -17,7 +19,7 @@ func TestRemoveProjectEntryAsksThenRunsOnY(t *testing.T) {
 		t.Fatalf("project row menu has no Remove project entry:\n%s", view)
 	}
 	m, cmd := send(t, m, key("x"))
-	if cmd != nil || m.actions.confirm == nil || m.actions.confirm.choice.action != ActionRemoveProject || len(*got) != 0 {
+	if cmd != nil || m.actions.confirm == nil || m.actions.confirm.choice.action != coreapi.ActionRemoveProject || len(*got) != 0 {
 		t.Fatalf("x must open the confirmation without running: cmd=%v confirm=%+v calls=%d", cmd != nil, m.actions.confirm, len(*got))
 	}
 	flat := actFlat(renderFrame(t, m))
@@ -39,7 +41,7 @@ func TestRemoveProjectEntryAsksThenRunsOnY(t *testing.T) {
 	if len(*got) != 1 {
 		t.Fatalf("runner calls = %d, want one", len(*got))
 	}
-	if req := (*got)[0]; req.Action != ActionRemoveProject || req.Target != sampleTree().Projects[0].ProjectID || req.TargetKind != "project" {
+	if req := (*got)[0]; req.Action != coreapi.ActionRemoveProject || req.Target != sampleTree().Projects[0].ProjectID || req.TargetKind != "project" {
 		t.Fatalf("request = %+v", req)
 	}
 	if !strings.Contains(m.msg.text, "removed") {

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -19,8 +20,8 @@ import (
 
 // blockingAction reports the context it was called with on started, then
 // blocks until release - a saga still running when the operator leaves.
-func blockingAction(started chan<- context.Context, release <-chan struct{}) ActionFunc {
-	return func(ctx context.Context, _ ActionRequest) (string, error) {
+func blockingAction(started chan<- context.Context, release <-chan struct{}) coreapi.ActionFunc {
+	return func(ctx context.Context, _ coreapi.ActionRequest) (string, error) {
 		started <- ctx
 		<-release
 		return "", ctx.Err()
@@ -30,7 +31,7 @@ func blockingAction(started chan<- context.Context, release <-chan struct{}) Act
 // confirmAndRunStop drives the Console to a confirmed, running stop on the
 // sample tree's active crew and returns the Cmd runAction queued; the
 // caller runs it (in a goroutine, since the ActionFunc blocks).
-func confirmAndRunStop(t *testing.T, action ActionFunc) (Model, tea.Cmd) {
+func confirmAndRunStop(t *testing.T, action coreapi.ActionFunc) (Model, tea.Cmd) {
 	t.Helper()
 	m := New(func(context.Context) (query.Snapshot, error) { return sampleTree(), nil }, action)
 	m.p = plainPalette()
@@ -130,7 +131,7 @@ func TestActionRunsUnderAContextThatWithContextControls(t *testing.T) {
 	base := context.WithValue(context.Background(), ctxKey{}, "program-owned")
 	seen := make(chan context.Context, 1)
 	m := New(func(context.Context) (query.Snapshot, error) { return sampleTree(), nil },
-		func(ctx context.Context, _ ActionRequest) (string, error) {
+		func(ctx context.Context, _ coreapi.ActionRequest) (string, error) {
 			seen <- ctx
 			return "", nil
 		}).WithContext(base)

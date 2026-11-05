@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The message box's three actions (mvp.md task 15, section 5), bridged from
@@ -61,7 +61,7 @@ const peekLines = 40
 // in the same words as before - so the box never shows the Mate a message no
 // agent received. The same inbox entry assigned twice is queued once
 // (req.Key, query.BoxEntry.AssignKey), and the answer says when it was.
-func boxResolveAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func boxResolveAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	resolve := strings.TrimSpace(req.Input)
 	if resolve == "" {
 		return "", observability.NewError(observability.CodeUsage, "no resolve line was built for this entry")
@@ -140,7 +140,7 @@ func refusalReason(err error) string {
 // No marker byte: this line is the user's, not the app's (mvp.md section 4 -
 // "Ai đó gõ một dòng trả lời vào pane crew"), and to the crew it is simply a
 // new prompt. It is recorded with Source: user for the same reason.
-func boxReplyAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func boxReplyAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	text := strings.TrimSpace(req.Input)
 	if text == "" {
 		return "", observability.NewError(observability.CodeUsage, "a reply is one non-empty line")
@@ -170,7 +170,7 @@ func boxReplyAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, r
 // for the overlay. It writes nothing - not to the pane, not to sent.log -
 // because looking at a screen is not communication, and a peek in the box
 // would be a record of the reader rather than of the crew.
-func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage, "no crew was named for the peek")
 	}
@@ -209,7 +209,7 @@ func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, re
 // start proceeds, which is exactly the case a reader reaching for a restart
 // is most often in. The returned line names every step, so the outcome line
 // says what actually happened rather than only that something did.
-func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest, holds *restartHolds) (string, error) {
+func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest, holds *restartHolds) (string, error) {
 	if req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage, "no Project was named for the restart")
 	}
@@ -306,7 +306,7 @@ func (h *restartHolds) take(project string, now time.Time) bool {
 // state nobody can classify. Nothing is typed, nothing is submitted and
 // nothing is recorded in sent.log - a keypress that removes half-typed text
 // is not a message the Mate was sent.
-func clearComposerAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func clearComposerAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage, "no Project was named for the composer clear")
 	}

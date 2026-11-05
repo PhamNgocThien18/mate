@@ -6,10 +6,12 @@
 // stays on the tree.
 //
 // This package must never import internal/persistence, internal/runtime or
-// internal/host, and must never call Herdr. It only knows internal/query's
-// read types and caller-supplied seams: LoadFunc (how to re-read the tree),
-// ActionFunc (how to invoke application services for start/stop/resume/
-// retry/repair/discard/onboard), StageFunc (stage.go: show an agent in the
+// internal/host, and must never call Herdr. It reaches the core only
+// through internal/coreapi's contract, never internal/core, its socket
+// client or the dashboard. It only knows internal/query's read types and
+// caller-supplied seams: coreapi.LoadFunc (how to re-read the tree),
+// coreapi.ActionFunc (how to invoke application services for start/stop/
+// resume/retry/repair/discard/onboard), StageFunc (stage.go: show an agent in the
 // next pane), CommandViewFunc (a tool key of Snapshot.Commands - `e`, the crew's
 // report - in a tab beside the Console) and ClipboardFunc (OSC 52 for y). The CLI layer in cmd/mate is
 // the only place those seams are built, which is where the persistence,

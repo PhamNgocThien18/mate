@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/host"
@@ -18,7 +19,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // consoleAction is the Console's ActionFunc: the only bridge from the
@@ -29,18 +29,18 @@ import (
 // step refused and what it observed, and rewording it here would lose the
 // Herdr detail the operator needs. Nothing returns a success it did not
 // establish: an action mvp.md has not reached yet refuses by name.
-func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
+func consoleAction(ws *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
 	holds := newRestartHolds()
-	return func(ctx context.Context, req console.ActionRequest) (string, error) {
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 		switch req.Action {
-		case console.ActionStart, console.ActionResume:
+		case coreapi.ActionStart, coreapi.ActionResume:
 			return startMateAction(ctx, ws, deps, req)
-		case console.ActionOnboard:
+		case coreapi.ActionOnboard:
 			if req.TargetKind == "workspace" {
 				return addProjectAction(ws, req)
 			}
 			return startMateAction(ctx, ws, deps, req)
-		case console.ActionStop:
+		case coreapi.ActionStop:
 			if req.TargetKind == "crew" {
 				return stopCrewAction(ctx, ws, deps, req)
 			}
@@ -56,7 +56,7 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 				return fmt.Sprintf("Mate %s was already gone; mate.meta cleared", res.Agent), nil
 			}
 			return fmt.Sprintf("Mate %s stop confirmed in session %s", res.Agent, res.Session), nil
-		case console.ActionRepair:
+		case coreapi.ActionRepair:
 			// `mate status` is the repair: it re-asks Herdr about the agent
 			// mate.meta names and reports what it found. It never rewrites
 			// the meta, so the one line it returns is an observation, not a
@@ -70,31 +70,31 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 				return "", err
 			}
 			return status.Line(), nil
-		case console.ActionMode:
+		case coreapi.ActionMode:
 			return toggleModeAction(ws, req.Target)
-		case console.ActionResolve:
+		case coreapi.ActionResolve:
 			return boxResolveAction(ctx, ws, deps, req)
-		case console.ActionReply:
+		case coreapi.ActionReply:
 			return boxReplyAction(ctx, ws, deps, req)
-		case console.ActionPeek:
+		case coreapi.ActionPeek:
 			return boxPeekAction(ctx, ws, deps, req)
-		case console.ActionDiff:
+		case coreapi.ActionDiff:
 			return crewDiffAction(ctx, ws, req)
-		case console.ActionRestartMate:
+		case coreapi.ActionRestartMate:
 			return restartMateAction(ctx, ws, deps, req, holds)
-		case console.ActionRestartCrew:
+		case coreapi.ActionRestartCrew:
 			return relaunchCrewAction(ctx, ws, deps, req)
-		case console.ActionClearComposer:
+		case coreapi.ActionClearComposer:
 			return clearComposerAction(ctx, ws, deps, req)
-		case console.ActionRemoveProject:
+		case coreapi.ActionRemoveProject:
 			return removeProjectAction(ctx, ws, deps, req)
-		case console.ActionMerge:
+		case coreapi.ActionMerge:
 			return mergeCrewAction(ctx, ws, deps, req)
-		case console.ActionOpenNews:
+		case coreapi.ActionOpenNews:
 			return openNewsAction(ws, req)
-		case console.ActionOkayWork:
+		case coreapi.ActionOkayWork:
 			return okayWorkAction(ws, req)
-		case console.ActionOpenWork:
+		case coreapi.ActionOpenWork:
 			return openWorkAction(ws, req)
 		default:
 			return "", observability.NewError(observability.CodeUsage,
@@ -110,13 +110,13 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) console.ActionFunc {
 // neither WezTerm nor Ghostty) has no column to show a pane Mate in, so
 // there every TUI request is HeadlessOnly; a page's request says so itself
 // (dashboardActionRequest).
-func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client, h host.Host) (tui, web console.ActionFunc) {
+func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client, h host.Host) (tui, web coreapi.ActionFunc) {
 	web = consoleAction(ws, deps)
 	if noticeClient != nil {
 		web = consoleNoticeAction(ws, deps, noticeClient, web)
 	}
 	headlessOnly := h == nil
-	tui = func(ctx context.Context, req console.ActionRequest) (string, error) {
+	tui = func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 		req.HeadlessOnly = headlessOnly
 		return web(ctx, req)
 	}
@@ -128,7 +128,7 @@ func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice
 // words. It never discards: unlanded work is refused before anything
 // changes, and throwing work away stays a deliberate `--discard` on the
 // command line.
-func stopCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func stopCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" || req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage,
 			"stop crew needs both a Project and one of its Crews; the request named "+req.Target+"/"+req.Crew)
@@ -150,7 +150,7 @@ func stopCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, r
 // workspace.yaml. Like addProjectAction it works on a store it opens itself,
 // because RemoveProject saves the whole config and the console's own copy
 // may be older than the file.
-func removeProjectAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func removeProjectAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" || req.TargetKind != "project" {
 		return "", observability.NewError(observability.CodeUsage,
 			fmt.Sprintf("remove project needs a Project; the request named %s %q", req.TargetKind, req.Target))
@@ -173,7 +173,7 @@ func removeProjectAction(ctx context.Context, ws *store.Workspace, deps spawn.De
 // the command line report one event in the same words, and it passes no
 // note: the console has no place to type one, and the crew's `.status` file
 // already carries what it said before the pane died.
-func relaunchCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func relaunchCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" || req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage,
 			"restart crew needs both a Project and one of its Crews; the request named "+req.Target+"/"+req.Crew)
@@ -197,7 +197,7 @@ func relaunchCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Dep
 // It takes no spawn.Deps because it asks Herdr nothing. A diff is git and
 // the workspace's own files, and a crew whose agent is gone still has a
 // branch worth reading.
-func crewDiffAction(ctx context.Context, ws *store.Workspace, req console.ActionRequest) (string, error) {
+func crewDiffAction(ctx context.Context, ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" || req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage,
 			"diff needs both a Project and a Crew; the Console sent "+
@@ -209,7 +209,7 @@ func crewDiffAction(ctx context.Context, ws *store.Workspace, req console.Action
 // startMateAction starts the Mate of one Project. The harness is whatever
 // the Console's picker chose; an empty one is not an error but "no choice
 // was made", which StartMate reads as the workspace default.
-func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage, "no Project was named for "+string(req.Action))
 	}
@@ -219,7 +219,7 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 	}
 	// Resume is the 's' on a stopped Mate: the conversation recorded in
 	// mate.meta comes back, or a fresh one starts with a note saying why.
-	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Harness: kind, Resume: req.Action == console.ActionResume, HeadlessOnly: req.HeadlessOnly})
+	res, err := spawn.StartMate(ctx, ws, deps, spawn.StartRequest{Project: req.Target, Harness: kind, Resume: req.Action == coreapi.ActionResume, HeadlessOnly: req.HeadlessOnly})
 	if err != nil {
 		return "", err
 	}
@@ -255,7 +255,7 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 // The line it returns is the command's own one line, so the console and
 // `mate merge` report the same event in the same words, and a refusal is
 // propagated verbatim for the reason every other branch here does.
-func mergeCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req console.ActionRequest) (string, error) {
+func mergeCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" || req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage,
 			"merge needs both a Project and one of its Crews; the request named "+req.Target+"/"+req.Crew)
@@ -321,7 +321,7 @@ func consoleHarness(kind query.HarnessKind) (harness.Kind, error) {
 // one: the snapshot loader re-reads workspace.yaml into that one on every
 // refresh, from another goroutine, and the next refresh picks the new
 // Project up from disk anyway.
-func addProjectAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+func addProjectAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	name, repo := strings.TrimSpace(req.Input), strings.TrimSpace(req.Repo)
 	if name == "" {
 		return "", observability.NewError(observability.CodeUsage, "project name is required")
@@ -355,7 +355,7 @@ func addProjectAction(ws *store.Workspace, req console.ActionRequest) (string, e
 // openNewsAction is Enter on a news in the box (CON-86): it asks the
 // Project's headless Mate REPL to open the news, which the console stages
 // beside it. It writes the request and nothing else.
-func openNewsAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+func openNewsAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	id, err := strconv.Atoi(req.Input)
 	if err != nil || id <= 0 || req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage,
@@ -373,7 +373,7 @@ func openNewsAction(ws *store.Workspace, req console.ActionRequest) (string, err
 // openWorkAction is `w` on a Mate or Project row (CON-198): the Mate's
 // REPL shows its work board as a page. A Mate that does not run headless
 // has no REPL to ask, and the console shows its own sheet.
-func openWorkAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+func openWorkAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	if req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage, "open work needs a Project")
 	}
@@ -381,7 +381,7 @@ func openWorkAction(ws *store.Workspace, req console.ActionRequest) (string, err
 		return "", err
 	}
 	if !ws.MateHeadless(req.Target) {
-		return "", console.ErrNoMateREPL
+		return "", coreapi.ErrNoMateREPL
 	}
 	if err := matehost.RequestWorkFocus(ws.MateDir(req.Target), time.Now()); err != nil {
 		return "", err
@@ -392,7 +392,7 @@ func openWorkAction(ws *store.Workspace, req console.ActionRequest) (string, err
 // okayWorkAction is the captain's tick on a done row of the work board
 // (CON-158): Space on it in the console's work sheet. The tick is final;
 // the row leaves the board and the Mate is never waiting on it.
-func okayWorkAction(ws *store.Workspace, req console.ActionRequest) (string, error) {
+func okayWorkAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	id, err := strconv.Atoi(req.Input)
 	if err != nil || id <= 0 || req.Target == "" {
 		return "", observability.NewError(observability.CodeUsage,

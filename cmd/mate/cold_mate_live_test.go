@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
@@ -101,8 +102,8 @@ func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 
 	// 1. The Mate, through the Console's own action seam. Nothing is typed
 	// into it here or anywhere below: that is the whole point.
-	startOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	startOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("console start action: %v", err)
 	}
@@ -184,8 +185,8 @@ func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	}
 
 	// 5. The very first action on this Mate. It must not be refused.
-	resolveOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionResolve, Target: "shop", TargetKind: "project",
+	resolveOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project",
 		Crew: ask.Crew, Input: ask.Resolve})
 	if err != nil {
 		t.Fatalf("[assign] on a cold Mate: %v\nmate pane:\n%s", err, screen)
@@ -216,7 +217,7 @@ func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	if _, err := spawn.StopCrew(ctx, w, deps, "shop", "k3", true); err != nil {
 		t.Fatalf("StopCrew: %v", err)
 	}
-	stopOut, err := action(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"})
+	stopOut, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("console stop action: %v", err)
 	}

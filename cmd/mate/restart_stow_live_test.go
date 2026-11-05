@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -15,7 +16,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestLiveRestartMateStowsFirst is task 37's B7 proof: a Claude Mate is told
@@ -75,7 +75,7 @@ func TestLiveRestartMateStowsFirst(t *testing.T) {
 	defer cancel()
 	action := consoleAction(w, deps)
 
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: stowProject, TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: stowProject, TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestLiveRestartMateStowsFirst(t *testing.T) {
 	}
 
 	started := time.Now()
-	out, err = action(ctx, console.ActionRequest{Action: console.ActionRestartMate, Target: stowProject, TargetKind: "project"})
+	out, err = action(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: stowProject, TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("restart: %v\n%s", err, evidence())
 	}

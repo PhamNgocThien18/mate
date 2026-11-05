@@ -15,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -102,11 +103,11 @@ func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 		t.Fatalf("write workspace.yaml: %v", err)
 	}
 
-	var got []console.ActionRequest
+	var got []coreapi.ActionRequest
 	load := func(ctx context.Context) (query.Snapshot, error) {
 		return query.Load(ctx, ws, consoleHarnesses(), nil)
 	}
-	act := func(_ context.Context, req console.ActionRequest) (string, error) {
+	act := func(_ context.Context, req coreapi.ActionRequest) (string, error) {
 		got = append(got, req)
 		return "ok", nil
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -160,7 +161,7 @@ func TestClickOnAssignAssignsAndTheRestOfTheItemShowsTheCrew(t *testing.T) {
 		t.Fatal("[assign] ran nothing")
 	}
 	cmd()
-	if len(act.reqs) != 1 || act.reqs[0].Action != ActionResolve || len(spy.calls) != 0 {
+	if len(act.reqs) != 1 || act.reqs[0].Action != coreapi.ActionResolve || len(spy.calls) != 0 {
 		t.Fatalf("[assign]: reqs=%+v stage=%+v, want one resolve and no show", act.reqs, spy.calls)
 	}
 
@@ -232,12 +233,15 @@ func TestMotionIsNotAClick(t *testing.T) {
 // A click on a harness row is Enter on it: the picker creates the Mate
 // with the harness clicked, like the actions sheet runs the row clicked.
 func TestClickOnAHarnessRowPicksIt(t *testing.T) {
-	var got []ActionRequest
+	var got []coreapi.ActionRequest
 	tree := sampleTree()
 	tree.Projects[0].Mate = absentMate("this project has no designated Mate")
 	tree.AsOf = goldenAsOf
 	m := New(func(context.Context) (query.Snapshot, error) { return tree, nil },
-		func(_ context.Context, req ActionRequest) (string, error) { got = append(got, req); return "", nil })
+		func(_ context.Context, req coreapi.ActionRequest) (string, error) {
+			got = append(got, req)
+			return "", nil
+		})
 	m.p = plainPalette()
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: 40, Height: 36})
 	m, _ = send(t, m, m.Init()())

@@ -44,6 +44,15 @@ var forbiddenImports = []string{
 	// query.BoxEntry.Assigned; it never reaches the sender itself.
 	"github.com/nguyenngocanh94/mate/internal/outbox",
 	"github.com/nguyenngocanh94/mate/internal/host",
+	// The Console asks the core for everything through internal/coreapi's
+	// contract (CON-206), and whatever implements it is the caller's: the
+	// core's engine (internal/core) and the client of its socket
+	// (internal/coreclient) are never imported here, so the Console runs
+	// the same against either. internal/dashboard is another UI of the
+	// same core, beside the Console rather than under it.
+	"github.com/nguyenngocanh94/mate/internal/core",
+	"github.com/nguyenngocanh94/mate/internal/coreclient",
+	"github.com/nguyenngocanh94/mate/internal/dashboard",
 }
 
 func TestConsoleImportsNeitherStoreNorRuntime(t *testing.T) {

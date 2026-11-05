@@ -7,164 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
-
-// LoadFunc reads the current navigation tree. Called once at startup, again
-// on every manual refresh ('r'), and every treeTickInterval in the
-// background (treeTickCmd) so the crew list, statuses and Mate state do not
-// go stale between keystrokes. The header says "live · HH:MM:SS" for the
-// time of the last successful load, or "stale · HH:MM:SS · <error>" when
-// the most recent background load failed - the picture on screen is always
-// exactly what the last successful read said, never a guess at what
-// changed since.
-type LoadFunc func(context.Context) (query.Snapshot, error)
-
-// Action identifies a Console action. The UI owns only the interaction and
-// passes the request to the CLI/application bridge; it never imports either
-// persistence or runtime.
-type Action string
-
-const (
-	ActionStart  Action = "start"
-	ActionStop   Action = "stop"
-	ActionResume Action = "resume"
-	ActionRepair Action = "repair"
-	// ActionMode flips a Project's communication mode (mvp.md section 5).
-	// Today it only moves the flag and the label: the daemon that acts on
-	// auto mode is mvp.md task 19, which is why the key line says "Mode"
-	// and not "Auto reply".
-	ActionMode Action = "mode"
-	// ActionOnboard adds a Project to the workspace, or creates and starts
-	// a Project's Mate.
-	ActionOnboard Action = "onboard"
-	// The message-box actions (mvp.md task 15, section 5). They act on a box
-	// entry rather than on a snapshot row, which is why ActionRequest
-	// carries a Crew of its own: the entry names a crew, and the Project
-	// frame's selected row usually does not.
-	//
-	// ActionResolve hands one inbox item to the Mate as a `resolve:` line,
-	// typed into its composer behind the from-app sentinel: the crew's
-	// question, the status file to read, and the `mate send` that answers
-	// the crew. It is the console's `[assign]` button and `a` key - the word
-	// on the button is the reader's ("give this away"), the word on the wire
-	// is the Mate's manual's, and they are deliberately not the same.
-	//
-	// ActionReply and ActionPeek are the CLI's, not the console's: no
-	// console surface issues either one since 2026-09-19 - a reader who
-	// wants to talk to a crew or read its screen opens that crew's pane,
-	// which is what a box row now does. They stay in the enum because
-	// cmd/mate implements them and an ActionFunc is free to be asked.
-	ActionResolve Action = "resolve"
-	ActionReply   Action = "reply"
-	ActionPeek    Action = "peek"
-	// ActionNotice asks the optional classifier for an advisory only.
-	ActionNotice Action = "explain_notice"
-	// The two recovery actions. They exist because a Mate is a live
-	// interactive agent sharing its composer with the reader: a key
-	// sequence that went astray can leave junk half-typed in it, and an
-	// agent can wedge outright. Both are entries in the Mate row's Actions
-	// menu (actions.go), which the box zone opens with `o`: they are rare,
-	// and a menu is where a reader looks for something they do not do every
-	// day.
-	//
-	// ActionRestartMate stops the Mate and starts it again through the same
-	// seams the action menu uses. ActionClearComposer presses Ctrl+U in the
-	// Mate's pane - it types nothing and sends nothing, so it can never
-	// become a message the Mate answers.
-	ActionRestartMate   Action = "restart_mate"
-	ActionClearComposer Action = "clear_composer"
-	// ActionDiff is a Crew row's review surface (mvp.md task 21): what
-	// `mate diff <project> <crew>` prints - the commits the crew's branch
-	// carries beyond the project's default branch, then the patch. It writes
-	// nothing, so it is the one action with no confirmation, and its result
-	// is a screenful rather than a line: the Console puts it in the scrolling
-	// overlay of diff.go instead of on the message line.
-	ActionDiff Action = "diff"
-	// ActionMerge lands a Crew's branch in the Project's default branch and
-	// finishes the Crew (mvp.md task 22). It is offered on a Crew row only
-	// while that Crew reads `wait-mate` - the one state in which the Crew
-	// has said it is done and handed back - and it is absent, not disabled,
-	// anywhere else: a menu entry that could never apply to this row is not
-	// a refusal worth reading. It is dangerous, so the menu's own
-	// confirmation stands in front of it, exactly as it does for
-	// ActionRestartMate.
-	//
-	// ActionDiff is its read-only counterpart and deliberately has neither
-	// restriction: a reader looks at a branch to decide whether it is worth
-	// landing, which is before, not after, the Crew says `wait-mate`.
-	ActionMerge Action = "merge"
-	// ActionRestartCrew starts a crew's recorded harness again in the
-	// worktree it already has, replacing an agent that died with its Herdr
-	// pane (a Herdr server lost to a machine restart, a harness process
-	// that exited). It is the console's counterpart of `mate crew relaunch`
-	// and, unlike `crew spawn`, it does not need a new branch or worktree.
-	// It is dangerous - a live crew would be stopped first - so the menu's
-	// confirmation stands in front of it, like ActionRestartMate.
-	ActionRestartCrew Action = "restart_crew"
-	// ActionRemoveProject takes a Project out of the workspace: it stops the
-	// Project's crews and Mate, then unregisters it (mvp.md task 75). Nothing
-	// on disk is deleted, so adding the Project again brings its history
-	// back. It is dangerous only in that it stops agents, so the confirmation
-	// is a plain `y`, not a typed name.
-	ActionRemoveProject Action = "remove_project"
-	// ActionOpenNews asks a Project's headless Mate REPL to open one news
-	// (Input is its id): Enter on a news in the box. It writes only the
-	// request the REPL reads, so it has no confirmation.
-	ActionOpenNews Action = "open_news"
-	// ActionOkayWork is the captain's tick on a done row of a Project's work
-	// board (CON-158): Space on it in the work sheet. Input is the row id.
-	// The tick is final (matehost.OkayWork), and it asks nothing: a done
-	// row leaving the board is the whole of its effect.
-	ActionOkayWork Action = "okay_work"
-	// ActionOpenWork asks a Project's headless Mate REPL to show its work
-	// board as a page (CON-198): `w` on a Mate or Project row. A Mate with
-	// no REPL refuses with ErrNoMateREPL, and the console shows its own
-	// sheet instead.
-	ActionOpenWork Action = "open_work"
-	// TODO: v1 also had retry, discard and switch_harness. mate has no
-	// retry (a Crew runs once), and no discard action: throwing work away
-	// is `mate crew stop --discard`, on the captain's explicit word.
-)
-
-// ActionRequest is the identity selected from the snapshot. TargetKind is
-// deliberately explicit: a Project id and a Crew id are both strings, and
-// guessing which service to call from the string would assert more than the
-// snapshot established.
-type ActionRequest struct {
-	Action     Action
-	Target     string
-	TargetKind string
-	Input      string // project name for onboarding; the line to send for forward/reply
-	// Repo is the repository path a workspace onboard registers, as typed
-	// into the new-project form: absolute, or relative to the workspace
-	// root. Empty on a workspace onboard means the Project starts with no
-	// repo (docs/mvp.md M9), and it is empty on every other request.
-	Repo string
-	// Crew is the crew a box action names (mvp.md task 15). It is separate
-	// from Target because those actions are addressed to a Project *and* one
-	// of its crews, and folding the two into one string would make the
-	// bridge guess which it had been given.
-	Crew string
-	// Key is the outbox dedup key of the box entry an ActionResolve hands
-	// to the Mate (query.BoxEntry.AssignKey, mvp.md task 30), so a second
-	// press on the same question is recognised rather than queued again.
-	Key string
-	// Harness is the agent chosen for this request: on an onboard it is the
-	// harness the new Mate is created with. Empty everywhere else - an
-	// existing Mate keeps its recorded harness.
-	Harness query.HarnessKind
-	// HeadlessOnly says the UI that sent the request cannot show a pane
-	// Mate: the console in a terminal it cannot split, or a dashboard page
-	// (CON-205). A start, resume, onboard or restart_mate it asks for then
-	// runs the Mate headless when its harness can. The Model never sets
-	// it; cmd/mate does, for each UI it serves.
-	HeadlessOnly bool
-}
-
-// ActionFunc is the application-service seam. A nil function keeps the
-// Console read-only (useful for callers and tests that only need navigation).
-type ActionFunc func(context.Context, ActionRequest) (string, error)
 
 // phase is the state of the snapshot read itself: nothing loaded yet, a
 // tree in hand, or a read that failed outright. It is a different axis from
@@ -268,8 +113,18 @@ func unknownMsg(text string) footerMsg { return footerMsg{tone: toneUnknown, tex
 type Model struct {
 	noticeClassifier bool
 
-	load   LoadFunc
-	action ActionFunc
+	// load reads the navigation tree. It is called once at startup, again
+	// on every manual refresh ('r'), and every treeTickInterval in the
+	// background (treeTickCmd) so the crew list, statuses and Mate state do
+	// not go stale between keystrokes. The header says "live · HH:MM:SS"
+	// for the time of the last successful load, or "stale · HH:MM:SS ·
+	// <error>" when the most recent background load failed - the picture on
+	// screen is always exactly what the last successful read said, never a
+	// guess at what changed since.
+	load coreapi.LoadFunc
+	// action is where every request the Console builds goes; nil keeps the
+	// Console read-only.
+	action coreapi.ActionFunc
 
 	// stage is the host-pane attach (docs/mvp.md M10). Enter and a click on
 	// a Mate/Crew row call it and stay on the tree. nil means no host pane.
@@ -483,8 +338,8 @@ func (m Model) AbandonedActionDone() <-chan struct{} {
 
 // New builds the initial Console model. load must be non-nil in
 // production; tests pass fakes.
-func New(load LoadFunc, action ...ActionFunc) Model {
-	var run ActionFunc
+func New(load coreapi.LoadFunc, action ...coreapi.ActionFunc) Model {
+	var run coreapi.ActionFunc
 	if len(action) > 0 {
 		run = action[0]
 	}
@@ -530,7 +385,7 @@ type treeLoadedMsg struct {
 	err  error
 }
 
-func loadCmd(load LoadFunc) tea.Cmd {
+func loadCmd(load coreapi.LoadFunc) tea.Cmd {
 	return func() tea.Msg {
 		if load == nil {
 			return treeLoadedMsg{}

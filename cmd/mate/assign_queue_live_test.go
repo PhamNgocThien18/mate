@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/catalog"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
@@ -102,8 +103,8 @@ func TestLiveAssignQueuesWhileTheMateIsBusy(t *testing.T) {
 	})
 
 	// 1. The Mate, and the delivery loop exactly as cmdConsole starts it.
-	startOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	startOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("console start action: %v", err)
 	}
@@ -188,8 +189,8 @@ func TestLiveAssignQueuesWhileTheMateIsBusy(t *testing.T) {
 
 	// 4. `[assign]`: queued, not refused.
 	assignAt := time.Now()
-	out, err := action(ctx, console.ActionRequest{
-		Action: console.ActionResolve, Target: "shop", TargetKind: "project",
+	out, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project",
 		Crew: ask.Crew, Input: ask.Resolve, Key: ask.AssignKey})
 	if err != nil {
 		t.Fatalf("[assign] on a busy Mate: %v\nmate pane:\n%s", err, mateTail())

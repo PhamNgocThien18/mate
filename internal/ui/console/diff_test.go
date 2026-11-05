@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -80,7 +81,7 @@ func TestDiffSendsTheProjectAndTheCrew(t *testing.T) {
 	if len(act.reqs) != 1 {
 		t.Fatalf("requests = %+v, want one", act.reqs)
 	}
-	if r := act.reqs[0]; r.Action != ActionDiff || r.Target != "payments-api" || r.TargetKind != "crew" || r.Crew != "k7" {
+	if r := act.reqs[0]; r.Action != coreapi.ActionDiff || r.Target != "payments-api" || r.TargetKind != "crew" || r.Crew != "k7" {
 		t.Fatalf("request = %+v", r)
 	}
 	if !m.diff.open || m.sheetOpen() != sheetDiff {

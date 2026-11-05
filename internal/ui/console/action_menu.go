@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/names"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
@@ -520,7 +521,7 @@ func (a actionMenu) onClick(i int, f menuFacts) (actionMenu, menuIntent) {
 // context.Background() - and its cancel is kept, so quitting mid-action
 // (abandon) has a real signal to send the goroutine Bubble Tea otherwise
 // leaks until it returns on its own.
-func (a actionMenu) start(choice actionChoice, action ActionFunc, base context.Context) (actionMenu, tea.Cmd) {
+func (a actionMenu) start(choice actionChoice, action coreapi.ActionFunc, base context.Context) (actionMenu, tea.Cmd) {
 	a.open = false
 	a.inputMode = false
 	a.harnessPick = false
@@ -774,7 +775,7 @@ func actionObjectDescription(c actionChoice) (string, string, string) {
 	scope := "Recorded state and the runtime resources named by this action."
 	effect := "The snapshot is re-read when the service returns."
 	switch c.req.Action {
-	case ActionStop:
+	case coreapi.ActionStop:
 		if c.req.TargetKind == "crew" {
 			scope = "This crew's agent, tab, worktree and branch. Its brief, report and status file stay."
 			effect = "Refused, changing nothing, if the branch is not landed or the worktree is dirty. Otherwise the agent stops, the worktree and branch are removed and the task is finished."
@@ -782,20 +783,20 @@ func actionObjectDescription(c actionChoice) (string, string, string) {
 		}
 		scope = "This Mate only. Its crews keep running."
 		effect = "The agent stops; the binding is released once the service confirms it."
-	case ActionRemoveProject:
+	case coreapi.ActionRemoveProject:
 		scope = "This Project's Mate and every running crew; the Project leaves the workspace list."
 		effect = "Refused, leaving the Project listed, if any agent cannot be stopped (a crew with unlanded work, for one). Memory, backlog, crew records and repos stay; each crew is stopped as Stop crew does, so a landed branch and its worktree go with it."
-	case ActionRestartMate:
+	case coreapi.ActionRestartMate:
 		scope = "This Mate only. Its crews keep running."
 		effect = "The Mate is stopped and started again; the next pane shows the new one."
-	case ActionRepair:
+	case coreapi.ActionRepair:
 		scope = "The recorded binding only; no live agent is assumed."
 		effect = "A stale binding is cleared. Unknown state is never treated as safe to clean."
-	case ActionRestartCrew:
+	case coreapi.ActionRestartCrew:
 		object = c.req.Target + "/" + c.req.Crew
 		scope = "This Crew's agent and pane only. Its worktree, branch and status file stay."
 		effect = "A live agent is stopped first; then the harness starts again in the same worktree and the brief is pointed at once more."
-	case ActionMerge:
+	case coreapi.ActionMerge:
 		object = c.req.Target + "/" + c.req.Crew
 		scope = "The Project's default branch, and this crew's branch, worktree and pane."
 		effect = "Fast-forward only; anything else refuses and changes nothing. If it lands, the crew is finished and its branch and worktree are removed."

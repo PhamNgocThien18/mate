@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestConsoleNewProjectRegistersTheRepoItWasGiven is the Console's 'n' key
@@ -24,8 +24,8 @@ func TestConsoleNewProjectRegistersTheRepoItWasGiven(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 
-	line, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "beta/services/beta",
+	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "beta/services/beta",
 	})
 	if err != nil {
 		t.Fatalf("workspace onboard: %v", err)
@@ -64,8 +64,8 @@ func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 		{"plain", "not a git repository"},
 		{"missing", "no such file"},
 	} {
-		_, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-			Action: console.ActionOnboard, TargetKind: "workspace", Input: "gamma", Repo: tc.repo,
+		_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+			Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "gamma", Repo: tc.repo,
 		})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("repo %q: err = %v, want %q", tc.repo, err, tc.want)
@@ -85,8 +85,8 @@ func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 // and the result line says how to add one.
 func TestConsoleNewProjectWithoutARepo(t *testing.T) {
 	w, deps := consoleFixture(t, "alpha")
-	line, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "  ",
+	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "  ",
 	})
 	if err != nil {
 		t.Fatalf("workspace onboard without a repo: %v", err)

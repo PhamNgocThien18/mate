@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -19,7 +20,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestLiveConsoleBoxRoundTrip is the mvp.md task 15 proof, and it is the
@@ -98,8 +98,8 @@ func TestLiveConsoleBoxRoundTrip(t *testing.T) {
 	})
 
 	// 1. The Mate, through the Console's own action seam.
-	startOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	startOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("console start action: %v", err)
 	}
@@ -158,8 +158,8 @@ func TestLiveConsoleBoxRoundTrip(t *testing.T) {
 	var replyOut string
 	replyDeadline := time.Now().Add(90 * time.Second)
 	for {
-		replyOut, err = action(ctx, console.ActionRequest{
-			Action: console.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
+		replyOut, err = action(ctx, coreapi.ActionRequest{
+			Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
 		if err == nil {
 			break
 		}
@@ -180,8 +180,8 @@ func TestLiveConsoleBoxRoundTrip(t *testing.T) {
 	t.Logf("crew continued: %s %s", done.Verb, done.Text)
 
 	// 6. Enter on that entry: the resolve line into the Mate's composer.
-	resolveOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionResolve, Target: "shop", TargetKind: "project",
+	resolveOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project",
 		Crew: done.Crew, Input: done.Resolve})
 	if err != nil {
 		t.Fatalf("resolve action: %v", err)
@@ -211,7 +211,7 @@ func TestLiveConsoleBoxRoundTrip(t *testing.T) {
 	if _, err := spawn.StopCrew(ctx, w, deps, "shop", "k3", true); err != nil {
 		t.Fatalf("StopCrew: %v", err)
 	}
-	stopOut, err := action(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"})
+	stopOut, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("console stop action: %v", err)
 	}

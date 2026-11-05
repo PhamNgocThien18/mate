@@ -8,17 +8,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
 // bxAction records every ActionFunc request.
 type bxAction struct {
-	reqs []ActionRequest
+	reqs []coreapi.ActionRequest
 	out  string
 	err  error
 }
 
-func (r *bxAction) run(_ context.Context, req ActionRequest) (string, error) {
+func (r *bxAction) run(_ context.Context, req coreapi.ActionRequest) (string, error) {
 	r.reqs = append(r.reqs, req)
 	return r.out, r.err
 }
@@ -71,7 +72,7 @@ func TestBoxAssignRunsResolveWithTheEntrysOwnLine(t *testing.T) {
 	}
 	got := act.reqs[0]
 	want := designPayments().Box.Value.Inbox[0]
-	if got.Action != ActionResolve || got.Target != "payments-api" || got.Crew != "k3" || got.Input != want.Resolve {
+	if got.Action != coreapi.ActionResolve || got.Target != "payments-api" || got.Crew != "k3" || got.Input != want.Resolve {
 		t.Fatalf("request = %+v, want resolve of k3 with %q", got, want.Resolve)
 	}
 }

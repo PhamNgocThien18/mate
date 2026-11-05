@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -18,11 +19,11 @@ import (
 
 // actRunner builds a model on tree whose ActionFunc records every request
 // and answers with reply and err.
-func actRunner(t *testing.T, tree query.Snapshot, reply string, err error) (Model, *[]ActionRequest) {
+func actRunner(t *testing.T, tree query.Snapshot, reply string, err error) (Model, *[]coreapi.ActionRequest) {
 	t.Helper()
-	got := &[]ActionRequest{}
+	got := &[]coreapi.ActionRequest{}
 	m := loaded(t, tree, nil)
-	m.action = func(_ context.Context, req ActionRequest) (string, error) {
+	m.action = func(_ context.Context, req coreapi.ActionRequest) (string, error) {
 		*got = append(*got, req)
 		return reply, err
 	}
@@ -75,7 +76,7 @@ func TestDangerousActionAsksBeforeTheRunnerAndEnterCancels(t *testing.T) {
 		t.Fatalf("the asking key should queue the runner: cmd=%v calls=%d", cmd != nil, len(*got))
 	}
 	m, _ = send(t, m, cmd())
-	if len(*got) != 1 || (*got)[0].Action != ActionStop || (*got)[0].TargetKind != "crew" {
+	if len(*got) != 1 || (*got)[0].Action != coreapi.ActionStop || (*got)[0].TargetKind != "crew" {
 		t.Fatalf("runner requests = %+v, want one crew stop", *got)
 	}
 	// The crew is named within its Project, as `mate crew stop <project> <id>` names it.
@@ -146,7 +147,7 @@ func TestProjectRowStartDispatchesForEmptyAndPopulatedProjects(t *testing.T) {
 				t.Fatal("enabled Project-row start did not dispatch")
 			}
 			m, _ = send(t, m, cmd())
-			if len(*got) != 1 || (*got)[0].Action != ActionStart || (*got)[0].Target != tree.Projects[0].ProjectID || (*got)[0].TargetKind != "mate" {
+			if len(*got) != 1 || (*got)[0].Action != coreapi.ActionStart || (*got)[0].Target != tree.Projects[0].ProjectID || (*got)[0].TargetKind != "mate" {
 				t.Fatalf("start requests = %+v, want one Mate start for the Project", *got)
 			}
 		})
@@ -191,7 +192,7 @@ func TestWorkspaceNewProjectAddsAProjectWhenEmptyAndWhenNotEmpty(t *testing.T) {
 				t.Fatal("submitting the project did not dispatch the runner")
 			}
 			m, _ = send(t, m, cmd())
-			if len(*got) != 1 || (*got)[0].Action != ActionOnboard || (*got)[0].TargetKind != "workspace" ||
+			if len(*got) != 1 || (*got)[0].Action != coreapi.ActionOnboard || (*got)[0].TargetKind != "workspace" ||
 				(*got)[0].Input != "new-project" || (*got)[0].Repo != "new-project" {
 				t.Fatalf("onboard requests = %+v, want one workspace-level create with the typed name", *got)
 			}
@@ -309,7 +310,7 @@ func TestTheMateRowSheetCarriesTheRecoveryActions(t *testing.T) {
 		t.Fatal("the answered confirmation ran nothing")
 	}
 	m, _ = send(t, m, cmd())
-	if len(*got) != 1 || (*got)[0].Action != ActionRestartMate || (*got)[0].Target != m.currentProject().ProjectID {
+	if len(*got) != 1 || (*got)[0].Action != coreapi.ActionRestartMate || (*got)[0].Target != m.currentProject().ProjectID {
 		t.Fatalf("requests = %+v, want one restart of the open project", *got)
 	}
 }
@@ -322,11 +323,11 @@ func TestACrewRowSheetHasNoMateRecoveryActions(t *testing.T) {
 	m, _ = send(t, m, key("a"))
 	sawCrewRestart := false
 	for _, e := range m.actions.entries {
-		if e.choice.action == ActionRestartMate || e.choice.action == ActionClearComposer {
+		if e.choice.action == coreapi.ActionRestartMate || e.choice.action == coreapi.ActionClearComposer {
 			t.Fatalf("a crew row's sheet offers %+v", e)
 		}
 		if e.key == "R" {
-			if e.choice.action != ActionRestartCrew {
+			if e.choice.action != coreapi.ActionRestartCrew {
 				t.Fatalf("a crew row's R entry = %+v, want ActionRestartCrew", e)
 			}
 			sawCrewRestart = true
@@ -362,7 +363,7 @@ func TestTheCrewRowSheetRestartsTheCrew(t *testing.T) {
 		t.Fatalf("requests = %+v, want exactly one", *got)
 	}
 	req := (*got)[0]
-	if req.Action != ActionRestartCrew || req.Target != projectID || req.Crew != crewID {
+	if req.Action != coreapi.ActionRestartCrew || req.Target != projectID || req.Crew != crewID {
 		t.Fatalf("request = %+v, want restart_crew of %s/%s", req, projectID, crewID)
 	}
 }

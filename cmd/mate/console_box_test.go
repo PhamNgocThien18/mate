@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
@@ -16,7 +17,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The message box's three actions through the Console's own ActionFunc
@@ -44,7 +44,7 @@ type boxFixture struct {
 	ws     *store.Workspace
 	rt     *runtime.Fake
 	deps   spawn.Deps
-	action console.ActionFunc
+	action coreapi.ActionFunc
 	mate   runtime.AgentHandle
 	crew   runtime.AgentHandle
 }
@@ -58,8 +58,8 @@ func newBoxFixture(t *testing.T) boxFixture {
 	}
 	action := consoleAction(ws, deps)
 
-	if _, err := action(context.Background(), console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate",
+	if _, err := action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate",
 	}); err != nil {
 		t.Fatalf("start the Mate: %v", err)
 	}
@@ -102,7 +102,7 @@ func newBoxFixture(t *testing.T) boxFixture {
 // would never send. It reads Inbox, not Entries: that is what the rail
 // draws, and an item that is not in the inbox is not one a reader can act
 // on.
-func (f boxFixture) resolveRequest(t *testing.T) console.ActionRequest {
+func (f boxFixture) resolveRequest(t *testing.T) coreapi.ActionRequest {
 	t.Helper()
 	box := query.LoadBox(f.ws, "shop")
 	if !box.IsKnown() {
@@ -115,8 +115,8 @@ func (f boxFixture) resolveRequest(t *testing.T) console.ActionRequest {
 	if e.Verb != "needs-decision" || !e.Resolvable() {
 		t.Fatalf("inbox item = %+v, want a resolvable needs-decision", e)
 	}
-	return console.ActionRequest{
-		Action: console.ActionResolve, Target: "shop", TargetKind: "project",
+	return coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project",
 		Crew: e.Crew, Input: e.Resolve, Key: e.AssignKey,
 	}
 }
@@ -374,8 +374,8 @@ func (f boxFixture) inboxRow(t *testing.T) query.BoxEntry {
 func TestConsoleBoxReplyTypesIntoTheCrewAndRecordsTheUser(t *testing.T) {
 	f := newBoxFixture(t)
 
-	out, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionReply, Target: "shop", TargetKind: "project",
+	out, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionReply, Target: "shop", TargetKind: "project",
 		Crew: "k3", Input: "A",
 	})
 	if err != nil {
@@ -427,8 +427,8 @@ func TestConsoleBoxReplyRefusedOnAPendingCrewComposer(t *testing.T) {
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.crew, codexBoxPendingScreen)
 
-	_, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionReply, Target: "shop", TargetKind: "project",
+	_, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionReply, Target: "shop", TargetKind: "project",
 		Crew: "k3", Input: "A",
 	})
 	if !errors.Is(err, send.ErrComposerPending) {
@@ -446,8 +446,8 @@ func TestConsoleBoxPeekReadsTheCrewPaneAndWritesNothing(t *testing.T) {
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.crew, "needs-decision: pick A or B\n› \n")
 
-	out, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionPeek, Target: "shop", TargetKind: "project", Crew: "k3",
+	out, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionPeek, Target: "shop", TargetKind: "project", Crew: "k3",
 	})
 	if err != nil {
 		t.Fatalf("peek: %v", err)
@@ -480,8 +480,8 @@ func TestConsoleBoxActionsRefuseAStoppedAgent(t *testing.T) {
 	if err := f.ws.WriteCrewMeta("shop", "k3", map[string]string{spawn.MetaHarness: "codex"}); err != nil {
 		t.Fatalf("WriteCrewMeta: %v", err)
 	}
-	for _, action := range []console.Action{console.ActionReply, console.ActionPeek} {
-		_, err := f.action(context.Background(), console.ActionRequest{
+	for _, action := range []coreapi.Action{coreapi.ActionReply, coreapi.ActionPeek} {
+		_, err := f.action(context.Background(), coreapi.ActionRequest{
 			Action: action, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A",
 		})
 		if err == nil {

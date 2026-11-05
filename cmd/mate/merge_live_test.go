@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
@@ -18,7 +19,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The two live proofs of docs/mvp.md task 22. Both spend a real Codex crew
@@ -223,8 +223,8 @@ func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
 	}
 
 	action := consoleAction(w, deps)
-	line, err := action(ctx, console.ActionRequest{
-		Action: console.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "k3",
+	line, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})
 	if err != nil {
 		t.Fatalf("console merge action: %v\npane:\n%s", err, tail())

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -19,7 +20,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 	"github.com/nguyenngocanh94/mate/internal/timeline/scene"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestLiveTimelineExplainsTheAcceptance is task 25's proof: the M4 acceptance
@@ -115,8 +115,8 @@ func TestLiveTimelineExplainsTheAcceptance(t *testing.T) {
 	pilot.Start(ctx)
 	defer pilot.Stop()
 
-	out, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	out, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("start the shop Mate: %v", err)
 	}
@@ -157,8 +157,8 @@ func TestLiveTimelineExplainsTheAcceptance(t *testing.T) {
 	})
 	t.Logf("shop/%s handed back: %s", ship, handback.Text)
 
-	mergeLine, err := action(ctx, console.ActionRequest{
-		Action: console.ActionMerge, Target: "shop", TargetKind: "crew", Crew: ship})
+	mergeLine, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: ship})
 	if err != nil {
 		t.Fatalf("console merge action: %v\nmate pane:\n%s", err, shopPane())
 	}

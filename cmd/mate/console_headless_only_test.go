@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/host"
@@ -16,7 +17,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // Whether a Mate runs headless is asked by the UI a start comes from
@@ -132,7 +132,7 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 	t.Helper()
 	ctx := context.Background()
 	tui, _ := tuiAndWebActions(w, deps, nil, splitTerminal)
-	if _, err := tui(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start shop's Mate in its pane: %v", err)
 	}
 	if got := mateMode(t, w); got != spawn.ModePane {
@@ -142,7 +142,7 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 		rt.SetReadOutput(mateAgent(t, w), claudeEmptyScreen)
 		return
 	}
-	if _, err := tui(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("stop shop's Mate: %v", err)
 	}
 }
@@ -165,17 +165,17 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 		{name: "console that can split", terminal: splitTerminal, want: spawn.ModePane},
 		{name: "page", terminal: splitTerminal, page: true, want: spawn.ModeHeadless},
 	} {
-		for _, req := range []console.ActionRequest{
+		for _, req := range []coreapi.ActionRequest{
 			// The Mate-row presses that bring a Mate up, as the sheet
 			// builds them.
-			{Action: console.ActionStart, Target: "shop", TargetKind: "mate"},
-			{Action: console.ActionResume, Target: "shop", TargetKind: "mate"},
-			{Action: console.ActionOnboard, Target: "shop", TargetKind: "project-mate"},
-			{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"},
+			{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionResume, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate"},
+			{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"},
 		} {
 			t.Run(ui.name+"/"+string(req.Action), func(t *testing.T) {
 				w, deps, rt := headlessFixture(t)
-				paneMate(t, w, deps, rt, req.Action == console.ActionRestartMate)
+				paneMate(t, w, deps, rt, req.Action == coreapi.ActionRestartMate)
 				tui, web := tuiAndWebActions(w, deps, nil, ui.terminal)
 
 				var out string
@@ -226,7 +226,7 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	tui, web := tuiAndWebActions(w, deps, nil, splitTerminal)
 	ctx := context.Background()
 
-	out, err := tui(ctx, console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"})
+	out, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})
 	if err != nil || !strings.HasPrefix(out, "held: ") {
 		t.Fatalf("the console's press = %q, %v; want it held for the unsent text", out, err)
 	}

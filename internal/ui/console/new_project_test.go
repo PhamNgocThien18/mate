@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -83,7 +84,7 @@ func TestNewProjectTypesANameAndDispatchesOnboardOnce(t *testing.T) {
 	if len(*got) != 1 {
 		t.Fatalf("runner calls = %d, want exactly one", len(*got))
 	}
-	if req := (*got)[0]; req.Action != ActionOnboard || req.TargetKind != "workspace" || req.Input != "payments-api" || req.Repo != "services/payments" {
+	if req := (*got)[0]; req.Action != coreapi.ActionOnboard || req.TargetKind != "workspace" || req.Input != "payments-api" || req.Repo != "services/payments" {
 		t.Fatalf("onboard request = %+v, want a workspace onboard with the typed name and repo", req)
 	}
 	if m.msg.tone != toneOK || !strings.Contains(m.msg.text, "created proj_1") {
@@ -238,7 +239,7 @@ func TestNewProjectSendsNoRepoWhenTheRepoIsLeftEmpty(t *testing.T) {
 	if len(*got) != 1 {
 		t.Fatalf("runner calls = %d, want exactly one", len(*got))
 	}
-	if req := (*got)[0]; req.Action != ActionOnboard || req.TargetKind != "workspace" || req.Input != "ledger" || req.Repo != "" {
+	if req := (*got)[0]; req.Action != coreapi.ActionOnboard || req.TargetKind != "workspace" || req.Input != "ledger" || req.Repo != "" {
 		t.Fatalf("onboard request = %+v, want ledger with no repo", req)
 	}
 	if m.msg.tone != toneOK || !strings.Contains(m.msg.text, "no repo yet") {
@@ -315,7 +316,7 @@ func TestANewProjectBecomesTheSelection(t *testing.T) {
 			return added, nil
 		}
 		return tree, nil
-	}, func(context.Context, ActionRequest) (string, error) { return "added", nil })
+	}, func(context.Context, coreapi.ActionRequest) (string, error) { return "added", nil })
 	m.p = plainPalette()
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: 40, Height: 36})
 	m, _ = send(t, m, m.Init()())

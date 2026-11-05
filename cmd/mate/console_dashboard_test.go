@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // freeAddr lets the kernel pick the port: the default one belongs to
@@ -90,27 +90,27 @@ func TestStartConsoleDashboardRemoteNeedsAllow(t *testing.T) {
 func TestADashboardPressIsTheSheetsRequest(t *testing.T) {
 	for _, tc := range []struct {
 		in   dashboard.ActionRequest
-		want console.ActionRequest
+		want coreapi.ActionRequest
 	}{
-		{dashboard.ActionRequest{Action: "start", Project: "shop"}, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}},
-		{dashboard.ActionRequest{Action: "resume", Project: "shop"}, console.ActionRequest{Action: console.ActionResume, Target: "shop", TargetKind: "mate"}},
-		{dashboard.ActionRequest{Action: "onboard", Project: "shop"}, console.ActionRequest{Action: console.ActionOnboard, Target: "shop", TargetKind: "project-mate"}},
-		{dashboard.ActionRequest{Action: "stop", Project: "shop"}, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"}},
-		{dashboard.ActionRequest{Action: "restart_mate", Project: "shop"}, console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"}},
-		{dashboard.ActionRequest{Action: "clear_composer", Project: "shop"}, console.ActionRequest{Action: console.ActionClearComposer, Target: "shop", TargetKind: "project"}},
-		{dashboard.ActionRequest{Action: "mode", Project: "shop"}, console.ActionRequest{Action: console.ActionMode, Target: "shop", TargetKind: "project"}},
-		{dashboard.ActionRequest{Action: "stop", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "crew", Crew: "buy"}},
-		{dashboard.ActionRequest{Action: "merge", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"}},
-		{dashboard.ActionRequest{Action: "restart_crew", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionRestartCrew, Target: "shop", TargetKind: "crew", Crew: "buy"}},
-		{dashboard.ActionRequest{Action: "diff", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionDiff, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "start", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}},
+		{dashboard.ActionRequest{Action: "resume", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionResume, Target: "shop", TargetKind: "mate"}},
+		{dashboard.ActionRequest{Action: "onboard", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate"}},
+		{dashboard.ActionRequest{Action: "stop", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}},
+		{dashboard.ActionRequest{Action: "restart_mate", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"}},
+		{dashboard.ActionRequest{Action: "clear_composer", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionClearComposer, Target: "shop", TargetKind: "project"}},
+		{dashboard.ActionRequest{Action: "mode", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "shop", TargetKind: "project"}},
+		{dashboard.ActionRequest{Action: "stop", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "merge", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "restart_crew", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionRestartCrew, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "diff", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionDiff, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 		// The City's (CON-142): the new-project form, the box's [assign],
 		// the project's remove, a create with a harness, a peek and Jev.
-		{dashboard.ActionRequest{Action: "add_project", Project: "landing", Repo: "../landing"}, console.ActionRequest{Action: console.ActionOnboard, TargetKind: "workspace", Input: "landing", Repo: "../landing"}},
-		{dashboard.ActionRequest{Action: "assign", Project: "shop", Crew: "buy", Key: "crews/buy.status@9", Line: "resolve: buy asks"}, console.ActionRequest{Action: console.ActionResolve, Target: "shop", TargetKind: "project", Crew: "buy", Input: "resolve: buy asks", Key: "crews/buy.status@9"}},
-		{dashboard.ActionRequest{Action: "remove_project", Project: "shop"}, console.ActionRequest{Action: console.ActionRemoveProject, Target: "shop", TargetKind: "project"}},
-		{dashboard.ActionRequest{Action: "onboard", Project: "shop", Harness: "codex"}, console.ActionRequest{Action: console.ActionOnboard, Target: "shop", TargetKind: "project-mate", Harness: "codex"}},
-		{dashboard.ActionRequest{Action: "peek", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionPeek, Target: "shop", TargetKind: "crew", Crew: "buy"}},
-		{dashboard.ActionRequest{Action: "explain_notice", Project: "shop", Crew: "buy"}, console.ActionRequest{Action: console.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "add_project", Project: "landing", Repo: "../landing"}, coreapi.ActionRequest{Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "landing", Repo: "../landing"}},
+		{dashboard.ActionRequest{Action: "assign", Project: "shop", Crew: "buy", Key: "crews/buy.status@9", Line: "resolve: buy asks"}, coreapi.ActionRequest{Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project", Crew: "buy", Input: "resolve: buy asks", Key: "crews/buy.status@9"}},
+		{dashboard.ActionRequest{Action: "remove_project", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project"}},
+		{dashboard.ActionRequest{Action: "onboard", Project: "shop", Harness: "codex"}, coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate", Harness: "codex"}},
+		{dashboard.ActionRequest{Action: "peek", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionPeek, Target: "shop", TargetKind: "crew", Crew: "buy"}},
+		{dashboard.ActionRequest{Action: "explain_notice", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 	} {
 		got := dashboardActionRequest(tc.in)
 		if !got.HeadlessOnly {

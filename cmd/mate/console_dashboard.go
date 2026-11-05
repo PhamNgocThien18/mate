@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // startConsoleDashboard serves the dashboard (docs/mvp.md M6) for as long as
@@ -38,7 +38,7 @@ import (
 // The returned URL is the loopback one; when the bind is reachable from the
 // LAN it is followed by that address too, so the status line shows what a
 // phone on the same network opens.
-func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string, allowRemote bool, ingest *timeline.Ingester, load console.LoadFunc, act console.ActionFunc, notice bool) (string, func(), error) {
+func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string, allowRemote bool, ingest *timeline.Ingester, load coreapi.LoadFunc, act coreapi.ActionFunc, notice bool) (string, func(), error) {
 	handle, err := db.OpenRead(ws)
 	if err != nil {
 		return "", nil, err
@@ -99,21 +99,21 @@ func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string
 // same way. A page cannot show a pane Mate, so every press is HeadlessOnly
 // (CON-205); the sheet's requests are HeadlessOnly only where the console
 // cannot split its terminal (tuiAndWebActions).
-func dashboardActionRequest(req dashboard.ActionRequest) console.ActionRequest {
-	out := console.ActionRequest{Action: console.Action(req.Action), Target: req.Project, HeadlessOnly: true}
+func dashboardActionRequest(req dashboard.ActionRequest) coreapi.ActionRequest {
+	out := coreapi.ActionRequest{Action: coreapi.Action(req.Action), Target: req.Project, HeadlessOnly: true}
 	switch {
 	case req.Action == "add_project":
 		// The new-project form's request (newProjectChoice).
-		out.Action, out.TargetKind, out.Target, out.Input, out.Repo = console.ActionOnboard, "workspace", "", req.Project, req.Repo
+		out.Action, out.TargetKind, out.Target, out.Input, out.Repo = coreapi.ActionOnboard, "workspace", "", req.Project, req.Repo
 	case req.Action == "assign":
 		// The box's [assign] (boxAssignChoice); Line is the server's.
-		out.Action, out.TargetKind, out.Crew, out.Input, out.Key = console.ActionResolve, "project", req.Crew, req.Line, req.Key
+		out.Action, out.TargetKind, out.Crew, out.Input, out.Key = coreapi.ActionResolve, "project", req.Crew, req.Line, req.Key
 	case req.Crew != "":
 		out.TargetKind, out.Crew = "crew", req.Crew
-	case out.Action == console.ActionOnboard:
+	case out.Action == coreapi.ActionOnboard:
 		out.TargetKind, out.Harness = "project-mate", query.HarnessKind(req.Harness)
-	case out.Action == console.ActionRestartMate, out.Action == console.ActionClearComposer, out.Action == console.ActionMode,
-		out.Action == console.ActionRemoveProject:
+	case out.Action == coreapi.ActionRestartMate, out.Action == coreapi.ActionClearComposer, out.Action == coreapi.ActionMode,
+		out.Action == coreapi.ActionRemoveProject:
 		out.TargetKind = "project"
 	default:
 		out.TargetKind = "mate"

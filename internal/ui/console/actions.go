@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -14,7 +15,7 @@ import (
 // omission would make the operator guess whether an action was forgotten or
 // is unsafe for this row.
 type actionChoice struct {
-	action    Action
+	action    coreapi.Action
 	desc      string
 	enabled   bool
 	dangerous bool
@@ -25,7 +26,7 @@ type actionChoice struct {
 	confirmPrompt string
 	// confirmKey is the key that confirms, when it is not the entry's own.
 	confirmKey string
-	req        ActionRequest
+	req        coreapi.ActionRequest
 }
 
 type actionDoneMsg struct {
@@ -68,11 +69,11 @@ func (m Model) mergeChoice(r row) (actionChoice, bool) {
 		into = crew.Repo.Value.DefaultBranch
 	}
 	return actionChoice{
-		action: ActionMerge, enabled: true, dangerous: true,
+		action: coreapi.ActionMerge, enabled: true, dangerous: true,
 		desc:          "Merge " + branch + " into " + into + " and finish this crew",
 		confirmPrompt: fmt.Sprintf("Merge %s into %s and finish crew %s?", branch, into, crew.CrewID),
-		req: ActionRequest{
-			Action: ActionMerge, Target: project, TargetKind: "crew", Crew: crew.CrewID,
+		req: coreapi.ActionRequest{
+			Action: coreapi.ActionMerge, Target: project, TargetKind: "crew", Crew: crew.CrewID,
 		},
 	}, true
 }
@@ -91,7 +92,7 @@ func (m Model) actionCapability(r row, c actionChoice) (bool, string, bool) {
 	return m.queryAction(r, c.action)
 }
 
-func (m Model) queryAction(r row, name Action) (bool, string, bool) {
+func (m Model) queryAction(r row, name coreapi.Action) (bool, string, bool) {
 	var actions []query.ActionAvailability
 	if m.cur().kind == frameWorkspace {
 		if r.kind == rowProject {
@@ -120,7 +121,7 @@ func (m Model) queryAction(r row, name Action) (bool, string, bool) {
 	return lookupAction(actions, name)
 }
 
-func lookupAction(actions []query.ActionAvailability, name Action) (bool, string, bool) {
+func lookupAction(actions []query.ActionAvailability, name coreapi.Action) (bool, string, bool) {
 	for _, a := range actions {
 		if a.Action == string(name) {
 			return a.Available, a.Reason, true
@@ -130,7 +131,7 @@ func lookupAction(actions []query.ActionAvailability, name Action) (bool, string
 }
 
 func (m Model) startChoice(r row) actionChoice {
-	c := actionChoice{action: ActionStart, desc: "unavailable · applies to a Mate", req: m.actionRequest(ActionStart, r)}
+	c := actionChoice{action: coreapi.ActionStart, desc: "unavailable · applies to a Mate", req: m.actionRequest(coreapi.ActionStart, r)}
 	mate, ok := m.mateForRow(r)
 	if !ok {
 		return c
@@ -148,7 +149,7 @@ func (m Model) startChoice(r row) actionChoice {
 }
 
 func (m Model) stopChoice(r row) actionChoice {
-	c := actionChoice{action: ActionStop, dangerous: true, desc: "unavailable · no confirmed binding to stop", req: m.actionRequest(ActionStop, r)}
+	c := actionChoice{action: coreapi.ActionStop, dangerous: true, desc: "unavailable · no confirmed binding to stop", req: m.actionRequest(coreapi.ActionStop, r)}
 	if r.kind != rowMate && r.kind != rowCrew {
 		return c
 	}
@@ -171,7 +172,7 @@ func (m Model) stopChoice(r row) actionChoice {
 }
 
 func (m Model) resumeChoice(r row) actionChoice {
-	c := actionChoice{action: ActionResume, desc: "unavailable · applies to a stopped Mate", req: m.actionRequest(ActionResume, r)}
+	c := actionChoice{action: coreapi.ActionResume, desc: "unavailable · applies to a stopped Mate", req: m.actionRequest(coreapi.ActionResume, r)}
 	mate, ok := m.mateForRow(r)
 	if !ok {
 		return c
@@ -189,7 +190,7 @@ func (m Model) resumeChoice(r row) actionChoice {
 }
 
 func (m Model) repairChoice(r row) actionChoice {
-	c := actionChoice{action: ActionRepair, dangerous: true, desc: "unavailable · no recorded repair is needed", req: m.actionRequest(ActionRepair, r)}
+	c := actionChoice{action: coreapi.ActionRepair, dangerous: true, desc: "unavailable · no recorded repair is needed", req: m.actionRequest(coreapi.ActionRepair, r)}
 	if r.kind != rowCrew {
 		return c
 	}
@@ -222,12 +223,12 @@ func (m Model) repairChoice(r row) actionChoice {
 // - the case this exists for. It is dangerous because a live crew is stopped
 // first, and the confirmation says so.
 func (m Model) restartCrewChoice(r row) actionChoice {
-	c := actionChoice{action: ActionRestartCrew, dangerous: true, desc: "unavailable · applies to a Crew"}
+	c := actionChoice{action: coreapi.ActionRestartCrew, dangerous: true, desc: "unavailable · applies to a Crew"}
 	if r.kind != rowCrew || m.cur().kind != frameProject {
 		return c
 	}
 	project := m.currentProject().ProjectID
-	c.req = ActionRequest{Action: ActionRestartCrew, Target: project, TargetKind: "crew", Crew: r.id}
+	c.req = coreapi.ActionRequest{Action: coreapi.ActionRestartCrew, Target: project, TargetKind: "crew", Crew: r.id}
 	if project == "" {
 		c.desc = "unavailable · no Project is open"
 		return c
@@ -255,7 +256,7 @@ func (m Model) restartCrewChoice(r row) actionChoice {
 // snapshot the row was drawn from; the command re-reads the live state and
 // refuses, changing nothing more, if a stop fails.
 func (m Model) removeProjectChoice(r row) actionChoice {
-	c := actionChoice{action: ActionRemoveProject, desc: "unavailable · applies to a Project"}
+	c := actionChoice{action: coreapi.ActionRemoveProject, desc: "unavailable · applies to a Project"}
 	if r.kind != rowProject {
 		return c
 	}
@@ -275,12 +276,12 @@ func (m Model) removeProjectChoice(r row) actionChoice {
 	c.enabled, c.dangerous, c.confirmKey = true, true, "y"
 	c.desc = "Stop the Mate and " + crews + ", then take " + p.Name + " out of the workspace"
 	c.confirmPrompt = "Remove project " + p.Name + "? This stops its Mate and " + crews + ". Its memory, backlog, crew records and repos stay on disk; `mate project add " + p.Name + "` brings it back."
-	c.req = ActionRequest{Action: ActionRemoveProject, Target: p.ProjectID, TargetKind: "project"}
+	c.req = coreapi.ActionRequest{Action: coreapi.ActionRemoveProject, Target: p.ProjectID, TargetKind: "project"}
 	return c
 }
 
 func (m Model) onboardChoice(r row) actionChoice {
-	c := actionChoice{action: ActionOnboard, desc: "unavailable · use this action at the workspace or a Project without a Mate", req: m.actionRequest(ActionOnboard, r)}
+	c := actionChoice{action: coreapi.ActionOnboard, desc: "unavailable · use this action at the workspace or a Project without a Mate", req: m.actionRequest(coreapi.ActionOnboard, r)}
 	if m.cur().kind == frameWorkspace {
 		c.enabled, c.desc = true, "Add a Project to this workspace"
 		c.req.TargetKind = "workspace"
@@ -310,12 +311,12 @@ func (m Model) onboardChoice(r row) actionChoice {
 // the box's own actions use: the bridge needs both to find crews/<id>.meta,
 // and a single string would make it guess which one it had been handed.
 func (m Model) diffChoice(r row) actionChoice {
-	c := actionChoice{action: ActionDiff, desc: "unavailable · applies to a Crew"}
+	c := actionChoice{action: coreapi.ActionDiff, desc: "unavailable · applies to a Crew"}
 	if r.kind != rowCrew || m.cur().kind != frameProject {
 		return c
 	}
 	project := m.currentProject().ProjectID
-	c.req = ActionRequest{Action: ActionDiff, Target: project, TargetKind: "crew", Crew: r.id}
+	c.req = coreapi.ActionRequest{Action: coreapi.ActionDiff, Target: project, TargetKind: "crew", Crew: r.id}
 	crew, ok := m.crewByID(r.id)
 	if !ok {
 		c.desc = "unavailable · this Crew is not in the snapshot"
@@ -335,12 +336,12 @@ func (m Model) diffChoice(r row) actionChoice {
 	return c
 }
 
-func (m Model) actionRequest(a Action, r row) ActionRequest {
-	req := ActionRequest{Action: a}
+func (m Model) actionRequest(a coreapi.Action, r row) coreapi.ActionRequest {
+	req := coreapi.ActionRequest{Action: a}
 	switch r.kind {
 	case rowProject:
 		req.Target, req.TargetKind = r.id, "project"
-		if a == ActionStart || a == ActionResume {
+		if a == coreapi.ActionStart || a == coreapi.ActionResume {
 			req.TargetKind = "mate"
 		}
 	case rowMate:
@@ -402,15 +403,15 @@ func (m Model) beginNewProject() Model {
 // disagree about whether a Project may be added.
 func (m Model) newProjectChoice() (actionChoice, bool) {
 	if m.cur().kind == frameProject {
-		return actionChoice{action: ActionOnboard,
+		return actionChoice{action: coreapi.ActionOnboard,
 			desc: "unavailable · a Project is created at the workspace level; Esc goes back there",
 		}, false
 	}
 	c := actionChoice{
-		action: ActionOnboard, desc: "Add a Project to this workspace", enabled: true,
-		req: ActionRequest{Action: ActionOnboard, TargetKind: "workspace"},
+		action: coreapi.ActionOnboard, desc: "Add a Project to this workspace", enabled: true,
+		req: coreapi.ActionRequest{Action: coreapi.ActionOnboard, TargetKind: "workspace"},
 	}
-	if available, reason, found := lookupAction(m.tree.Actions, ActionOnboard); found && !available {
+	if available, reason, found := lookupAction(m.tree.Actions, coreapi.ActionOnboard); found && !available {
 		c.enabled, c.desc = false, "unavailable · "+reason
 	}
 	return c, c.enabled
@@ -442,12 +443,12 @@ func actionObject(c actionChoice) string {
 
 func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 	m.actions = m.actions.finish()
-	if msg.choice.action == ActionOkayWork && m.work.open {
+	if msg.choice.action == coreapi.ActionOkayWork && m.work.open {
 		// The board stays open with the outcome under its rows; the
 		// re-read below moves the ticked row to the okayed group.
 		m = m.onWorkDone(msg)
 	}
-	if msg.choice.action == ActionNotice {
+	if msg.choice.action == coreapi.ActionNotice {
 		if msg.err != nil {
 			m.msg = errMsg("Jev notice unavailable: " + msg.err.Error())
 			return m, nil
@@ -461,7 +462,7 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 	// screenful, and the message line would show a truncated first line of
 	// it. A diff that *failed* still takes the message line - there is no
 	// overlay to put a refusal in, and an empty frame would read as success.
-	if msg.choice.action == ActionDiff && msg.err == nil {
+	if msg.choice.action == coreapi.ActionDiff && msg.err == nil {
 		// Nothing is re-read: a diff changes no recorded state, so asking
 		// the loader again would only be a chance to drop the overlay.
 		return m.openDiff(msg.choice.req.Crew, m.diffBranch(msg.choice.req.Crew), msg.text), nil
@@ -487,7 +488,7 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 	}
 	m.actions = m.actions.setAfterRead(result)
 	m.msg = result
-	if msg.err == nil && msg.choice.action == ActionOnboard && msg.choice.req.TargetKind == "workspace" && m.cur().kind != frameProject {
+	if msg.err == nil && msg.choice.action == coreapi.ActionOnboard && msg.choice.req.TargetKind == "workspace" && m.cur().kind != frameProject {
 		// The new Project lands in order and becomes the selection (design
 		// K): the re-read finds it by id, which is its name.
 		f := m.cur()
@@ -547,7 +548,7 @@ func (m Model) beginMateStart() (Model, tea.Cmd) {
 	if !choice.enabled {
 		return m.refuseMateKey(strings.TrimPrefix(choice.desc, "unavailable · ")), nil
 	}
-	if choice.action == ActionOnboard {
+	if choice.action == coreapi.ActionOnboard {
 		return m.beginHarnessPick(choice), nil
 	}
 	var do menuIntent
@@ -573,10 +574,10 @@ func (m Model) beginModeToggle(project string) (Model, tea.Cmd) {
 		return m.refuseModeKey("Console actions are not wired"), nil
 	}
 	return m.runAction(actionChoice{
-		action:  ActionMode,
+		action:  coreapi.ActionMode,
 		enabled: true,
 		desc:    "Toggle the communication mode",
-		req:     ActionRequest{Action: ActionMode, Target: project, TargetKind: "project"},
+		req:     coreapi.ActionRequest{Action: coreapi.ActionMode, Target: project, TargetKind: "project"},
 	})
 }
 
@@ -595,19 +596,19 @@ func (m Model) refuseMateKey(reason string) Model {
 // Availability is replaced from the query DTO by actionCapability, exactly
 // like every menu entry.
 func (m Model) mateStartChoice(r row, mate query.MateNode) actionChoice {
-	c := actionChoice{action: ActionStart, req: m.actionRequest(ActionStart, r)}
+	c := actionChoice{action: coreapi.ActionStart, req: m.actionRequest(coreapi.ActionStart, r)}
 	switch {
 	case mate.Designated.State == query.Unknown:
-		c.action = ActionStart
+		c.action = coreapi.ActionStart
 		c.desc = "unavailable · the Mate could not be read; r re-reads"
 	case mate.Designated.State == query.Absent || mate.Designated.Value.MateID == "":
 		c = m.onboardChoice(r)
 		c.req.Target, c.req.TargetKind = m.mateProject(r).ProjectID, "project-mate"
 		c.enabled, c.desc = true, "Create and start this Project's Mate"
 	case mate.Designated.Value.Status == query.MateStopped:
-		c = actionChoice{action: ActionResume, enabled: true, desc: "Resume the Project Mate", req: m.actionRequest(ActionResume, r)}
+		c = actionChoice{action: coreapi.ActionResume, enabled: true, desc: "Resume the Project Mate", req: m.actionRequest(coreapi.ActionResume, r)}
 	case mate.Designated.Value.Status == query.MateCreated:
-		c = actionChoice{action: ActionStart, enabled: true, desc: "Start the Project Mate", req: m.actionRequest(ActionStart, r)}
+		c = actionChoice{action: coreapi.ActionStart, enabled: true, desc: "Start the Project Mate", req: m.actionRequest(coreapi.ActionStart, r)}
 	default:
 		c.desc = "unavailable · Mate is recorded " + string(mate.Designated.Value.Status)
 	}
@@ -651,8 +652,8 @@ func (m Model) recordedHarnessIndex() int {
 // They are answered in their own words (boxOutcome) rather than in the
 // menu's, because what the reader needs back is whether the line reached a
 // composer, not that "an action completed".
-func boxAction(a Action) bool {
-	return a == ActionResolve || a == ActionRestartMate || a == ActionClearComposer
+func boxAction(a coreapi.Action) bool {
+	return a == coreapi.ActionResolve || a == coreapi.ActionRestartMate || a == coreapi.ActionClearComposer
 }
 
 // boxOutcome is the one line a box action leaves on the outcome line. A
@@ -665,13 +666,13 @@ func boxOutcome(msg actionDoneMsg, g glyphSet) footerMsg {
 	// ActionResolve is "Assign" here: the wire word stays `resolve` for the
 	// Mate's manual, and the word a reader is answered in is the one on the
 	// button they pressed.
-	verb := map[Action]string{
-		ActionResolve:     "Assign",
-		ActionRestartMate: "Restart", ActionClearComposer: "Clear",
+	verb := map[coreapi.Action]string{
+		coreapi.ActionResolve:     "Assign",
+		coreapi.ActionRestartMate: "Restart", coreapi.ActionClearComposer: "Clear",
 	}[msg.choice.action]
 	if msg.err != nil {
 		tail := " nothing was sent"
-		if msg.choice.action == ActionRestartMate || msg.choice.action == ActionClearComposer {
+		if msg.choice.action == coreapi.ActionRestartMate || msg.choice.action == coreapi.ActionClearComposer {
 			tail = " nothing was changed"
 		}
 		return errMsg(verb + " refused: " + msg.err.Error() + " " + g.Dot + tail)
@@ -680,7 +681,7 @@ func boxOutcome(msg actionDoneMsg, g glyphSet) footerMsg {
 	if text == "" {
 		text = strings.ToLower(verb) + " delivered"
 	}
-	if msg.choice.action == ActionResolve {
+	if msg.choice.action == coreapi.ActionResolve {
 		// An assign that went through is already done from the reader's
 		// side, whether the line is in the composer or queued for it
 		// (mvp.md task 30): the past tense says so, and the text says which.

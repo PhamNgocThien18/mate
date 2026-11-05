@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The two recovery actions the Mate row's Actions menu offers as
@@ -29,8 +29,8 @@ func TestConsoleRestartMateStopsThenStartsTheSameProject(t *testing.T) {
 		t.Fatalf("ReadMateMeta: %v", err)
 	}
 
-	out, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionRestartMate, Target: "shop", TargetKind: "project",
+	out, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
 		t.Fatalf("restart action: %v", err)
@@ -77,14 +77,14 @@ func TestConsoleRestartMateStopsThenStartsTheSameProject(t *testing.T) {
 // project with none at all.
 func TestConsoleRestartMateStartsAMateThatWasAlreadyGone(t *testing.T) {
 	f := newBoxFixture(t)
-	if _, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionStop, Target: "shop", TargetKind: "mate",
+	if _, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate",
 	}); err != nil {
 		t.Fatalf("stop the Mate first: %v", err)
 	}
 
-	out, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionRestartMate, Target: "shop", TargetKind: "project",
+	out, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
 		t.Fatalf("restart action on a stopped Mate: %v", err)
@@ -110,18 +110,18 @@ func TestConsoleRestartMateStartsAMateThatWasAlreadyGone(t *testing.T) {
 func TestConsoleRestartMateKeepsItsHarness(t *testing.T) {
 	ws, deps := consoleFixture(t, "shop")
 	action := consoleAction(ws, deps)
-	if _, err := action(context.Background(), console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("codex"),
+	if _, err := action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("codex"),
 	}); err != nil {
 		t.Fatalf("start a Codex Mate: %v", err)
 	}
-	if _, err := action(context.Background(), console.ActionRequest{
-		Action: console.ActionStop, Target: "shop", TargetKind: "mate",
+	if _, err := action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate",
 	}); err != nil {
 		t.Fatalf("stop it: %v", err)
 	}
-	out, err := action(context.Background(), console.ActionRequest{
-		Action: console.ActionRestartMate, Target: "shop", TargetKind: "project",
+	out, err := action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
 		t.Fatalf("restart: %v", err)
@@ -146,8 +146,8 @@ func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudePendingScreen)
 
-	out, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionClearComposer, Target: "shop", TargetKind: "project",
+	out, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionClearComposer, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
 		t.Fatalf("clear composer action: %v", err)
@@ -177,13 +177,13 @@ func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
 // did not establish.
 func TestConsoleClearComposerRefusesAProjectWithNoMate(t *testing.T) {
 	f := newBoxFixture(t)
-	if _, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionStop, Target: "shop", TargetKind: "mate",
+	if _, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate",
 	}); err != nil {
 		t.Fatalf("stop the Mate first: %v", err)
 	}
-	if _, err := f.action(context.Background(), console.ActionRequest{
-		Action: console.ActionClearComposer, Target: "shop", TargetKind: "project",
+	if _, err := f.action(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionClearComposer, Target: "shop", TargetKind: "project",
 	}); err == nil {
 		t.Fatal("clearing the composer of a stopped Mate returned no error")
 	}
@@ -203,7 +203,7 @@ func TestConsoleRestartHeldByUnsentTextAsksFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restart := console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"}
+	restart := coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"}
 
 	out, err := f.action(context.Background(), restart)
 	if err != nil {
@@ -242,7 +242,7 @@ func TestConsoleRestartAfterTheCeilingSaysSoAndRestarts(t *testing.T) {
 		// The stow line went in; the Mate is busy from here on.
 		f.rt.SetReadOutput(h, claudeBusyBoxScreen)
 	}
-	out, err := f.action(context.Background(), console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"})
+	out, err := f.action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("restart: %v", err)
 	}
@@ -259,10 +259,10 @@ func TestConsoleRestartAfterTheCeilingSaysSoAndRestarts(t *testing.T) {
 // outcome line says so rather than implying a stow happened.
 func TestConsoleRestartOfAGoneMateSaysItDidNotStow(t *testing.T) {
 	f := newBoxFixture(t)
-	if _, err := f.action(context.Background(), console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := f.action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := f.action(context.Background(), console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"})
+	out, err := f.action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("restart: %v", err)
 	}
