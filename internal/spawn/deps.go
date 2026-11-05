@@ -175,13 +175,32 @@ type Deps struct {
 	Observer screen.Observer
 }
 
+// LiveOption changes what LiveDeps builds.
+type LiveOption func(*liveOptions)
+
+type liveOptions struct {
+	herdrBinary string
+}
+
+// WithHerdrBinary makes the adapter run the herdr executable at path instead
+// of the "herdr" on PATH. The console passes the one its stage column runs,
+// which can be where the console's PATH does not reach (CON-189).
+func WithHerdrBinary(path string) LiveOption {
+	return func(o *liveOptions) { o.herdrBinary = path }
+}
+
 // LiveDeps is what the CLI uses: the real Herdr adapter over os/exec, and
 // the harnesses the binary was built with. The name registry is shared with
 // the adapter, which re-reserves the name at start; without one StartAgent
-// refuses outright.
-func LiveDeps(harnesses harness.Registry) Deps {
+// refuses outright. Given no option, the adapter runs the "herdr" on PATH.
+func LiveDeps(harnesses harness.Registry, opts ...LiveOption) Deps {
+	var o liveOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	names := runtime.NewMemoryNameRegistry()
 	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt.Binary = o.herdrBinary
 	rt.Names = names
 	return Deps{Runtime: rt, Harnesses: harnesses, Names: names, DefaultMode: ModeHeadless, Cleaner: teardown.Live()}
 }
