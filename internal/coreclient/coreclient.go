@@ -34,7 +34,10 @@ const dialWait = 2 * time.Second
 
 // Client reaches one core on its socket. Safe for concurrent use; each
 // request opens a connection or reuses an idle one, so a core that
-// restarted on the same socket is reached again by the next call.
+// restarted on the same socket is reached again by the next call. It sets
+// no deadline of its own: an action may run for minutes, so a caller that
+// must not wait on a core that hangs (`mate core status`) passes a ctx
+// with one.
 type Client struct {
 	socket string
 	name   string

@@ -79,8 +79,8 @@ type Deps struct {
 	// (CON-212): the engine's Status. Nil answers that route 503.
 	Core func() coreapi.CoreStatus
 	// ClientSeen is told the coreapi.ClientHeader of every request on the
-	// socket that names one, as the request starts and as it ends: how the
-	// engine knows a console is open. Nil is told nothing.
+	// socket that names one, as the request arrives: how the engine knows a
+	// console is open. Nil is told nothing.
 	ClientSeen func(client string)
 }
 

@@ -143,6 +143,27 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 	}
 }
 
+// GET /api/core says Jev's error before the observer's, and one error both
+// report once, as the console's status line does.
+func TestCoreNoticesPutJevFirst(t *testing.T) {
+	jev := errors.New("jev: no API key")
+	for _, tc := range []struct {
+		jev     error
+		notices []string
+		want    []string
+	}{
+		{nil, nil, nil},
+		{nil, []string{"observer: broken"}, []string{"observer: broken"}},
+		{jev, nil, []string{"jev: no API key"}},
+		{jev, []string{"observer: broken"}, []string{"jev: no API key", "observer: broken"}},
+		{jev, []string{"jev: no API key"}, []string{"jev: no API key"}},
+	} {
+		if got := jevNoticeFirst(tc.jev, tc.notices); strings.Join(got, "|") != strings.Join(tc.want, "|") || len(got) != len(tc.want) {
+			t.Errorf("jevNoticeFirst(%v, %q) = %q, want %q", tc.jev, tc.notices, got, tc.want)
+		}
+	}
+}
+
 // The refusals of `mate core run`, through the command as typed: exit 1 and
 // the sentence. Each one stops before the engine starts, so nothing here
 // reaches the live Herdr the command builds its deps over.

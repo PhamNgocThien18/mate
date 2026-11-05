@@ -19,8 +19,8 @@ import (
 
 // clientRoutes is the socket's site: the three client routes, then every
 // route a page has. Each request that names its client (coreapi.ClientHeader)
-// is told to Deps.ClientSeen as it starts and as it ends, so a console
-// waiting on a long action is still seen.
+// is told to Deps.ClientSeen as it arrives; an open console reads the
+// snapshot every 2 seconds, so one waiting on a long action is still seen.
 func (s *Server) clientRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+coreapi.PathCore, s.handleCore)
@@ -30,7 +30,6 @@ func (s *Server) clientRoutes() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client := r.Header.Get(coreapi.ClientHeader); client != "" && s.deps.ClientSeen != nil {
 			s.deps.ClientSeen(client)
-			defer s.deps.ClientSeen(client)
 		}
 		mux.ServeHTTP(w, r)
 	})
@@ -60,14 +59,14 @@ func (s *Server) handleCore(w http.ResponseWriter, _ *http.Request) {
 // the read's error.
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Snapshot == nil {
-		writeClientError(w, http.StatusServiceUnavailable, coreapi.ErrorBody{Error: readOnlyReason})
+		writeClientError(w, http.StatusServiceUnavailable, coreapi.ErrorBody{Error: "this core serves no snapshot: it runs no actions"})
 		return
 	}
 	snap, err := s.deps.Snapshot(r.Context())
 	if err != nil {
 		body := coreapi.ErrorBody{Error: err.Error()}
 		if errors.Is(err, coreapi.ErrStopping) {
-			body = coreapi.ErrorBody{Error: coreapi.ErrStopping.Error(), Code: coreapi.CodeStopping}
+			body.Code = coreapi.CodeStopping
 		}
 		writeClientError(w, http.StatusServiceUnavailable, body)
 		return
@@ -89,7 +88,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 // with no code.
 func (s *Server) handleClientAct(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Act == nil {
-		writeClientError(w, http.StatusForbidden, coreapi.ErrorBody{Error: readOnlyReason})
+		writeClientError(w, http.StatusForbidden, coreapi.ErrorBody{Error: "this core runs no actions"})
 		return
 	}
 	var req coreapi.ActionRequest
@@ -117,7 +116,7 @@ func clientActError(err error) (int, coreapi.ErrorBody) {
 	case errors.Is(err, coreapi.ErrBusy):
 		return http.StatusConflict, coreapi.ErrorBody{Error: err.Error(), Code: coreapi.CodeBusy}
 	case errors.Is(err, coreapi.ErrStopping):
-		return http.StatusConflict, coreapi.ErrorBody{Error: coreapi.ErrStopping.Error(), Code: coreapi.CodeStopping}
+		return http.StatusConflict, coreapi.ErrorBody{Error: err.Error(), Code: coreapi.CodeStopping}
 	case errors.Is(err, coreapi.ErrNoMateREPL):
 		return http.StatusUnprocessableEntity, coreapi.ErrorBody{Error: err.Error(), Code: coreapi.CodeNoMateREPL}
 	}

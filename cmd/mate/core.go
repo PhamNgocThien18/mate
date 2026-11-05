@@ -117,12 +117,8 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	noticeClient, noticeErr := consoleNoticeClient(ws)
 	if noticeErr != nil {
 		fmt.Fprintf(stderr, "mate core: %v\n", noticeErr)
-		// Jev's error before the observer's, as the console says them; one
-		// error both report is said once.
-		if len(notices) == 0 || notices[0] != noticeErr.Error() {
-			notices = append([]string{noticeErr.Error()}, notices...)
-		}
 	}
+	notices = jevNoticeFirst(noticeErr, notices)
 
 	// core.lock before the parts: the observer opens mate.db as it is
 	// built, and an engine built while another one still held mate.db
@@ -139,7 +135,6 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	}
 	opts.Claim = claim
 	opts.ConsoleSeen = seen
-	opts.Jev = noticeClient != nil
 	opts.Notices = notices
 	opts.Act = engineActions(ws, deps, noticeClient)
 	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
@@ -174,6 +169,23 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	engine.Stop()
 	fmt.Fprintln(stdout, "mate core: stopped")
 	return nil
+}
+
+// jevNoticeFirst puts Jev's configuration error before the notices the
+// caller had (the observer's), as the console's status line says them; an
+// error both report is said once.
+func jevNoticeFirst(jevErr error, notices []string) []string {
+	if jevErr == nil {
+		return notices
+	}
+	line := jevErr.Error()
+	out := []string{line}
+	for _, n := range notices {
+		if n != line {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // coreEngineRefusal words Start's refusal for `mate core run`.

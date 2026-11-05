@@ -21,6 +21,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/coreclient"
+	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -30,8 +31,8 @@ import (
 // end: an engine as `mate core run` builds one, and internal/coreclient.
 
 // socketEngine starts an engine over w as `mate core run` does, serving
-// the dashboard on a free port (or addr) and on core.sock, with o's other
-// options, until the test ends.
+// the dashboard (o's, when it has one) on a free port (or addr) and on
+// core.sock, with o's other options, until the test ends.
 func socketEngine(t *testing.T, w *store.Workspace, o Options, addr ...string) *Engine {
 	t.Helper()
 	o.Workspace, o.Harnesses, o.Owner, o.Stderr = w, testHarnesses, OwnerCore, io.Discard
@@ -39,7 +40,10 @@ func socketEngine(t *testing.T, w *store.Workspace, o Options, addr ...string) *
 	if len(addr) > 0 {
 		bind = addr[0]
 	}
-	o.Dashboard = &DashboardOptions{Addr: bind, Socket: w.CoreSocket()}
+	if o.Dashboard == nil {
+		o.Dashboard = &DashboardOptions{}
+	}
+	o.Dashboard.Addr, o.Dashboard.Socket = bind, w.CoreSocket()
 	e := New(o)
 	if err := e.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -123,7 +127,10 @@ func TestClientRoutesAreTheSocketsAlone(t *testing.T) {
 func TestClientCoreIsTheEnginesRecord(t *testing.T) {
 	w := shortWorkspace(t)
 	withTimelineDB(t, w)
-	socketEngine(t, w, Options{Jev: true, Notices: []string{"observer: jev.yaml is broken"}})
+	socketEngine(t, w, Options{
+		Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}},
+		Notices:   []string{"observer: jev.yaml is broken"},
+	})
 	st, err := dial(t, w).Core(context.Background())
 	if err != nil {
 		t.Fatalf("Core: %v", err)
@@ -262,7 +269,7 @@ func TestClientActRunsEveryAction(t *testing.T) {
 	for _, a := range actions {
 		req := coreapi.ActionRequest{
 			Action: a, Target: "shop", TargetKind: "mate", Input: "text of " + string(a), News: 7,
-			Repo: "../shop", Key: "k-" + string(a), Harness: "claude", HeadlessOnly: true,
+			Repo: "../shop", Crew: "buy", Key: "k-" + string(a), Harness: "claude", HeadlessOnly: true,
 		}
 		line, err := c.Act(context.Background(), req)
 		if err != nil {
@@ -461,7 +468,8 @@ func TestAConsoleOnTheSocketIsPresentForTenSeconds(t *testing.T) {
 		mu.Unlock()
 	}
 	seen := &ConsoleSeen{now: clock}
-	e := socketEngine(t, w, Options{Act: newHeldActs().act, ConsoleSeen: seen})
+	// As `mate core run` wires it: the engine records, Present answers.
+	e := socketEngine(t, w, Options{Act: newHeldActs().act, ConsoleSeen: seen, ConsolePresent: seen.Present})
 	if e.ConsolePresent() {
 		t.Fatal("ConsolePresent before any client")
 	}

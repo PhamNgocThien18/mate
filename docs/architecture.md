@@ -145,8 +145,8 @@ that same bound (`quitAbandoned`, `cmd/mate/console.go`).
 `Options.ConsolePresent` says whether a console is open: always true for
 the console's engine; for `mate core run`, true while a request saying
 `X-Mate-Client: console` (`coreapi.ClientHeader`) reached its socket in the
-last 10 s (`core.ConsoleSeen`, CON-212). Only the outbox loop reads it (`outbox.Deps.ConsolePresent`, wired
-by `engineOptions`): with no console it types nothing into a Manual
+last 10 s (`core.ConsoleSeen`, CON-212). Only the outbox loop reads it
+(`outbox.Deps.ConsolePresent`, wired by `engineOptions`): with no console it types nothing into a Manual
 project's Mate (a digest at the head is still withdrawn), while an Auto
 project gets its lines, digests and refreshes as before; `Attempt` called
 by itself (`assign`, `mate pr watch`) is not gated. The auto daemon does
@@ -214,7 +214,8 @@ How processes exchange state:
   the core runs on the socket alone. The socket alone also serves the
   clients' routes (CON-212, `internal/dashboard/client.go`; over TCP each
   is a 404): `GET /api/core` (`coreapi.CoreStatus`: `core.lock`'s record,
-  Jev, and the notices a console's status line shows), `GET /api/snapshot`
+  Jev as the pages' `Deps.Notice` says it, and the notices a console's
+  status line shows), `GET /api/snapshot`
   (`Engine.Snapshot` in Go's default JSON, without `Commands`) and `POST
   /api/act` (a `coreapi.ActionRequest` run by `Engine.Act` under
   `context.WithoutCancel`, so it finishes when the client goes away; no
@@ -232,8 +233,8 @@ How processes exchange state:
 **Target** (CON-203): the `mate core` process runs the engine whenever the
 workspace is in use (CON-213 `start|stop|restart|status`). UIs on this
 machine reach it over `.mate/core.sock` through `internal/coreclient`
-(built in CON-212); the console becomes such a client in CON-214. CLI commands keep writing files directly.
-Until then, a console runs its own engine and closing it stops the engine,
+(built in CON-212); the console becomes such a client in CON-214. CLI
+commands keep writing files directly. Until then, a console runs its own engine and closing it stops the engine,
 and with it Office/City and notifications; `mate core run` is the engine
 without a console, and the two refuse to run side by side.
 
