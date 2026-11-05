@@ -41,7 +41,7 @@ func cmdMateStart(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "usage: mate mate start <project> [--workspace <dir>] [--harness "+harnessChoices(harness.RoleMate, "|")+"] [--fresh] [--mode pane|headless]")
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
-	modeFlag := fs.String("mode", "", "pane (the harness's own TUI) or headless (mate's REPL, one harness run per message); default: the mode the Mate last ran in, else project.yaml's mate.mode, else headless when the harness can run one")
+	modeFlag := fs.String("mode", "", "pane (the harness's own TUI) or headless (mate's REPL, one harness run per message); default: project.yaml's mate.mode, else the mode the Mate last ran in, else headless when the harness can run one")
 	harnessFlag := fs.String("harness", "", "harness to launch ("+harnessChoices(harness.RoleMate, " or ")+"; default: the workspace default)")
 	freshFlag := fs.Bool("fresh", false, "start a brand new harness session instead of resuming mate.meta's session_id")
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {

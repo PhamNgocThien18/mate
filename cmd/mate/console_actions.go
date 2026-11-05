@@ -230,6 +230,9 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 	if res.ResumeNote != "" {
 		line += "; " + res.ResumeNote
 	}
+	if res.ModeNote != "" {
+		line += "; " + res.ModeNote
+	}
 	if res.Adopted {
 		line += "; adopted: an interrupted start had left it running unrecorded"
 	}

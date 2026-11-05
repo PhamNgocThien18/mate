@@ -171,6 +171,71 @@ func TestStartMateKeepsTheModeOfTheLastRun(t *testing.T) {
 	}
 }
 
+// setMateMode writes project.yaml's `mate.mode` for project.
+func setMateMode(t *testing.T, w *store.Workspace, project, mode string) {
+	t.Helper()
+	cfg, err := w.LoadProject(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Mate.Mode = mode
+	if err := w.SaveProject(project, cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// project.yaml's `mate.mode: pane` wins over the headless mode the last
+// run recorded (CON-220): a Mate that once ran headless comes back in its
+// pane at the next start that names no mode.
+func TestStartMateProjectConfigBeatsTheModeOfTheLastRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(claude.ClaudeConfigDirEnv, "")
+	w := shortWorkspace(t, "shop")
+	rt := runtime.NewFake()
+	deps := fakeDeps(t, rt)
+	deps.DefaultMode = spawn.ModeHeadless
+	playHost(t, w, rt, "shop")
+	if err := w.WriteMateMeta("shop", map[string]string{spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless}); err != nil {
+		t.Fatal(err)
+	}
+	setMateMode(t, w, "shop", spawn.ModePane)
+
+	res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Resume: true})
+	if err != nil {
+		t.Fatalf("StartMate: %v", err)
+	}
+	if res.Headless || res.ModeNote != "" || len(rt.PaneRuns) != 0 || !slices.Contains(rt.Calls, "StartAgent") {
+		t.Fatalf("result = %+v, pane runs %q; want the harness's TUI in its pane", res, rt.PaneRuns)
+	}
+	meta, _ := w.ReadMateMeta("shop")
+	if meta[spawn.MetaMode] == spawn.ModeHeadless || w.MateHeadless("shop") {
+		t.Fatalf("meta = %v, want the pane mode recorded", meta)
+	}
+}
+
+// A start from a UI that cannot show a pane runs headless over
+// project.yaml's `mate.mode: pane`, and its result says why (CON-220).
+func TestStartMateHeadlessOnlyOverConfigPaneSaysSo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(claude.ClaudeConfigDirEnv, "")
+	w := shortWorkspace(t, "shop")
+	rt := runtime.NewFake()
+	deps := fakeDeps(t, rt)
+	playHost(t, w, rt, "shop")
+	setMateMode(t, w, "shop", spawn.ModePane)
+
+	res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", HeadlessOnly: true})
+	if err != nil {
+		t.Fatalf("StartMate: %v", err)
+	}
+	if !res.Headless || !w.MateHeadless("shop") {
+		t.Fatalf("result = %+v, want a headless Mate", res)
+	}
+	if !strings.Contains(res.ModeNote, "mate.mode is pane") || !strings.Contains(res.ModeNote, "runs headless") {
+		t.Fatalf("mode note = %q, want it to say project.yaml's pane was overridden", res.ModeNote)
+	}
+}
+
 func TestStartMateHeadlessRefusesOtherHarnesses(t *testing.T) {
 	w := shortWorkspace(t, "shop")
 	rt := runtime.NewFake()

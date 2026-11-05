@@ -21,48 +21,60 @@ import (
 // HostStopWait is how long a stop lets a headless Mate finish its turn.
 const HostStopWait = 2 * time.Minute
 
-// headlessMode decides a start's mode: the request's, else, when the
-// request is HeadlessOnly, headless if the harness can run it and the pane
-// if not, else the mode the last run of this Mate recorded, else
-// project.yaml's `mate.headless`.
-func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfig, fallback string, canHeadless bool) (bool, error) {
+// headlessMode decides a start's mode, first match wins:
+//
+//  1. the request's Mode (`mate mate start --mode`);
+//  2. project.yaml's `mate.mode`, or the older `mate.headless: true`;
+//  3. the mode the last run of this Mate recorded in mate.meta (a stop
+//     keeps it);
+//  4. fallback, Deps.DefaultMode: headless in the binary since 2026-10-15.
+//
+// A harness without headless turns runs in the pane whatever step 2 to 4
+// chose, since a captain who switched harness asked for nothing else; only
+// step 1 asking for headless is refused. A HeadlessOnly request with no
+// Mode runs headless when the harness can, whatever step 2 to 4 chose;
+// when that overrides `mate.mode: pane`, note says so for the start's
+// result (CON-220).
+func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfig, fallback string, canHeadless bool) (headless bool, note string, err error) {
 	switch req.Mode {
 	case ModeHeadless:
 		if !canHeadless {
-			return false, errNoHeadless
+			return false, "", errNoHeadless
 		}
-		return true, nil
+		return true, "", nil
 	case ModePane:
-		return false, nil
+		return false, "", nil
 	case "":
 	default:
-		return false, errUsage(fmt.Sprintf("unknown Mate mode %q (want %s or %s)", req.Mode, ModePane, ModeHeadless))
+		return false, "", errUsage(fmt.Sprintf("unknown Mate mode %q (want %s or %s)", req.Mode, ModePane, ModeHeadless))
 	}
 	switch cfg.Mode {
 	case ModePane, ModeHeadless, "":
 	default:
-		return false, errUsage(fmt.Sprintf("project.yaml mate.mode %q is not a Mate mode (want %s or %s)", cfg.Mode, ModePane, ModeHeadless))
+		return false, "", errUsage(fmt.Sprintf("project.yaml mate.mode %q is not a Mate mode (want %s or %s)", cfg.Mode, ModePane, ModeHeadless))
 	}
 	if req.HeadlessOnly {
-		return canHeadless, nil
+		if canHeadless && cfg.Mode == ModePane {
+			note = headlessOnlyNote
+		}
+		return canHeadless, note, nil
 	}
-	// The mode of the last run, then project.yaml, then fallback
-	// (Deps.DefaultMode: headless in the binary since 2026-10-15). A
-	// harness without headless turns runs in the pane whatever the earlier
-	// choice was, since a captain who switched harness asked for nothing
-	// else.
-	mode := prior[MetaMode]
-	if mode == "" {
-		mode = cfg.Mode
-	}
+	mode := cfg.Mode
 	if mode == "" && cfg.Headless {
 		mode = ModeHeadless
 	}
 	if mode == "" {
+		mode = prior[MetaMode]
+	}
+	if mode == "" {
 		mode = fallback
 	}
-	return mode == ModeHeadless && canHeadless, nil
+	return mode == ModeHeadless && canHeadless, "", nil
 }
+
+// headlessOnlyNote is StartResult.ModeNote when a HeadlessOnly start runs
+// headless over project.yaml's `mate.mode: pane`.
+const headlessOnlyNote = "project.yaml's mate.mode is pane, but this start has nowhere to show a pane, so the Mate runs headless"
 
 // errNoHeadless refuses `--mode headless` on a harness that cannot run one.
 var errNoHeadless = errUsage("this harness cannot run a headless Mate: it has no headless turns (harness.HeadlessTurns)")
