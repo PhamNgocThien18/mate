@@ -11,8 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 //go:embed macos/MateNotifications.swift
@@ -42,19 +43,19 @@ func InstallNative(ctx context.Context) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "install.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	lock, err := platform.OpenNoFollow(filepath.Join(dir, "install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", err
 	}
 	defer lock.Close()
 	// Installation normally takes seconds; bound lock acquisition by context.
 	for {
-		err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
+		locked, err := platform.TryLock(lock)
+		if err != nil {
 			return "", err
+		}
+		if locked {
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -62,7 +63,7 @@ func InstallNative(ctx context.Context) (string, error) {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer platform.Unlock(lock)
 	app := filepath.Join(dir, "Mate.app")
 	version := fmt.Sprintf("%x", sha256.Sum256(append(append([]byte{}, nativeSource...), []byte(nativePlist)...)))
 	if b, err := os.ReadFile(filepath.Join(app, "Contents", "Resources", "source.sha256")); err == nil && string(b) == version {

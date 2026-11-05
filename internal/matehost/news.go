@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 // News is what a headless Mate has to tell the captain outside the
@@ -291,10 +292,10 @@ func withNewsLog(path string, fn func([]News, *os.File) error) error {
 		return err
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := platform.Lock(f); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer platform.Unlock(f) //nolint:errcheck
 	list, err := LoadNews(path)
 	if err != nil {
 		return err
