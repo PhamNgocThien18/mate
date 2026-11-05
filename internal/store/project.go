@@ -211,45 +211,49 @@ func (w *Workspace) AddProject(name string, cfg ProjectConfig) error {
 	if err := ValidateProjectName(name); err != nil {
 		return err
 	}
-	if _, ok := w.Project(name); ok {
-		return fmt.Errorf("%w: %s", ErrProjectExists, name)
-	}
-	normalised, err := w.normaliseProject(name, cfg)
-	if err != nil {
-		return err
-	}
-	if err := w.checkReposUnclaimed(name, normalised.Repos); err != nil {
-		return err
-	}
-	for _, dir := range []string{w.ProjectHome(name), w.ProjectDir(name), w.MateDir(name), w.CrewsDir(name)} {
-		if err := w.mkdirAll(dir); err != nil {
+	// One update from the check that the name is free to the save that
+	// registers it, so no LoadConfig or other change of this handle lands
+	// in between (CON-204).
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		if _, ok := w.Project(name); ok {
+			return fmt.Errorf("%w: %s", ErrProjectExists, name)
+		}
+		normalised, err := w.normaliseProject(name, cfg)
+		if err != nil {
 			return err
 		}
-	}
-	if err := w.SaveProject(name, normalised); err != nil {
-		return err
-	}
-	if err := w.seedOnce(w.ProjectCrewDoc(name), projectCrewDocSeed(name)); err != nil {
-		return err
-	}
-	w.cfg.Projects = append(w.cfg.Projects, ProjectRef{Name: name})
-	if err := w.SaveConfig(); err != nil {
-		return err
-	}
-	return nil
+		if err := w.checkReposUnclaimed(name, normalised.Repos); err != nil {
+			return err
+		}
+		for _, dir := range []string{w.ProjectHome(name), w.ProjectDir(name), w.MateDir(name), w.CrewsDir(name)} {
+			if err := w.mkdirAll(dir); err != nil {
+				return err
+			}
+		}
+		if err := w.SaveProject(name, normalised); err != nil {
+			return err
+		}
+		if err := w.seedOnce(w.ProjectCrewDoc(name), projectCrewDocSeed(name)); err != nil {
+			return err
+		}
+		next.Projects = append(next.Projects, ProjectRef{Name: name})
+		return nil
+	})
 }
 
 // RemoveProject drops a project from workspace.yaml. The state directory under
 // `projects/` is left on disk: like `crews/<id>/`, it is history and only the
 // user deletes it.
 func (w *Workspace) RemoveProject(name string) error {
-	for i, p := range w.cfg.Projects {
-		if p.Name == name {
-			w.cfg.Projects = append(w.cfg.Projects[:i:i], w.cfg.Projects[i+1:]...)
-			return w.SaveConfig()
+	return w.updateConfig(func(next *WorkspaceConfig) error {
+		for i, p := range next.Projects {
+			if p.Name == name {
+				next.Projects = append(next.Projects[:i:i], next.Projects[i+1:]...)
+				return nil
+			}
 		}
-	}
-	return fmt.Errorf("%w: %s", ErrNoProject, name)
+		return fmt.Errorf("%w: %s", ErrNoProject, name)
+	})
 }
 
 // LoadProject reads `projects/<name>/project.yaml`.
