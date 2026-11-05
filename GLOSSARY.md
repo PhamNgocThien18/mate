@@ -35,7 +35,7 @@ _Trong code_: `brief.Ship`; `store.WorkflowRoleShip`
 
 **Scout**:
 Loại task mà Crew trả kiến thức trong một report, không đổi repo.
-_Trong code_: `brief.Scout`; `spawn.CrewIsScout`
+_Trong code_: `brief.Scout`; `store.Workspace.CrewIsScout`
 
 **Hand-back**:
 Lúc Crew dừng ở trạng thái chờ Mate và giao kết quả cho Mate xét, kèm bản Crew tự kể các kiểm tra nghiệm thu.
@@ -72,7 +72,7 @@ _Trong code_: `internal/outbox`; `store.OutboxItem`
 
 **Wake**:
 Lần đọc Mate làm khi bị đánh thức: mọi việc đang mở, các dòng trạng thái mới và trạng thái từng Crew, gom trong một lần.
-_Trong code_: `cmdWake` (`cmd/mate/wake.go`); `store.Workspace.WakeCursorFile`
+_Trong code_: `internal/wake` (`wake.Render`); `store.Workspace.WakeCursorFile`
 
 **Stow**:
 Lời mate nhắc Mate ghi lại những gì chỉ có trong hội thoại, ngay trước khi Mate bị restart hay đổi phiên.

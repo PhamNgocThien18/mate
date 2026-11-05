@@ -1,16 +1,20 @@
 # Architecture
 
-What mate is made of today, on `main` at 08b3b9e (2026-11-05). Domain terms
+What mate is made of once the fourth wave of the core split
+(`refactor/con-203-wave-4`, 42c6571, 2026-11-05) is on `main`. Domain terms
 (Mate, Crew, outbox, hand-back...) are defined in
 [GLOSSARY.md](../GLOSSARY.md). `docs/mvp.md` is the history of how this came
-to be; this file is the current map.
+to be; this file is the current map. Installing and building:
+[install.md](install.md).
 
-mate is splitting its core into a process of its own (CON-203). Steps already
-on `main`: `internal/coreapi` (CON-206), the engine in `internal/core`
-(CON-207), `internal/refresh` (CON-170), `internal/platform` (CON-184,
-CON-185). Every part marked **Target** below is planned, not built; the issue
-named beside it owns the change. A PR that moves a package or a process
-updates the paragraph it changes.
+mate is splitting its core into a process of its own (CON-203). Done so far:
+`internal/coreapi` (CON-206); the engine in `internal/core` (CON-207) with the
+shared snapshot, Office/City and notifications (CON-208); `internal/refresh`
+(CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
+(CON-165); the CLI command table (CON-171); `internal/wake` (CON-169). Every
+part marked **Target** below is planned, not built; the issue named beside it
+owns the change. A PR that moves a package or a process updates the
+paragraph it changes.
 
 ## 1. Packages by layer
 
@@ -28,8 +32,8 @@ describes the layer; it does not decide it.
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
-| 5 service (dịch vụ) | Application logic that combines the layers below | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `core` |
-| 6 UI (giao diện) | What the captain looks at | `ui/console`, `dashboard` (Office and City; web pages in `internal/dashboard/ui/`) |
+| 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `core` |
+| 6 UI (giao diện) | What the captain looks at | `ui/console` (Go); Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
 Package paths are under `internal/` except `assets` and `cmd/mate`. Some
@@ -50,7 +54,9 @@ packages below storage still read or write a file under `.mate/` (section
    user is `send`.
 3. Outside the rules: `_test.go` files, the test-only packages
    `brief/brieftest`, `harness/harnesstest` and `harness/codex/codexlab`
-   (no non-test file imports them), and `scripts/`.
+   (no non-test file imports them), and `scripts/`. `scripts/ptysmoke` is a
+   module of its own (CON-183): `go list ./...` at the root does not reach
+   it, and `make vet` vets it separately.
 4. The boundary tests of section 4 add stricter local rules on top.
 
 Violations on `main` today, both debt:
@@ -67,11 +73,12 @@ Packages that mix layers, until their issue splits them:
 - `matehost` is the headless Mate host, the Mate's REPL (`repl*.go`, UI
   code) and the owner of `news.jsonl` and `work.jsonl`. **Target**: the REPL
   becomes a client of the host (CON-216, Backlog).
-- `dashboard` is the Office/City HTTP server and reads `store`, `db`,
-  `timeline` and `spawn` itself (CON-165 moves `spawn.CrewIsScout` to
-  `store`). **Target**: the server runs inside the engine (CON-208), so
-  `core` will import `dashboard`; that PR moves `dashboard` to the service
-  layer or records the exception.
+
+`dashboard` is in service, not UI: it is the Office/City HTTP server the
+engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
+reads `store`, `db`, `timeline` and `matehost` itself. The UI is the web
+pages it serves. Since CON-165 it no longer imports `spawn`
+(`store.Workspace.CrewIsScout`).
 
 **Target**: CON-188 turns this table and these rules into a test with a
 per-package table in code and a list of today's violations.
@@ -80,7 +87,7 @@ per-package table in code and a list of today's violations.
 
 | Process | Started by | Code | Runs |
 | -- | -- | -- | -- |
-| Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Holds the engine, the Office/City server and the notification loop |
+| Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications |
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone |
 | Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane, Mate and Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`) |
@@ -88,17 +95,26 @@ per-package table in code and a list of today's violations.
 | Crew | `mate crew spawn` (`internal/spawn`) | harness TUI in a Herdr pane, in `.worktrees/<project>-<crew>` | Appends status lines to its `.status` file; stops in `wait-mate` to hand back |
 | PR watcher | `mate pr watch` (`cmd/mate/pr.go`); `prwatch.Sweep` from recovery and the auto daemon | `internal/prwatch`, detached by `prwatch.ExecStarter` | One per crew pull request; on merge or close, queues a line in the outbox and delivers it itself |
 | Read-only dashboard | `mate dashboard` | `cmdDashboard`, `cmd/mate/dashboard.go` | Office/City over `db.OpenRead`; the port is busy while a console serves it |
-| CLI commands | the Mate, a Crew or the captain | `run`, `cmd/mate/dispatch.go` | Short-lived: `mate send`, `mate wake`, `mate news`, `mate merge`... Read and write `.mate/` directly, not through the console |
+| CLI commands | the Mate, a Crew or the captain | `commands()` table, `cmd/mate/dispatch.go` | Short-lived: `mate send`, `mate wake`, `mate news`, `mate merge`... Read and write `.mate/` directly, not through the console |
 
 Inside the console, `core.Engine` (`internal/core/engine.go`, built by
-`engineOptions` in `cmd/mate/console_auto.go`) starts, in order: the observer
+`engineOptions` in `cmd/mate/console_auto.go`) starts, in order: the re-read
+of `workspace.yaml` every 2 s (`internal/core/reload.go`); the observer
 (`internal/watch`, a poll every 5 s) which records the timeline at the end of
 each poll (`internal/timeline`); the outbox sender (`internal/outbox`, every
 2 s); the auto daemon (`internal/autopilot`, every 90 s); recovery
-(`internal/recovery`). `Stop` stops them in reverse. The console TUI
-(`internal/ui/console`) reads a `query.Snapshot` every 2 s through
-`coreapi.LoadFunc` and acts through `coreapi.ActionFunc`; `cmd/mate` builds
-both.
+(`internal/recovery`); the Office/City server (`internal/core/dashboard.go`);
+the notification loop (`internal/core/notify.go`). `Stop` stops them in
+reverse.
+
+`Engine.Snapshot` (`internal/core/snapshot.go`) is the one `query.Snapshot`
+every UI reads: `query.LoadLive` plus what the loops know, kept for up to
+2 s, computed only when someone reads. `Engine.FreshSnapshot` skips the
+cache (the button check of `POST /api/actions`); `Engine.Invalidate` drops
+it after an action. The console TUI (`internal/ui/console`) reads it every
+2 s through `coreapi.LoadFunc` (`consoleLoad` adds the console's own keys)
+and acts through `coreapi.ActionFunc` (`tuiAndWebActions`,
+`cmd/mate/console_actions.go`, wrapped by `invalidateAfter`).
 
 How processes exchange state:
 
@@ -129,15 +145,16 @@ How processes exchange state:
   (`internal/screen/chain/chain.go`). The observer and the startup settle
   ask Jev only about a screen the fixture cannot read, when it is
   configured.
-- **HTTP.** Office and City call the console's server (`internal/dashboard`,
+- **HTTP.** Office and City call the engine's server (`internal/dashboard`,
   default `127.0.0.1:7777`, LAN only with `allow_remote`).
 
-**Target** (CON-203): one `mate core` process per workspace runs the engine,
-Office/City and notifications with no UI open (CON-208 shared snapshot;
-CON-209 one entry for actions; CON-210 bounded stop; CON-211 `mate core run`
-and `core.lock`; CON-213 `start|stop|restart|status`). UIs reach it over
-`.mate/core.sock` (CON-212) through `internal/coreclient` (CON-214). The
-console becomes a client. CLI commands keep writing files directly.
+**Target** (CON-203): one `mate core` process per workspace runs the engine
+with no UI open (CON-209 one entry for actions; CON-210 bounded stop;
+CON-211 `mate core run` and `core.lock`; CON-213 `start|stop|restart|status`).
+UIs reach it over `.mate/core.sock` (CON-212) through `internal/coreclient`
+(CON-214). The console becomes a client. CLI commands keep writing files
+directly. Until then, closing the console stops the engine, and with it
+Office/City and notifications.
 
 ## 3. State files in `.mate/`
 
@@ -148,14 +165,14 @@ true yet.
 
 | File | Owner | Written by | Read by |
 | -- | -- | -- | -- |
-| `workspace.yaml` | `store` | `mate init`, `mate project …` | every process (`store.Open`); the console re-reads it every 2 s |
+| `workspace.yaml` | `store` | `mate init`, `mate project …` | every process (`store.Open`); the engine re-reads it every 2 s |
 | `.env`, `WORKSPACE.md`, `CREW.md` | `store` | the captain | `store.LoadEnv`; brief and manual rendering |
 | `console.yaml` | `consolecmd` | the captain | the console (`loadConsoleCommands`) |
 | `plugins.yaml` | `plugin` | `mate plugin` | `spawn` at Mate start, console, dashboard |
 | `crew-dispatch.json` | `dispatch` | the captain | `mate crew dispatch` |
 | `console.lock` | `store` | the console (flock) | a second console, which asks to replace it |
-| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | dashboard, `mate events`, `mate usage`, `mate state`, refresh |
-| `notifications.json` | `notifications` | the console's notification loop | the same loop (flock on `notifications.json.lock`) |
+| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, refresh |
+| `notifications.json` | `notifications` | the engine's notification loop (`internal/core/notify.go`) | the same loop (flock on `notifications.json.lock`) |
 | `projects/<p>/project.yaml`, `PROJECT.md` | `store` | `mate project …`; the Mate (`PROJECT.md`) | spawn, query, `mate recall` |
 | `projects/<p>/sent.log` | `store` | outbox, `mate send`, hook, refresh, autopilot, the console | box, timeline |
 | `projects/<p>/incidents.log` | `store` | watch, outbox, timeline, `mate crew budget` | box |
@@ -166,11 +183,11 @@ true yet.
 | `projects/<p>/mate/mate.meta` | `store` | spawn, hook (session id) | query, watch, timeline, refresh |
 | `projects/<p>/mate/.manual`, `.auto` | `store` | the console's `m` key (`store.Workspace.SetMode`); autopilot releases `.manual` | autopilot, timeline; Auto means no `.manual` |
 | `projects/<p>/mate/.outbox`, `.outbox.lock` | `store` | `assign` from the console, autopilot (digests), stow, prwatch | outbox sender, query |
-| `projects/<p>/mate/.auto-cursor`, `.wake-cursor` | `store` | outbox (on a digest), `mate wake` | autopilot, `mate wake` |
+| `projects/<p>/mate/.auto-cursor`, `.wake-cursor` | `store` | outbox (on a digest), `mate wake` (`internal/wake`) | autopilot, `mate wake` |
 | `projects/<p>/mate/memory.md`, `backlog.md` | `memory` format, `store` I/O | the Mate (`mate remember`, `mate backlog`) | `mate recall` |
 | `projects/<p>/mate/news.jsonl` | `matehost` | `mate news`; the friction check of `mate wake`, `land` and `merge`; the host (answers) | query, dashboard, REPL, notifications |
 | `projects/<p>/mate/work.jsonl` | `matehost` | `mate work`, `mate land`, the console (the captain's tick) | query, dashboard, REPL |
-| `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City |
+| `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City, notifications |
 | `projects/<p>/mate/learnings/<c>.md` | `learnings` | the Mate; the app (`## Usage (app)`, predictions) | `mate wake`, `mate learnings` |
 
 Crews work in `.worktrees/<project>-<crew>`, git worktrees that `spawn`
@@ -216,13 +233,14 @@ to `DetectFor` (`internal/host/detect.go`) and its case to `Open`
 `platformAdapters` of `internal/platform/ratchet_test.go`, with a reason.
 Panes it creates run `mate pane serve` (`cmd/mate/pane.go`).
 
-**A CLI command.** Today: add a case to the switch in `run`
-(`cmd/mate/dispatch.go`) and the command to the usage string there, with the
-handler `cmdX` in `cmd/mate/<x>.go`. Keep logic in an `internal/` package
-and only flag parsing and output in `cmd/mate` (CON-164; CON-167 and CON-169
-move recall and wake out). A command the Mate or a Crew uses must also be
-taught in its manual or skill under `assets/mate/` or the brief template
-`assets/crew/brief.md.tmpl`. **Target**: CON-171 replaces the switch and
-the hand-written usage with one command table. A console key that runs a
-tool is not a CLI command: `.mate/console.yaml`, `internal/consolecmd`,
-`docs/console-commands.md`.
+**A CLI command.** Add one row to `commands()` in `cmd/mate/dispatch.go`
+(names, one-line summary, handler, and `internal` for a command only mate
+itself runs); dispatch and the usage text both come from that table, and
+`cmd/mate/dispatch_test.go` checks every row is reachable and listed. Put the
+handler `cmdX` in `cmd/mate/<x>.go`, with only flag parsing and output there,
+and the logic in an `internal/` package, as `internal/wake` does for
+`mate wake` (CON-164; **Target**: CON-167 moves recall out). A command the
+Mate or a Crew uses must also be taught in its manual or skill under
+`assets/mate/` or the brief template `assets/crew/brief.md.tmpl`. A console
+key that runs a tool is not a CLI command: `.mate/console.yaml`,
+`internal/consolecmd`, `docs/console-commands.md`.
