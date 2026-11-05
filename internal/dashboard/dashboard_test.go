@@ -16,7 +16,6 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/query"
-	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
@@ -662,7 +661,7 @@ func TestTaskSaysItsRole(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				meta[spawn.MetaKind] = c.kind
+				meta[store.MetaKind] = c.kind
 				if err := f.ws.WriteCrewMeta(fixtureProject, fixtureCrew, meta); err != nil {
 					t.Fatal(err)
 				}

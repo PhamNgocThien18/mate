@@ -32,7 +32,7 @@ import (
 // scout never rests: its hand-back is its report, and a message to it is a
 // follow-up question, not a fix round.
 func restingCrew(w *store.Workspace, project, crew string, meta map[string]string) (resting bool, verb string, err error) {
-	if spawn.CrewIsScout(w, project, crew, meta) {
+	if w.CrewIsScout(project, crew, meta) {
 		return false, "", nil
 	}
 	entries, _, err := w.ReadStatus(project, crew, 0)

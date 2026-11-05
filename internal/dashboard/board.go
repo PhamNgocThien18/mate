@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/db"
-	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
@@ -159,12 +158,12 @@ func (s *Server) handleBoard(ctx context.Context, r *http.Request, env envelope)
 }
 
 // boardRole is what a task was for: a reviewer (review.meta, so Review is
-// set), a scout (spawn.CrewIsScout), else a ship.
+// set), a scout (store.Workspace.CrewIsScout), else a ship.
 func boardRole(s *Server, project string, t Task, meta map[string]string) string {
 	switch {
 	case t.Review != "":
 		return "review"
-	case spawn.CrewIsScout(s.ws, project, t.Crew, meta):
+	case s.ws.CrewIsScout(project, t.Crew, meta):
 		return "scout"
 	}
 	return "ship"

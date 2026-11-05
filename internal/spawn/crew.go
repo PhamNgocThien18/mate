@@ -46,9 +46,9 @@ const (
 	MetaWorktree = "worktree"
 	// MetaBranch is the branch the worktree is checked out on.
 	MetaBranch = "branch"
-	// MetaKind is the task's shape, "ship" or "scout" (brief.Kind). A crew
-	// spawned before it was recorded has none; CrewIsScout reads its brief.
-	MetaKind = "kind"
+	// MetaKind is store.MetaKind: the task's shape, "ship" or "scout"
+	// (brief.Kind), read by Workspace.CrewIsScout.
+	MetaKind = store.MetaKind
 	// MetaDelivery is crewstate.MetaDelivery: `local` or `pr`.
 	MetaDelivery = crewstate.MetaDelivery
 	// MetaSize is the task's size (brief.Size, `--size`): `small`, `medium`
@@ -1070,24 +1070,6 @@ func planKind(plan crewPlan) brief.Kind {
 		return brief.Scout
 	}
 	return brief.Ship
-}
-
-// CrewIsScout reports whether a crew's task is a scout: its meta's kind,
-// or, for a crew spawned before kind was recorded, the app's copy of its
-// brief carrying a `## Deliverable`, which only a scout brief may have.
-func CrewIsScout(w *store.Workspace, project, crew string, meta map[string]string) bool {
-	switch meta[MetaKind] {
-	case brief.Scout.String():
-		return true
-	case brief.Ship.String():
-		return false
-	}
-	raw, err := os.ReadFile(w.CrewBrief(project, crew))
-	if err != nil {
-		return false
-	}
-	_, found := brief.SectionText(string(raw), brief.Deliverable)
-	return found
 }
 
 // spawnLane is the lane a spawn holds: the repo's unless `--lane` said

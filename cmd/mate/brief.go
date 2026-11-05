@@ -197,7 +197,7 @@ func briefUpdate(ctx context.Context, w *store.Workspace, deps spawn.Deps, proje
 	updated := string(current)
 	if revision != "" {
 		kind := brief.Ship
-		if spawn.CrewIsScout(w, project, crew, meta) {
+		if w.CrewIsScout(project, crew, meta) {
 			kind = brief.Scout
 		}
 		updated, err = brief.ReviseTask(updated, revision, kind)

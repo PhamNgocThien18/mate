@@ -13,7 +13,6 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/query"
-	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
@@ -416,7 +415,7 @@ func taskRole(ws *store.Workspace, project, crew, review string, meta map[string
 	switch {
 	case review != "":
 		return store.WorkflowRoleReview
-	case spawn.CrewIsScout(ws, project, crew, meta):
+	case ws.CrewIsScout(project, crew, meta):
 		return store.WorkflowRoleScout
 	}
 	return store.WorkflowRoleShip
