@@ -202,9 +202,14 @@ func (s *Server) handleAllActions(ctx context.Context, _ *http.Request, env enve
 	return out, nil
 }
 
-// projectNode is one Project of the console's snapshot.
-func (s *Server) projectNode(ctx context.Context, project string) (query.ProjectNode, error) {
-	snap, err := s.deps.Snapshot(ctx)
+// freshProjectNode is one Project of a snapshot read anew, not one the core
+// handed out a moment ago: what a press is checked against.
+func (s *Server) freshProjectNode(ctx context.Context, project string) (query.ProjectNode, error) {
+	read := s.deps.FreshSnapshot
+	if read == nil {
+		read = s.deps.Snapshot
+	}
+	snap, err := read(ctx)
 	if err != nil {
 		return query.ProjectNode{}, err
 	}
@@ -359,7 +364,7 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.WithoutCancel(r.Context())
-	node, err := s.projectNode(ctx, req.Project)
+	node, err := s.freshProjectNode(ctx, req.Project)
 	if err != nil {
 		var missing errNotFound
 		if errors.As(err, &missing) {
