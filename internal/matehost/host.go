@@ -153,6 +153,9 @@ type Host struct {
 	held    []heldItem
 	heldSeq int
 	after   afterFunc
+	// releaseMu runs one release at a time (release); it is taken before
+	// mu, never after it.
+	releaseMu sync.Mutex
 
 	// Sessions (session.go): the open ones by news, and what they run with.
 	sessions  map[int]*session
@@ -258,13 +261,9 @@ func (h *Host) AnswerNews(id int, text string) error {
 	}
 	var n News
 	err := withNewsLog(h.newsPath, func(list []News, f *os.File) error {
-		var ok bool
-		if n, ok = findNews(list, id); !ok {
-			return fmt.Errorf("%w: #%d", ErrNoNews, id)
-		}
-		if n.Closed() {
-			// An answer would open it again and spend a Mate turn closing it.
-			return fmt.Errorf("news #%d is already closed", id)
+		var err error
+		if n, err = answerable(list, id); err != nil {
+			return err
 		}
 		return writeNewsEvent(f, newsEvent{At: h.now(), Op: opAnswer, ID: id, Text: text})
 	})
@@ -592,6 +591,7 @@ func (h *Host) Stop(wait time.Duration, force bool) (killed bool) {
 	h.mu.Lock()
 	h.stopping = true
 	h.queue = nil
+	dropped := len(h.held)
 	h.dropHeldLocked()
 	run, idle := h.run, h.idle
 	for _, s := range h.sessions {
@@ -600,6 +600,10 @@ func (h *Host) Stop(wait time.Duration, force bool) (killed bool) {
 		}
 	}
 	ev := h.eventLocked(nil)
+	if dropped > 0 {
+		// What the captain sent is not dropped without a word.
+		ev.Note = fmt.Sprintf("Mate đang dừng: %d mục anh gửi chưa tới Mate đã bị bỏ", dropped)
+	}
 	h.mu.Unlock()
 	h.emit(ev)
 	if run == nil {

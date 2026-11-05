@@ -599,8 +599,7 @@
       // It carries what the Mate's host holds for its undo (CON-222):
       // `goes` is when each item goes, by this page's clock.
       reads.push(api(chatPath(s.project)).then(function (body) {
-        var at = Date.now();
-        body.held = (body.held || []).map(function (x) { return Object.assign({}, x, { goes: at + (x.left_ms || 0) }); });
+        body.held = heldList(body);
         if (token === detailToken) chat = { key: key, body: body };
       }, function (err) {
         if (token === detailToken) chat = { key: key, error: err };
@@ -1880,29 +1879,50 @@
   // page only counts down what GET /chat says it holds.
 
   function heldOf(name) { return chatOf(name).held || []; }
+
+  // captainHeld is, by project, what its Mate's host holds, read for the
+  // captain's drawer after an answer from it: that drawer reads no chat.
+  var captainHeld = {};
+  function heldList(body) {
+    var at = Date.now();
+    return (body.held || []).map(function (x) { return Object.assign({}, x, { goes: at + (x.left_ms || 0) }); });
+  }
+  function loadHeld(name) {
+    return api(chatPath(name)).then(function (body) { captainHeld[name] = heldList(body); }, function () { delete captainHeld[name]; });
+  }
   function leftOf(x) { return Math.max(0, Math.ceil((x.goes - Date.now()) / 1000)); }
 
-  // watchHeld redraws each second while the open Mate's host holds
-  // something, and reads the drawer and the board again once an item's time
-  // is up.
+  // watchHeld redraws each second while a host holds something this page
+  // shows - the open Mate's, or an answer from the captain's drawer - and
+  // reads again once an item's time is up: the drawer, the board and the
+  // Talk that follows the turn it started, or the news.
   var heldTimer = 0;
+  function shownHeld() {
+    var open = sel && sel.kind === "mate" ? sel.project : "";
+    var out = open ? heldOf(open) : [];
+    Object.keys(captainHeld).forEach(function (p) { out = out.concat(captainHeld[p]); });
+    return out;
+  }
   function watchHeld() {
-    if (heldTimer) return;
-    var name = sel && sel.kind === "mate" ? sel.project : "";
-    if (!name || !heldOf(name).length) return;
+    if (heldTimer || !shownHeld().length) return;
     heldTimer = setInterval(function () {
-      var open = sel && sel.kind === "mate" ? sel.project : "";
-      var held = open ? heldOf(open) : [];
-      if (!held.length) {
+      if (!shownHeld().length) {
         clearInterval(heldTimer);
         heldTimer = 0;
         return;
       }
-      if (held.some(function (x) { return x.goes <= Date.now(); })) {
-        Promise.all([loadDetail(), loadWork()]).then(draw);
-        return;
-      }
-      draw();
+      var now = Date.now();
+      var open = sel && sel.kind === "mate" ? sel.project : "";
+      var reads = [];
+      if (open && heldOf(open).some(function (x) { return x.goes <= now; })) reads.push(loadDetail(), loadWork());
+      Object.keys(captainHeld).forEach(function (p) {
+        if (captainHeld[p].some(function (x) { return x.goes <= now; })) reads.push(loadHeld(p), loadNews());
+      });
+      if (!reads.length) { draw(); return; }
+      Promise.all(reads).then(function () {
+        draw();
+        if (open) followTalk(open);
+      });
     }, 1000);
   }
 
@@ -1915,7 +1935,7 @@
     }, function (err) {
       outcomes[key] = outcomeOf(err);
     }).then(function () {
-      return Promise.all([loadDetail(), loadWork()]);
+      return Promise.all([loadDetail(), loadWork(), captainHeld[name] ? loadHeld(name) : null]);
     }).then(draw);
   }
 
@@ -2351,6 +2371,16 @@
     nodes.push(own);
     var project = key.slice(0, key.lastIndexOf("/"));
     var sending = !!running["news/" + key];
+    // An answer the Mate's host holds for its undo (CON-222).
+    var held = (captainHeld[project] || []).filter(function (x) { return x.kind === "answer" && x.news === n.id; }).pop();
+    if (held) {
+      nodes.push(el("div", { class: "wundo", role: "status" }, heldLine(held, "Sending “" + firstLine(held.text) + "”", "answer-undo:" + key, function () {
+        undoHeld(project, held, "news/" + key, function (text) {
+          var o = (n.options || []).filter(function (x) { return text === "[" + x.key + "] " + x.text; })[0];
+          if (o) { d.opt = o.key; d.own = ""; } else if (!d.own.trim()) d.own = text;
+        });
+      })));
+    }
     // The answer the Mate gets: the captain's words, else the option as
     // the City sends it.
     var answer = function () {
@@ -2361,6 +2391,7 @@
     var whyNot = function () {
       if (wsReadOnly) return "read-only dashboard";
       if (sending) return "";
+      if (held) return "the answer above goes when its undo is over";
       return answer() ? "" : "pick an option or type an answer";
     };
     var send = el("button", { class: "btn primary", type: "button", disabled: sending || !!whyNot(), "data-focus": "send:" + key },
@@ -2397,7 +2428,7 @@
       outcomes[okey] = outcomeOf(err);
     }).then(function () {
       delete running[okey];
-      return loadNews();
+      return Promise.all([loadNews(), loadHeld(project)]);
     }).then(draw);
   }
 

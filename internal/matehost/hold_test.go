@@ -67,6 +67,22 @@ func (ft *fakeTimers) fire(t *testing.T) {
 	}
 }
 
+// fireNewest runs out only the newest timer, as when the timers of two
+// items sent close together fire out of order.
+func (ft *fakeTimers) fireNewest() {
+	ft.mu.Lock()
+	newest := 0
+	for id := range ft.fns {
+		newest = max(newest, id)
+	}
+	fn := ft.fns[newest]
+	delete(ft.fns, newest)
+	ft.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 // running is how many timers are started and not yet stopped or run.
 func (ft *fakeTimers) running() int {
 	ft.mu.Lock()
@@ -285,13 +301,38 @@ func TestDeliverWaitsForHeldWords(t *testing.T) {
 	f.done(t, 1)
 }
 
-// Stopping drops what is held, as it drops the queue.
+// Two items whose timers fire out of order reach the Mate in the order the
+// captain sent them: the later timer sends the earlier item first.
+func TestHeldItemsGoInTheOrderSent(t *testing.T) {
+	f := newFixture(t)
+	for _, text := range []string{"một", "hai"} {
+		if _, err := f.host.Say(text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.timers.fireNewest()
+	if st := f.host.State(); len(st.Held) != 0 {
+		t.Fatalf("still held after the later timer: %+v", st.Held)
+	}
+	f.timers.fire(t)
+	if items := f.done(t, 2); items[0].Text != "một" || items[1].Text != "hai" {
+		t.Fatalf("the Mate got %q then %q", items[0].Text, items[1].Text)
+	}
+}
+
+// Stopping drops what is held, as it drops the queue, and says so.
 func TestStopDropsHeld(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.host.Say("muộn quá"); err != nil {
 		t.Fatal(err)
 	}
 	f.host.Stop(time.Second, false)
+	f.mu.Lock()
+	note := f.events[len(f.events)-1].Note
+	f.mu.Unlock()
+	if !strings.Contains(note, "1 mục") {
+		t.Errorf("the stop said %q of what it dropped", note)
+	}
 	if f.timers.running() != 0 {
 		t.Fatal("a held item's timer outlived the stop")
 	}

@@ -188,6 +188,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connected(msg)
 	case linkDownMsg:
 		m.linked, m.lost = false, true
+		// What the host held is the host's to tell again: no countdown, no
+		// `u`, until it is back.
+		m.state.Held = nil
 		// The note would hide that the host is gone (footer).
 		m.note = ""
 	case replyMsg:

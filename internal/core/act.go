@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -297,8 +298,11 @@ func (e *Engine) mateHost(project string) (matehost.Client, error) {
 
 // okayOnHost hands a tick on the work board to the headless Mate's host,
 // which holds it for its undo like a message (CON-222). held is false
-// where no host takes it - no headless Mate, or its host does not answer -
-// and the tick then runs at once through Options.Act, as it did before.
+// where no host takes it - no headless Mate, no host to dial, or a host
+// older than work-okay - and the tick then runs at once through
+// Options.Act, as it did before. A host that was reached and did not
+// answer in time may hold it already, so that is an error, not a second
+// tick.
 func (e *Engine) okayOnHost(ctx context.Context, req coreapi.ActionRequest) (line string, held bool, err error) {
 	id, convErr := strconv.Atoi(req.Input)
 	if convErr != nil || id <= 0 || e.o.Workspace == nil {
@@ -310,7 +314,7 @@ func (e *Engine) okayOnHost(ctx context.Context, req coreapi.ActionRequest) (lin
 	}
 	h, err := c.OkayWork(ctx, id)
 	switch {
-	case err != nil && !matehost.Refused(err):
+	case err != nil && noHost(err):
 		return "", false, nil
 	case err != nil:
 		return "", true, err
@@ -318,6 +322,16 @@ func (e *Engine) okayOnHost(ctx context.Context, req coreapi.ActionRequest) (lin
 		return fmt.Sprintf("okayed work #%d of %s; it is off the board", id, req.Target), true, nil
 	}
 	return fmt.Sprintf("OK of work #%d of %s goes in %s · undo until then", id, req.Target, undoIn()), true, nil
+}
+
+// noHost reports whether err says the host took nothing: there was none
+// to dial, or it does not know the op.
+func noHost(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return true
+	}
+	return matehost.Refused(err) && strings.Contains(err.Error(), "unknown op")
 }
 
 // undoIn is the undo's time, as a line says it.

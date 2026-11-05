@@ -292,7 +292,7 @@ func (h *Host) answer(req request) response {
 		if err != nil {
 			return failed(err)
 		}
-		return response{OK: true, Held: &held, Text: held.Text}
+		return response{OK: true, Held: &held}
 	case OpWorkRefresh:
 		h.RefreshWork()
 		return response{OK: true}

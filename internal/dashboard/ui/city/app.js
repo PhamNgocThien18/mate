@@ -843,6 +843,9 @@ async function undoHeld(project, x, key, back) {
   try {
     await press({ action: 'undo', project, held: x.id });
     S.results.delete(key);
+    // Gone at once, whatever a read on its way still says.
+    const c = S.chats.get(project);
+    if (c?.held) c.held = c.held.filter((y) => y.id !== x.id);
     back?.(x.text);
   } catch (e) {
     S.results.set(key, { kind: outcome(e), text: e.message, at: nowISO() });
@@ -906,9 +909,15 @@ VIEWS.mate = () => {
 // captain's messages and the Mate's replies, nothing the crews or the app
 // said and none of the Mate's tools (CON-151). A message waits in the
 // Mate's host for its undo, then goes to the Mate as the captain's.
+// A read asked for while one is on its way runs again after it: the one on
+// its way may have left before the press that asked.
 const chatBusy = new Set();
+const chatAgain = new Set();
 async function loadChat(project) {
-  if (chatBusy.has(project)) return;
+  if (chatBusy.has(project)) {
+    chatAgain.add(project);
+    return;
+  }
   chatBusy.add(project);
   try {
     const body = await api(`/api/projects/${enc(project)}/chat`);
@@ -920,6 +929,7 @@ async function loadChat(project) {
   } finally {
     chatBusy.delete(project);
   }
+  if (chatAgain.delete(project)) return loadChat(project);
   render();
   watchHeld();
   // While the Mate answers, read again until it is done.

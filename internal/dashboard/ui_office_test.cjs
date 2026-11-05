@@ -1566,3 +1566,33 @@ test("Send to the Mate answers a news with the picked option or the captain's wo
   assert.match(app.drawer().querySelector(".nli.open .res").textContent, /answered news 4 of shop/);
   assert.ok(app.requests.filter(r => r.url === "/api/news").length >= 2, "the news is read again");
 });
+
+test("an answer the Mate's host holds shows under the news with an Undo that picks the option again", async () => {
+  const pressed = [];
+  const fx = fixture();
+  const chat = { project: "shop", headless: true, items: [], state: {}, held: [] };
+  fx.chats = { shop: chat };
+  const app = await boot({ fixture: fx, hash: "#captain", actions: SHOP_ACTIONS, press: b => {
+    pressed.push(b);
+    if (b.action === "answer") {
+      chat.held = [{ id: 5, kind: "answer", news: b.news, text: b.text, left_ms: 5000 }];
+      return { body: { line: "answer to news #4 goes to the Mate of shop in 5 s · undo until then" } };
+    }
+    chat.held = [];
+    return { body: { line: "took back the answer to news #4 · nothing sent" } };
+  } });
+  await app.click(newsRow(app.drawer(), "Primary button colour"));
+  const form = () => app.drawer().querySelector(".nans-form");
+  form().querySelectorAll('input[type="radio"]')[1].dispatch("change");
+  await app.flush();
+  await app.click(form().querySelector('[data-focus="send:shop/4"]'));
+  const line = () => form().querySelector(".wundo");
+  assert.match(line().text, /^Sending “\[b\] .*” in 5s · Undo$/, "the held answer counts down under the news");
+  assert.ok("disabled" in form().querySelector('[data-focus="send:shop/4"]').attrs, "no second answer while one is held");
+  await app.tick(1);
+  assert.match(line().text, /in 4s · Undo$/);
+  await app.click(line().querySelector('[data-focus="answer-undo:shop/4"]'));
+  assert.deepEqual(pressed[1], { action: "undo", project: "shop", held: 5 });
+  assert.equal(line(), null, "Undo takes the line away");
+  assert.ok("checked" in form().querySelectorAll('input[type="radio"]')[1].attrs, "the option is picked again");
+});

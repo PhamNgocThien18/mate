@@ -3,7 +3,6 @@ package matehost
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -144,20 +143,35 @@ func (h *Host) hold(it Held) (Held, error) {
 }
 
 // release runs held item id once its delay is over, as the host ran it
-// before it had an undo. One taken back or dropped by Stop is gone. The
-// event of what it ran is the first without it, so a client that sees an
-// answer leave sees its news answered in the same event; every path below
-// emits one (a turn, the news or the board read again, a warning).
+// before it had an undo, and with it every item held before it: they all
+// wait the same UndoDelay, so theirs is over too. Each timer runs on its
+// own goroutine; releaseMu and taking the items in id order keep the
+// Mate getting them in the order the captain sent them, whichever timer
+// fires first. One taken back or dropped by Stop is gone.
 func (h *Host) release(id int) {
+	h.releaseMu.Lock()
+	defer h.releaseMu.Unlock()
 	h.mu.Lock()
-	i := slices.IndexFunc(h.held, func(it heldItem) bool { return it.ID == id })
-	if i < 0 {
-		h.mu.Unlock()
-		return
-	}
-	it := h.held[i].Held
-	h.held = slices.Delete(h.held, i, i+1)
+	var due []Held
+	h.held = slices.DeleteFunc(h.held, func(it heldItem) bool {
+		if it.ID > id {
+			return false
+		}
+		it.stop()
+		due = append(due, it.Held)
+		return true
+	})
 	h.mu.Unlock()
+	for _, it := range due {
+		h.run1(it)
+	}
+}
+
+// run1 runs one held item. The event of what it ran is the first without
+// it, so a client that sees an answer leave sees its news answered in the
+// same event; every path below emits one (a turn, the news or the board
+// read again, a warning).
+func (h *Host) run1(it Held) {
 	switch it.Kind {
 	case HeldSay:
 		h.Submit(it.Text)
@@ -207,29 +221,34 @@ func (h *Host) checkAnswer(id int) error {
 	if err != nil {
 		return err
 	}
-	n, ok := findNews(list, id)
-	if !ok {
-		return fmt.Errorf("%w: #%d", ErrNoNews, id)
-	}
-	if n.Closed() {
-		return fmt.Errorf("news #%d is already closed", id)
-	}
-	return nil
+	_, err = answerable(list, id)
+	return err
 }
 
-// checkOkay refuses a tick on a row that is not there or not done, in the
-// words OkayWork refuses it with.
+// answerable is news id of list, when the captain can answer it: it is
+// there and not closed. AnswerNews asks it again when the answer goes.
+func answerable(list []News, id int) (News, error) {
+	n, ok := findNews(list, id)
+	if !ok {
+		return News{}, fmt.Errorf("%w: #%d", ErrNoNews, id)
+	}
+	if n.Closed() {
+		// An answer would open it again and spend a Mate turn closing it.
+		return News{}, fmt.Errorf("news #%d is already closed", id)
+	}
+	return n, nil
+}
+
+// checkOkay refuses a tick on a row that is not there or not done, with
+// the check OkayWork runs when the tick goes (okayable).
 func checkOkay(path string, id int) error {
 	list, err := LoadWork(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return err
 	}
 	w, ok := findWork(list, id)
 	if !ok {
 		return fmt.Errorf("%w: #%d", ErrNoWork, id)
 	}
-	if w.Status != WorkDone {
-		return fmt.Errorf("work #%d is %s, not done", id, w.Status)
-	}
-	return nil
+	return okayable(w)
 }

@@ -255,11 +255,14 @@ func TestTheHostHoldsTheCaptainsWords(t *testing.T) {
 	}
 }
 
-// A tick with no headless Mate's host to hold it - no Mate, or a host that
-// does not answer - runs at once through Options.Act, as before the undo.
+// A tick with no headless Mate's host to hold it - no Mate, no host to
+// dial, a host older than work-okay - runs at once through Options.Act, as
+// before the undo.
 func TestTheTickRunsInTheConsoleWithoutAHost(t *testing.T) {
 	okay := coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"}
-	for name, w := range map[string]*store.Workspace{"no Mate": shopWorkspace(t), "no host": hostWorkspace(t)} {
+	old := hostWorkspace(t)
+	serveFakeHost(t, old.MateDir("shop"), func(hostCall) string { return `{"error":"unknown op \"work-okay\""}` })
+	for name, w := range map[string]*store.Workspace{"no Mate": shopWorkspace(t), "no host": hostWorkspace(t), "an older host": old} {
 		h := newHeldActs()
 		e := New(Options{Workspace: w, Act: h.act})
 		if _, err := e.Act(context.Background(), okay); err != nil {
