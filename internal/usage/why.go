@@ -1,4 +1,4 @@
-package main
+package usage
 
 import (
 	"context"
@@ -25,15 +25,15 @@ const (
 	whyTextWidth    = 160
 )
 
-// printCrewWhy is `mate usage <project> <crew> --why`: the dashboard Task
+// writeWhy is `mate usage <project> <crew> --why`: the dashboard Task
 // page's diagnostics as one bounded page of text. It reads through
 // dashboard.Server so the two can never disagree, and it adds no
 // measurement of its own: every number is the ledger's or the projection's.
-func printCrewWhy(ctx context.Context, handle *db.DB, w *store.Workspace, stdout io.Writer, project, crew string) error {
+func writeWhy(ctx context.Context, out io.Writer, w *store.Workspace, handle *db.DB, deps dashboard.Deps, project, crew string) error {
 	if err := store.ValidateCrewID(crew); err != nil {
 		return err
 	}
-	server, err := dashboard.New(dashboard.Options{Workspace: w, DB: handle, Deps: dashboardDeps(w)})
+	server, err := dashboard.New(dashboard.Options{Workspace: w, DB: handle, Deps: deps})
 	if err != nil {
 		return err
 	}
@@ -42,44 +42,45 @@ func printCrewWhy(ctx context.Context, handle *db.DB, w *store.Workspace, stdout
 		return err
 	}
 
-	fmt.Fprintf(stdout, "usage why %s %s\n", project, crew)
-	writeWhyHead(stdout, ledger, turns, perf)
+	fmt.Fprintf(out, "usage why %s %s\n", project, crew)
+	WriteWhyHead(out, ledger, turns, perf)
 	t := ledger.Tokens
 	if len(turns) == 0 {
-		fmt.Fprintf(stdout, "\nno model calls recorded for %s; there is nothing to explain yet\n", crew)
+		fmt.Fprintf(out, "\nno model calls recorded for %s; there is nothing to explain yet\n", crew)
 		return nil
 	}
 
-	whyWork(stdout, perf, t.Total)
-	whyLoops(stdout, perf.Loops)
-	whyFindingList(stdout, perf.Findings)
-	whyInstructionList(stdout, perf.ObservedInputs)
-	whyPromptList(stdout, perf.PromptTurns)
+	whyWork(out, perf, t.Total)
+	whyLoops(out, perf.Loops)
+	whyFindingList(out, perf.Findings)
+	whyInstructionList(out, perf.ObservedInputs)
+	whyPromptList(out, perf.PromptTurns)
 	if missing := perf.Freshness.Missing; len(missing) > 0 {
-		fmt.Fprintln(stdout, "\nnot measured (no conclusion may rest on these):")
+		fmt.Fprintln(out, "\nnot measured (no conclusion may rest on these):")
 		for _, m := range missing {
-			fmt.Fprintf(stdout, "- %s\n", m)
+			fmt.Fprintf(out, "- %s\n", m)
 		}
 	}
 	return nil
 }
 
-// writeWhyHead is the digest's head - the task, its run, the token buckets,
-// the call shape and the timing lanes - shared with the usage section the
-// app writes into a crew's learning record at its close (CON-130), so the
-// two never say a number differently.
-func writeWhyHead(stdout io.Writer, ledger dashboard.Task, turns []dashboard.Turn, perf diagnostics.Performance) {
+// WriteWhyHead is the `--why` page's head - the task, its run, the token
+// buckets, the call shape and the timing lanes - shared with the usage
+// section the app writes into a crew's learning record at its close
+// (CON-130, cmd/mate's usageBlock), so the two never say a number
+// differently.
+func WriteWhyHead(out io.Writer, ledger dashboard.Task, turns []dashboard.Turn, perf diagnostics.Performance) {
 	if ledger.Text != "" {
-		fmt.Fprintf(stdout, "task: %s\n", oneLine(ledger.Text, whyTextWidth))
+		fmt.Fprintf(out, "task: %s\n", oneLine(ledger.Text, whyTextWidth))
 	}
-	fmt.Fprintf(stdout, "run: %s\n", strings.Join(whyRun(ledger, perf), " · "))
+	fmt.Fprintf(out, "run: %s\n", strings.Join(whyRun(ledger, perf), " · "))
 	t := ledger.Tokens
-	fmt.Fprintf(stdout, "tokens: %s total = %s in + %s cache-read + %s cache-write + %s out · cost %s\n",
+	fmt.Fprintf(out, "tokens: %s total = %s in + %s cache-read + %s cache-write + %s out · cost %s\n",
 		query.HumanizeTokens(t.Total), query.HumanizeTokens(t.Input), query.HumanizeTokens(t.CacheRead),
 		query.HumanizeTokens(t.CacheWrite), query.HumanizeTokens(t.Output), whyCost(ledger.Cost))
-	fmt.Fprintf(stdout, "shape: %d model call(s) over %d prompt(s) · context %s · asked %d · waited %s\n",
+	fmt.Fprintf(out, "shape: %d model call(s) over %d prompt(s) · context %s · asked %d · waited %s\n",
 		len(turns), len(perf.PromptTurns), whyContext(turns), ledger.QuestionCount, waitedWord(ledger.WaitedMs))
-	whyTime(stdout, perf.Time)
+	whyTime(out, perf.Time)
 }
 
 func whyRun(ledger dashboard.Task, perf diagnostics.Performance) []string {
@@ -133,7 +134,7 @@ func whyContext(turns []dashboard.Turn) string {
 	return fmt.Sprintf("peak %s, last %s", query.HumanizeTokens(peak), query.HumanizeTokens(last))
 }
 
-func whyWork(stdout io.Writer, perf diagnostics.Performance, total int64) {
+func whyWork(out io.Writer, perf diagnostics.Performance, total int64) {
 	categories := append([]diagnostics.WorkCategory(nil), perf.Overview.Categories...)
 	if len(categories) == 0 {
 		return
@@ -145,29 +146,29 @@ func whyWork(stdout io.Writer, perf diagnostics.Performance, total int64) {
 		return c.Tokens.Total
 	}
 	sort.SliceStable(categories, func(i, j int) bool { return owned(categories[i]) > owned(categories[j]) })
-	fmt.Fprintln(stdout, "\nwork by kind (each model call is counted once, under the kind of work it ran):")
-	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(out, "\nwork by kind (each model call is counted once, under the kind of work it ran):")
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "KIND\tCALLS\tEXECS\tTOTAL\tOUT\tSHARE\tELAPSED")
 	for _, c := range categories {
 		if c.ModelCalls == 0 && c.ExecutionCount == 0 {
 			continue
 		}
-		tokens, out, share := "?", "?", "?"
+		tokens, output, share := "?", "?", "?"
 		if c.Tokens != nil {
-			tokens, out = query.HumanizeTokens(c.Tokens.Total), query.HumanizeTokens(c.Tokens.Output)
+			tokens, output = query.HumanizeTokens(c.Tokens.Total), query.HumanizeTokens(c.Tokens.Output)
 			if total > 0 {
 				share = fmt.Sprintf("%.0f%%", float64(c.Tokens.Total)*100/float64(total))
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\n", c.Label, c.ModelCalls, c.ExecutionCount, tokens, out, share, whyDuration(c.ElapsedMs))
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\n", c.Label, c.ModelCalls, c.ExecutionCount, tokens, output, share, whyDuration(c.ElapsedMs))
 	}
 	_ = tw.Flush()
 	if perf.Overview.Coverage != "" {
-		fmt.Fprintf(stdout, "coverage: %s\n", oneLine(perf.Overview.Coverage, whyTextWidth))
+		fmt.Fprintf(out, "coverage: %s\n", oneLine(perf.Overview.Coverage, whyTextWidth))
 	}
 }
 
-func whyLoops(stdout io.Writer, l diagnostics.LoopSummary) {
+func whyLoops(out io.Writer, l diagnostics.LoopSummary) {
 	line := fmt.Sprintf("%d repeated read(s), %d repeated error(s), %d repair/retest loop(s)", l.RepeatedReads, l.RepeatedErrors, l.RepairLoops)
 	if l.PollTokens != nil {
 		line += fmt.Sprintf(", %d waiting call(s) costing %s", l.PollCalls, query.HumanizeTokens(l.PollTokens.Total))
@@ -177,37 +178,37 @@ func whyLoops(stdout io.Writer, l diagnostics.LoopSummary) {
 	} else {
 		line += "; polling chains are not measurable on this harness"
 	}
-	fmt.Fprintf(stdout, "\nloops: %s\n", line)
+	fmt.Fprintf(out, "\nloops: %s\n", line)
 }
 
-func whyFindingList(stdout io.Writer, findings []diagnostics.Finding) {
+func whyFindingList(out io.Writer, findings []diagnostics.Finding) {
 	if len(findings) == 0 {
-		fmt.Fprintln(stdout, "\nfindings: none")
+		fmt.Fprintln(out, "\nfindings: none")
 		return
 	}
-	fmt.Fprintln(stdout, "\nfindings (they overlap, and a finding's tokens are the whole model calls it touched; never add them up):")
+	fmt.Fprintln(out, "\nfindings (they overlap, and a finding's tokens are the whole model calls it touched; never add them up):")
 	for i, f := range findings {
 		if i == whyFindings {
-			fmt.Fprintf(stdout, "... %d more finding(s) not shown; the dashboard Task page lists all of them\n", len(findings)-whyFindings)
+			fmt.Fprintf(out, "... %d more finding(s) not shown; the dashboard Task page lists all of them\n", len(findings)-whyFindings)
 			break
 		}
 		spent := "tokens ?"
 		if f.Tokens != nil {
 			spent = fmt.Sprintf("%s in %d call(s)", query.HumanizeTokens(f.Tokens.Total), len(f.CallIDs))
 		}
-		fmt.Fprintf(stdout, "%d. %s %s x%d, %s: %s\n", i+1, f.Severity, f.Kind, f.Count, spent, oneLine(f.Title, whyTextWidth))
+		fmt.Fprintf(out, "%d. %s %s x%d, %s: %s\n", i+1, f.Severity, f.Kind, f.Count, spent, oneLine(f.Title, whyTextWidth))
 		if len(f.Evidence) > 0 {
-			fmt.Fprintf(stdout, "   evidence: %s\n", oneLine(f.Evidence[0].Label, whyTextWidth))
+			fmt.Fprintf(out, "   evidence: %s\n", oneLine(f.Evidence[0].Label, whyTextWidth))
 		}
 		if f.Review != "" {
-			fmt.Fprintf(stdout, "   review: %s\n", f.Review)
+			fmt.Fprintf(out, "   review: %s\n", f.Review)
 		}
 	}
 }
 
 // whyInstructionList prints each instruction file the harness loaded, once,
 // at its last recorded size, largest first: these bytes ride in every call.
-func whyInstructionList(stdout io.Writer, inputs []diagnostics.ContextInput) {
+func whyInstructionList(out io.Writer, inputs []diagnostics.ContextInput) {
 	latest := map[string]diagnostics.ContextInput{}
 	for _, in := range inputs {
 		name := in.Path
@@ -231,23 +232,23 @@ func whyInstructionList(stdout io.Writer, inputs []diagnostics.ContextInput) {
 		}
 		return names[i] < names[j]
 	})
-	fmt.Fprintln(stdout, "\ninstructions loaded:")
+	fmt.Fprintln(out, "\ninstructions loaded:")
 	for i, name := range names {
 		if i == whyInstructions {
-			fmt.Fprintf(stdout, "... %d more not shown\n", len(names)-whyInstructions)
+			fmt.Fprintf(out, "... %d more not shown\n", len(names)-whyInstructions)
 			break
 		}
-		fmt.Fprintf(stdout, "- %s  %.1f KB\n", name, float64(latest[name].Bytes)/1024)
+		fmt.Fprintf(out, "- %s  %.1f KB\n", name, float64(latest[name].Bytes)/1024)
 	}
 }
 
-func whyPromptList(stdout io.Writer, prompts []diagnostics.Prompt) {
+func whyPromptList(out io.Writer, prompts []diagnostics.Prompt) {
 	if len(prompts) < 2 {
 		return
 	}
 	ranked := append([]diagnostics.Prompt(nil), prompts...)
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].Tokens.Total > ranked[j].Tokens.Total })
-	fmt.Fprintln(stdout, "\ncostliest prompts:")
+	fmt.Fprintln(out, "\ncostliest prompts:")
 	for i, p := range ranked {
 		if i == whyPrompts {
 			break
@@ -256,7 +257,7 @@ func whyPromptList(stdout io.Writer, prompts []diagnostics.Prompt) {
 		if text == "" {
 			text = "(prompt text not recorded)"
 		}
-		fmt.Fprintf(stdout, "%d. %s in %d call(s): %s\n", i+1, query.HumanizeTokens(p.Tokens.Total), p.ModelCalls, text)
+		fmt.Fprintf(out, "%d. %s in %d call(s): %s\n", i+1, query.HumanizeTokens(p.Tokens.Total), p.ModelCalls, text)
 	}
 }
 

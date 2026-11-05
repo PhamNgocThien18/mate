@@ -121,7 +121,7 @@ func TestProjectTasksEqualTheTaskLedger(t *testing.T) {
 	}
 
 	// The Mate's block is computed from `turn` because no task row exists
-	// for a Mate - the same reason cmd/mate's mateLedgerRow exists.
+	// for a Mate - the same reason internal/usage's mateLedgerRow exists.
 	var mateIn, mateCacheRead, mateCacheWrite, mateOut int64
 	if err := f.read.SQL().QueryRow(`
 		SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0),

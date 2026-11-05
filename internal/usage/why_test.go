@@ -1,8 +1,7 @@
-package main
+package usage
 
 import (
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func seedSmallerCrews(t *testing.T, w *store.Workspace) {
 func TestUsageTopKeepsTheMateAndTheLargestTasksAndTotalsEverything(t *testing.T) {
 	w := usageWorkspace(t)
 	seedSmallerCrews(t, w)
-	out := runCLI(t, "usage", "shop", "--top", "2", "--workspace", w.Root())
+	out := writePage(t, w, Request{Project: "shop", Top: 2})
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 8 {
 		t.Fatalf("want header, mate, two tasks, total, the cut notice and the by-model lines; got %d line(s):\n%s", len(lines), out)
@@ -52,8 +51,8 @@ func TestUsageTopKeepsTheMateAndTheLargestTasksAndTotalsEverything(t *testing.T)
 func TestUsageTopLargerThanTheLedgerChangesNothing(t *testing.T) {
 	w := usageWorkspace(t)
 	seedSmallerCrews(t, w)
-	plain := runCLI(t, "usage", "shop", "--workspace", w.Root())
-	if top := runCLI(t, "usage", "shop", "--top", "10", "--workspace", w.Root()); top != plain {
+	plain := writePage(t, w, Request{Project: "shop"})
+	if top := writePage(t, w, Request{Project: "shop", Top: 10}); top != plain {
 		t.Fatalf("--top above the task count must print the plain ledger:\n%s\n--- plain ---\n%s", top, plain)
 	}
 }
@@ -83,7 +82,7 @@ func TestUsageWhyExplainsOneTask(t *testing.T) {
 	}
 	handle.Close()
 
-	out := runCLI(t, "usage", "shop", "k3", "--why", "--workspace", w.Root())
+	out := writePage(t, w, Request{Project: "shop", Crew: "k3", Why: true})
 	for _, want := range []string{
 		"usage why shop k3",
 		// The ledger's own numbers, bucket by bucket; an unpriced model is "?".
@@ -111,31 +110,9 @@ func TestUsageWhyExplainsOneTask(t *testing.T) {
 	}
 }
 
-func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
-	w := usageWorkspace(t)
-	for name, args := range map[string][]string{
-		"why without a crew": {"usage", "shop", "--why", "--workspace", w.Root()},
-		"top with a crew":    {"usage", "shop", "k3", "--top", "2", "--workspace", w.Root()},
-		"negative top":       {"usage", "shop", "--top", "-1", "--workspace", w.Root()},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var stdout, stderr strings.Builder
-			err := run(args, &stdout, &stderr)
-			var ue *usageError
-			if !errors.As(err, &ue) {
-				t.Fatalf("want a usage error, got %v", err)
-			}
-			if stdout.Len() != 0 {
-				t.Fatalf("a refused command printed:\n%s", stdout.String())
-			}
-		})
-	}
-}
-
 func TestUsageWhyOnAnUnknownCrewNamesTheCrew(t *testing.T) {
 	w := usageWorkspace(t)
-	var stdout, stderr strings.Builder
-	err := run([]string{"usage", "shop", "nope", "--why", "--workspace", w.Root()}, &stdout, &stderr)
+	_, err := tryPage(w, Request{Project: "shop", Crew: "nope", Why: true})
 	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Fatalf("want an error naming the crew, got %v", err)
 	}
