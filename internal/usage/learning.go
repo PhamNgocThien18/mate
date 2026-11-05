@@ -66,7 +66,7 @@ func usageBlock(ctx context.Context, w *store.Workspace, project, crew, event st
 	var b strings.Builder
 	fmt.Fprintf(&b, "scope: crew %s and its fresh sessions; reviewers are separate crews · measured at %s %s; a later reindex may add calls recorded before it\n",
 		crew, event, time.Now().UTC().Format(time.RFC3339))
-	WriteWhyHead(&b, ledger, turns, perf)
+	writeWhyHead(&b, ledger, turns, perf)
 	return b.String(), nil
 }
 

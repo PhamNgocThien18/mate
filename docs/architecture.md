@@ -92,10 +92,10 @@ only reads the flags. It also writes the `## Usage (app)` section of a
 crew's learning record when the crew closes (`usage.RecordAtClose`,
 CON-230), in the words of `--why`'s head. It is in service because `--why`
 reads through `dashboard.Server`, so that page and the Task page cannot
-disagree, and the ledger reads the crews through `spawn`. Its reads of `mate.db` are in
-`timeline/read`; it holds no SQL. Because `usage` imports `dashboard`,
-`dashboard` cannot import `usage`: the Office's usage page reusing the
-ledger needs `--why` split out of `usage` first.
+disagree, and the ledger reads the crews through `spawn`. Its reads of
+`mate.db` are in `timeline/read`; it holds no SQL. Because `usage` imports
+`dashboard`, `dashboard` cannot import `usage`: the Office's usage page
+reusing the ledger needs `--why` split out of `usage` first.
 
 ## 2. Processes and how they talk
 
