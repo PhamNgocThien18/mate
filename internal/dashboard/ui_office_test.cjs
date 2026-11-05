@@ -137,11 +137,15 @@ async function boot(opts = {}) {
   // Timers never fire on their own (a retry after a failed poll must not
   // keep node up): timeouts are kept, and a test runs them with fire().
   const timers = [];
+  // Intervals run only when a test ticks, a second of the page's clock each.
+  const intervals = new Map();
+  let intervalID = 0;
+  let nowMs = fx.now_ms;
   const context = vm.createContext({
     document: doc, window, console,
     setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; },
     clearTimeout(id) { if (timers[id - 1]) timers[id - 1].fn = null; },
-    setInterval() { return 0; }, clearInterval() {},
+    setInterval(fn) { intervals.set(++intervalID, fn); return intervalID; }, clearInterval(id) { intervals.delete(id); },
     fetch(url, init) {
       requests.push({ url, method: init && init.method, headers: init && init.headers, body: init && init.body });
       if (init && init.method === "POST") {
@@ -181,7 +185,8 @@ async function boot(opts = {}) {
     }
   });
   // The fixture's own clock: ages read "23m" because it is 14:32:07 there.
-  vm.runInContext("Date.now = function () { return " + fx.now_ms + "; };", context);
+  context.pageNow = () => nowMs;
+  vm.runInContext("Date.now = function () { return pageNow(); };", context);
   for (const file of ["humanize.js", "chat.js", path.join("office", "office.js")]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "ui", file), "utf8"), context, { filename: file });
   }
@@ -199,6 +204,8 @@ async function boot(opts = {}) {
     // fn null; fire runs the ones still armed, as if their time had come.
     timers,
     async fire() { for (const t of timers.splice(0)) if (t.fn) t.fn(); await flush(); },
+    // tick moves the page's clock n seconds, running the intervals each.
+    async tick(n = 1) { for (let i = 0; i < n; i++) { nowMs += 1000; for (const fn of [...intervals.values()]) fn(); await flush(); } },
     key(name) { (winListeners.keydown || []).forEach(fn => fn({ key: name })); },
     hash: () => hash,
     async click(node) { assert.ok(node, "the thing to click exists"); node.click(); await flush(); }
@@ -1402,33 +1409,63 @@ test("the Mate drawer has a Work tab between Talk and Details, its badge the row
   assert.equal(posts(app).length, 0, "reading the board writes nothing");
 });
 
-test("ticking a done row waits five seconds for an undo, then sends the OK and re-reads the board", async () => {
+test("ticking a done row sends the OK at once; the Mate's host holds it, the row counts it down, and Undo takes it back", async () => {
   const pressed = [];
-  const app = await boot({ hash: "#mate/shop", actions: SHOP_ACTIONS, press: b => { pressed.push(b); return { body: { line: "okayed #2" } }; } });
+  const fx = fixture();
+  // The Mate's host, as GET /chat shows what it holds (CON-222).
+  const chat = { project: "shop", headless: true, items: [], state: {}, held: [] };
+  fx.chats = { shop: chat };
+  const app = await boot({ fixture: fx, hash: "#mate/shop", actions: SHOP_ACTIONS, press: b => {
+    pressed.push(b);
+    if (b.action === "okay") {
+      chat.held = [{ id: 7, kind: "okay", work: b.work, left_ms: 5000 }];
+      return { body: { line: "OK of work #2 of shop goes in 5 s; undo until then" } };
+    }
+    chat.held = [];
+    return { body: { line: "took back the OK of work #2 of shop" } };
+  } });
   await app.click(workTab(app));
-  const armed = () => app.timers.filter(t => t.fn && t.ms === 5000);
   await app.click(rowOf(app, "Cart summary redesign").querySelector("input.wck"));
+  assert.deepEqual(pressed, [{ action: "okay", project: "shop", work: 2 }], "the OK goes to the host at the click");
+  assert.equal(app.timers.filter(t => t.fn && t.ms === 5000).length, 0, "the page arms no undo timer of its own");
   let row = rowOf(app, "Cart summary redesign");
   assert.match(row.querySelector(".wundo").text, /^Okaying in 5s · Undo$/);
-  assert.equal(armed().length, 1, "one timer waits out the undo");
-  assert.equal(posts(app).length, 0, "nothing is sent at the click");
+  assert.ok("disabled" in row.querySelector("input.wck").attrs, "the checkbox waits while the host holds the OK");
+  await app.tick(2);
+  assert.match(rowOf(app, "Cart summary redesign").querySelector(".wundo").text, /^Okaying in 3s · Undo$/, "a second at a time, by the page's clock");
 
-  await app.click(row.querySelector('[data-focus="work-undo:shop/2"]'));
+  await app.click(rowOf(app, "Cart summary redesign").querySelector('[data-focus="work-undo:shop/2"]'));
+  assert.deepEqual(pressed[1], { action: "undo", project: "shop", held: 7 }, "Undo asks the host for what it holds");
   row = rowOf(app, "Cart summary redesign");
   assert.equal(row.querySelector(".wundo"), null, "Undo takes the line away");
-  assert.equal(armed().length, 0, "and disarms the timer");
   assert.ok(!("disabled" in row.querySelector("input.wck").attrs));
-  await app.fire();
-  assert.equal(posts(app).length, 0, "a cancelled tick never sends");
 
   await app.click(row.querySelector("input.wck"));
+  // The host sends it when its time is up: the row is okayed, nothing held.
   app.fx.work.projects[0].work[1].status = "okayed";
   app.fx.work.projects[0].work[1].okayed_at = "2026-10-03T14:32:00.000000000Z";
-  await app.fire();
-  assert.deepEqual(pressed, [{ action: "okay", project: "shop", work: 2 }]);
-  assert.equal(posts(app)[0].url, "/api/actions");
-  assert.ok(rowOf(app, "Cart summary redesign").querySelector(".wrow").classes.includes("struck"), "the board is re-read after the OK");
+  chat.held = [];
+  await app.tick(5);
+  assert.equal(pressed.length, 3, "nothing more is pressed when the time is up");
+  assert.ok(rowOf(app, "Cart summary redesign").querySelector(".wrow").classes.includes("struck"), "the board is re-read once the host has sent it");
   assert.equal(workTab(app).querySelector(".n"), null, "nothing waits for an OK any more");
+});
+
+test("a message the Mate's host holds shows in Talk with an Undo that puts it back in the composer", async () => {
+  const pressed = [];
+  const fx = fixture();
+  const chat = { project: "shop", headless: true, items: [], state: {}, held: [{ id: 3, kind: "say", text: "chạy lại make shot", left_ms: 4000 }] };
+  fx.chats = { shop: chat };
+  const app = await boot({ fixture: fx, hash: "#mate/shop", actions: SHOP_ACTIONS, press: b => { pressed.push(b); chat.held = []; return { body: { line: "took back the message" } }; } });
+  await app.click(app.drawer().querySelector('[data-focus="tab:talk"]'));
+  const held = app.drawer().querySelector(".tx.held");
+  assert.ok(held, "the held message shows, whichever UI sent it");
+  assert.match(held.text, /chạy lại make shot/);
+  assert.match(held.querySelector(".wundo").text, /^Sending in 4s · Undo$/);
+  await app.click(held.querySelector('[data-focus="talk-undo:3"]'));
+  assert.deepEqual(pressed, [{ action: "undo", project: "shop", held: 3 }]);
+  assert.equal(app.drawer().querySelector(".tx.held"), null);
+  assert.equal(app.drawer().querySelector("textarea.compose").value, "chạy lại make shot", "the text is back in the composer");
 });
 
 test("an OK that fails says so under the row and gives the checkbox back", async () => {
@@ -1528,4 +1565,34 @@ test("Send to the Mate answers a news with the picked option or the captain's wo
   assert.match(pressed[0].text, /^\[b\] /, "an option goes as the City sends it");
   assert.match(app.drawer().querySelector(".nli.open .res").textContent, /answered news 4 of shop/);
   assert.ok(app.requests.filter(r => r.url === "/api/news").length >= 2, "the news is read again");
+});
+
+test("an answer the Mate's host holds shows under the news with an Undo that picks the option again", async () => {
+  const pressed = [];
+  const fx = fixture();
+  const chat = { project: "shop", headless: true, items: [], state: {}, held: [] };
+  fx.chats = { shop: chat };
+  const app = await boot({ fixture: fx, hash: "#captain", actions: SHOP_ACTIONS, press: b => {
+    pressed.push(b);
+    if (b.action === "answer") {
+      chat.held = [{ id: 5, kind: "answer", news: b.news, text: b.text, left_ms: 5000 }];
+      return { body: { line: "answer to news #4 goes to the Mate of shop in 5 s · undo until then" } };
+    }
+    chat.held = [];
+    return { body: { line: "took back the answer to news #4 · nothing sent" } };
+  } });
+  await app.click(newsRow(app.drawer(), "Primary button colour"));
+  const form = () => app.drawer().querySelector(".nans-form");
+  form().querySelectorAll('input[type="radio"]')[1].dispatch("change");
+  await app.flush();
+  await app.click(form().querySelector('[data-focus="send:shop/4"]'));
+  const line = () => form().querySelector(".wundo");
+  assert.match(line().text, /^Sending “\[b\] .*” in 5s · Undo$/, "the held answer counts down under the news");
+  assert.ok("disabled" in form().querySelector('[data-focus="send:shop/4"]').attrs, "no second answer while one is held");
+  await app.tick(1);
+  assert.match(line().text, /in 4s · Undo$/);
+  await app.click(line().querySelector('[data-focus="answer-undo:shop/4"]'));
+  assert.deepEqual(pressed[1], { action: "undo", project: "shop", held: 5 });
+  assert.equal(line(), null, "Undo takes the line away");
+  assert.ok("checked" in form().querySelectorAll('input[type="radio"]')[1].attrs, "the option is picked again");
 });

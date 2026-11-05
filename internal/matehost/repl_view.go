@@ -210,7 +210,7 @@ func (m Model) footer(w int) []string {
 		if len(m.input) > 0 {
 			hints = append(hints[:2], append([]keyHint{{"^U", "xoá ô"}}, hints[2:]...)...)
 		}
-		if m.pending != nil {
+		if len(m.state.Held) > 0 {
 			hints = append([]keyHint{{"u", "hoàn tác"}}, hints...)
 		} else if len(m.owed()) > 0 {
 			hints = append(hints[:3], append([]keyHint{{"^N", "trả lời"}}, hints[3:]...)...)
@@ -219,7 +219,7 @@ func (m Model) footer(w int) []string {
 			hints = append([]keyHint{{"^R", "thử lại"}}, hints...)
 		}
 	}
-	if m.mode == viewTopics && m.pending != nil && !m.typing {
+	if m.mode == viewTopics && len(m.state.Held) > 0 && !m.typing {
 		hints = append([]keyHint{{"u", "hoàn tác"}}, hints...)
 	}
 	return []string{" " + hintLine(hints, w-2)}

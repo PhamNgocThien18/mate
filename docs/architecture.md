@@ -175,7 +175,11 @@ How processes exchange state:
   `subscribe`, which keeps the connection and streams every host event as
   one JSON line (CON-221); the outbox delivers to a headless Mate through
   it (`OpDeliver`), spawn, Office chat and City ask it for state,
-  history and answers, and every Mate REPL is a client of it (CON-223). The console drives
+  history and answers, and every Mate REPL is a client of it (CON-223).
+  What the captain sends through it from any UI (`submit`, `answer`,
+  `work-okay`) the host holds `matehost.UndoDelay` before it runs, and
+  `undo` takes it back (`internal/matehost/hold.go`, CON-222); the state
+  and every event list what it holds. The console drives
   each pane runner over its own socket in a temp directory
   (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
 - **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)

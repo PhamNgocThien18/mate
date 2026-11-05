@@ -34,11 +34,14 @@ const (
 	// actOkay is the captain's tick on a done row of the Mate's work board
 	// (CON-158): the one write the board takes from a page.
 	actOkay = "okay"
+	// actUndo takes back a say, an answer or an okay while the Mate's host
+	// holds it for its undo (CON-222).
+	actUndo = "undo"
 )
 
 // talk are the actions that go to the Mate's chat, and can run whenever a
 // message can be sent.
-var talk = map[string]bool{actSay: true, actInterrupt: true, actAnswer: true, actFork: true, actForkClose: true}
+var talk = map[string]bool{actSay: true, actInterrupt: true, actAnswer: true, actFork: true, actForkClose: true, actUndo: true}
 
 // maxActionBody bounds a press: a chat message is the longest thing in one.
 const maxActionBody = 64 << 10
@@ -201,6 +204,23 @@ type ChatResponse struct {
 	State    *matehost.State `json:"state"`
 	// StateError is why the Mate's host did not say what it is doing.
 	StateError string `json:"state_error,omitempty"`
+	// Held is what the captain sent that the host holds for its undo
+	// (CON-222), from any UI: messages, answers, ticks on the work board.
+	Held []ChatHeld `json:"held"`
+}
+
+// ChatHeld is one item the Mate's host holds. LeftMS is how long until it
+// goes, as of this answer: a page counts down from it by its own clock,
+// which need not agree with the host's.
+type ChatHeld struct {
+	ID     int    `json:"id"`
+	Kind   string `json:"kind"`
+	Text   string `json:"text,omitempty"`
+	News   int    `json:"news,omitempty"`
+	Work   int    `json:"work,omitempty"`
+	At     string `json:"at"`
+	Due    string `json:"due"`
+	LeftMS int64  `json:"left_ms"`
 }
 
 // ChatItem is one message and its reply.
@@ -259,7 +279,7 @@ func (s *Server) handleChat(ctx context.Context, r *http.Request, env envelope) 
 		return nil, err
 	}
 	dir := s.ws.MateDir(project)
-	out := ChatResponse{envelope: env, Project: project, Headless: s.ws.MateHeadless(project), Items: []ChatItem{}}
+	out := ChatResponse{envelope: env, Project: project, Headless: s.ws.MateHeadless(project), Items: []ChatItem{}, Held: []ChatHeld{}}
 	out.Items = chatItems(chatHistory(matehost.HistoryPath(dir), chatLimit))
 	if !out.Headless {
 		return out, nil
@@ -272,6 +292,11 @@ func (s *Server) handleChat(ctx context.Context, r *http.Request, env envelope) 
 		return out, nil
 	}
 	out.State = &st
+	now := s.deps.now()
+	for _, h := range st.Held {
+		out.Held = append(out.Held, ChatHeld{ID: h.ID, Kind: h.Kind, Text: h.Text, News: h.News, Work: h.Work,
+			At: db.FormatTime(h.At), Due: db.FormatTime(h.Due), LeftMS: max(0, h.Due.Sub(now).Milliseconds())})
+	}
 	return out, nil
 }
 

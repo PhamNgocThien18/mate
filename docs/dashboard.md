@@ -328,7 +328,7 @@ It folds the log through `matehost.LoadWork` on every request and is not cached:
 ```
 
 `work` is latest move first. `status` is the log's: `working`, `waiting` (on news `topic`), `done` (the captain may tick it), `okayed` (ticked, off the board; `okayed_at`). `kind` is `assigned` (the captain asked) or `proposed` (the Mate suggested).
-The captain's tick is the one write: `POST /api/actions` with `{"action": "okay", "project": "shop", "work": 3}`, offered in `mate_more` wherever the dashboard can act; it refuses a row that is not `done`. The Mate never okays its own rows, and does not wait for the tick.
+The captain's tick is the one write: `POST /api/actions` with `{"action": "okay", "project": "shop", "work": 3}`, offered in `mate_more` wherever the dashboard can act; it refuses a row that is not `done`. A headless Mate's host holds the tick for its undo like a message (CON-222, `GET /chat`'s `held`); with no host to hold it, the console ticks the row at once. The Mate never okays its own rows, and does not wait for the tick.
 
 ## 4. `GET /api/projects/{project}/tasks/{crew}`
 
@@ -671,13 +671,14 @@ Agent City (section 12) presses more than the console's sheet, still through the
 | `harnesses` | the harnesses a new Mate can run on, the workspace's default first: `onboard` takes one as `harness` |
 | `daemon` | the auto daemon's `sends`, `last_sent_at`, and the `notice` of why the digest queued has not gone, when there is any |
 
-A press may carry `text` (`say`, `answer`, `fork`), `news` (`answer`, `fork`, `fork_close`, and `interrupt` of a session rather than the Mate's turn), `harness` (`onboard`), `repo` (`add_project`) and `key` (`assign`).
+A press may carry `text` (`say`, `answer`, `fork`), `news` (`answer`, `fork`, `fork_close`, and `interrupt` of a session rather than the Mate's turn), `held` (`undo`), `harness` (`onboard`), `repo` (`add_project`) and `key` (`assign`).
 `assign` hands the question's resolve line to the Mate, the console's `[assign]`; the line is the server's from its snapshot, never the page's.
 `add_project` names a project that is not there yet in `project` and is refused (`409`) for a name `[a-z][a-z0-9-]{0,31}` does not take or one already in the workspace; with an empty `repo` the project starts with none.
 The chat's actions go, through the core, to the headless Mate's own host over its socket (`matehost`'s `submit`, `interrupt`, `answer`, `session-ask`, `session-close`): a message sent from a page is the same captain turn as one typed in the Mate's pane, queued behind the turn in flight, and an answer lands in its news.
+The host holds a `say`, an `answer` and an `okay` for their undo (`matehost.UndoDelay`, CON-222) before it runs them, whichever UI sent them; `undo` with the item's `held` id takes one back (`undo` on the socket), refused with `already sent: nothing to undo` once it has gone.
 Talking, peeking, asking Jev and ticking the board take a lock of their own on the Mate or crew (`<target>#<action>`), so they neither wait for nor hold up a stop or a merge, and only the same action pressed twice at once is refused; the body may be 64 KiB.
 
-`GET /api/projects/{project}/chat` is the headless Mate's conversation as its REPL keeps it (`mate/history.jsonl`, the last 80 items): `{"headless", "items": [{"at", "source", "label", "text", "reply", "silent", "interrupted", "error", "done", "tools": [names], "ms", "tokens", "news"}], "state": {"busy", "queued", "turn_source", …} | null, "state_error"?}`. `state` is the host's own answer; `null` with `state_error` when it did not give one, and `null` without one for a Mate that is not headless.
+`GET /api/projects/{project}/chat` is the headless Mate's conversation as its REPL keeps it (`mate/history.jsonl`, the last 80 items): `{"headless", "items": [{"at", "source", "label", "text", "reply", "silent", "interrupted", "error", "done", "tools": [names], "ms", "tokens", "news"}], "state": {"busy", "queued", "turn_source", …} | null, "state_error"?, "held": [{"id", "kind", "text", "news", "work", "at", "due", "left_ms"}]}`. `held` is what the host holds for its undo, oldest first: `kind` is `say`, `answer` or `okay`, and `left_ms` how long until it goes as of this answer, so a page counts down by its own clock. `state` is the host's own answer; `null` with `state_error` when it did not give one, and `null` without one for a Mate that is not headless.
 `GET /api/projects/{project}/forks/{news}` is what was said in a news's private session (`mate/topics/<news>.jsonl`), with `open` (`null` when the host did not answer) and the question it is answering now as `running`.
 
 ### `GET /api/now?project=<p>`
@@ -873,9 +874,9 @@ Every thing is a place, and one panel holds what it can do: docked on the right 
 
 | Place | Panel |
 | --- | --- |
-| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send with a 5-second undo, Interrupt), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
+| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send, Undo while the Mate's host holds the message for its undo (CON-222), Interrupt), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
 | a crew | state, status line, harness, branch, tokens; its buttons, Diff and Peek as toggles, `Explain notice`; links to the admin timeline, usage and the Office drawer |
-| City Hall | Topics (every news, waiting first: options, an own answer with a 5-second undo, `Discuss privately` in a read-only fork of the Mate) and Projects (each one's Mate and crews, `Remove…`, `+ Add project…`) |
+| City Hall | Topics (every news, waiting first: options, an own answer, which the Mate's host holds for its undo (CON-222), `Discuss privately` in a read-only fork of the Mate) and Projects (each one's Mate and crews, `Remove…`, `+ Add project…`) |
 | an empty park lot | the add-project form; the new project takes the next lot |
 | a block | its Mate, tents and crews |
 | a tent | its playback (below) and the crews in it |

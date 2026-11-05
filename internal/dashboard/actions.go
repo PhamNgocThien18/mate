@@ -32,6 +32,9 @@ type ActionRequest struct {
 	News int `json:"news,omitempty"`
 	// Work is the row an `okay` ticks on the Mate's work board (CON-158).
 	Work int `json:"work,omitempty"`
+	// Held is what an `undo` takes back: the id of an item the Mate's host
+	// holds (GET /chat's held, CON-222).
+	Held int `json:"held,omitempty"`
 	// Harness is the agent a new Mate is created with (`onboard`); empty
 	// is the workspace's default.
 	Harness string `json:"harness,omitempty"`
@@ -73,10 +76,14 @@ func coreRequest(req ActionRequest) coreapi.ActionRequest {
 	case talk[req.Action]:
 		// A say has no news, and an interrupt or a fork_close no text.
 		out.TargetKind = "mate"
-		if req.Action != actInterrupt && req.Action != actForkClose {
+		switch req.Action {
+		case actInterrupt, actForkClose:
+		case actUndo:
+			out.Input = strconv.Itoa(req.Held)
+		default:
 			out.Input = req.Text
 		}
-		if req.Action != actSay {
+		if req.Action != actSay && req.Action != actUndo {
 			out.News = req.News
 		}
 	case req.Crew != "":
@@ -394,6 +401,10 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Action == actOkay && req.Work <= 0 {
 		s.writeError(w, r, http.StatusBadRequest, "okay wants the work row it ticks", "")
+		return
+	}
+	if req.Action == actUndo && req.Held <= 0 {
+		s.writeError(w, r, http.StatusBadRequest, "undo wants the held item it takes back", "")
 		return
 	}
 	s.run(w, r, ctx, req)

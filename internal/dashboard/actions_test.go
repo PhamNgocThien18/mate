@@ -358,6 +358,8 @@ func TestAPressIsTheConsoleSheetsRequest(t *testing.T) {
 		{ActionRequest{Action: "answer", Project: "shop", News: 7, Text: "[a] Stripe"}, coreapi.ActionRequest{Action: coreapi.ActionAnswer, Target: "shop", TargetKind: "mate", Input: "[a] Stripe", News: 7}},
 		{ActionRequest{Action: "fork", Project: "shop", News: 7, Text: "why Stripe?"}, coreapi.ActionRequest{Action: coreapi.ActionFork, Target: "shop", TargetKind: "mate", Input: "why Stripe?", News: 7}},
 		{ActionRequest{Action: "fork_close", Project: "shop", News: 7, Text: "bye"}, coreapi.ActionRequest{Action: coreapi.ActionForkClose, Target: "shop", TargetKind: "mate", News: 7}},
+		// The undo (CON-222): the held item, nothing the page typed.
+		{ActionRequest{Action: "undo", Project: "shop", Held: 4, Text: "x", News: 7}, coreapi.ActionRequest{Action: coreapi.ActionUndo, Target: "shop", TargetKind: "mate", Input: "4"}},
 		// The work board's tick (CON-158).
 		{ActionRequest{Action: "okay", Project: "shop", Work: 12}, coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "12"}},
 	}

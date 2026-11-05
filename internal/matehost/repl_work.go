@@ -145,14 +145,21 @@ func (m Model) workKey(k tea.KeyMsg) (Model, bool) {
 }
 
 // okayWork is Space on row i: the captain's tick, when the row is done.
+// The host holds it for its undo (Host.Okay); the line under the page
+// counts it down.
 func (m *Model) okayWork(list []Work, i int) {
 	if i < 0 || list[i].Status != WorkDone {
 		m.note = "chỉ dòng đã xong mới OK được"
 		return
 	}
 	id := list[i].ID
-	m.note = fmt.Sprintf("✓ đã OK việc #%d", id)
-	m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.OkayWork(ctx, id)) })
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		held, err := c.OkayWork(ctx, id)
+		if err != nil {
+			return noted(err)
+		}
+		return replyMsg{op: callHeld, held: held}
+	})
 }
 
 // clickWork moves the cursor to the row at screen row y of the page.

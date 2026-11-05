@@ -421,7 +421,7 @@
   var work = null;            // /api/work (CON-158): {body} | {error}
   var workOpen = {};          // "<project>/<id>" -> true for each work row opened up to its notes
   var workOkayedAll = {};     // project -> true when the Work tab lists every okayed row
-  var okaying = {};           // "<project>/<id>" -> {timer, until, pressing}: a tick waiting out its undo
+  var okaying = {};           // "<project>/<id>" -> true while the tick is on its way to the Mate's host
   var workErr = {};           // "<project>/<id>" -> why the last OK did not go through
   var acts = null;            // the open drawer's /api/projects/{p}/actions: {key, body} | {key, error}
   var asking = null;          // {key, name, crew, button}: the destructive action whose question is open
@@ -596,7 +596,10 @@
         if (token === detailToken) apps = { key: key, error: err };
       }));
       // Talk is the chat the Mate's REPL shows, from the same history.
+      // It carries what the Mate's host holds for its undo (CON-222):
+      // `goes` is when each item goes, by this page's clock.
       reads.push(api(chatPath(s.project)).then(function (body) {
+        body.held = heldList(body);
         if (token === detailToken) chat = { key: key, body: body };
       }, function (err) {
         if (token === detailToken) chat = { key: key, error: err };
@@ -1866,7 +1869,80 @@
     var c = chat && chat.key === "mate/" + enc(name) ? chat : null;
     if (!c) return { loading: true };
     if (c.error) return { error: c.error };
-    return { list: c.body.items || [], headless: c.body.headless, state: c.body.state };
+    return { list: c.body.items || [], headless: c.body.headless, state: c.body.state, held: c.body.held || [] };
+  }
+
+  // ------------------------------------------------------------ what the host holds
+  //
+  // A message and a tick go to the Mate's host at once, and the host holds
+  // each for its undo (CON-222): the rule and its clock are the host's, the
+  // page only counts down what GET /chat says it holds.
+
+  function heldOf(name) { return chatOf(name).held || []; }
+
+  // captainHeld is, by project, what its Mate's host holds, read for the
+  // captain's drawer after an answer from it: that drawer reads no chat.
+  var captainHeld = {};
+  function heldList(body) {
+    var at = Date.now();
+    return (body.held || []).map(function (x) { return Object.assign({}, x, { goes: at + (x.left_ms || 0) }); });
+  }
+  function loadHeld(name) {
+    return api(chatPath(name)).then(function (body) { captainHeld[name] = heldList(body); }, function () { delete captainHeld[name]; });
+  }
+  function leftOf(x) { return Math.max(0, Math.ceil((x.goes - Date.now()) / 1000)); }
+
+  // watchHeld redraws each second while a host holds something this page
+  // shows - the open Mate's, or an answer from the captain's drawer - and
+  // reads again once an item's time is up: the drawer, the board and the
+  // Talk that follows the turn it started, or the news.
+  var heldTimer = 0;
+  function shownHeld() {
+    var open = sel && sel.kind === "mate" ? sel.project : "";
+    var out = open ? heldOf(open) : [];
+    Object.keys(captainHeld).forEach(function (p) { out = out.concat(captainHeld[p]); });
+    return out;
+  }
+  function watchHeld() {
+    if (heldTimer || !shownHeld().length) return;
+    heldTimer = setInterval(function () {
+      if (!shownHeld().length) {
+        clearInterval(heldTimer);
+        heldTimer = 0;
+        return;
+      }
+      var now = Date.now();
+      var open = sel && sel.kind === "mate" ? sel.project : "";
+      var reads = [];
+      if (open && heldOf(open).some(function (x) { return x.goes <= now; })) reads.push(loadDetail(), loadWork());
+      Object.keys(captainHeld).forEach(function (p) {
+        if (captainHeld[p].some(function (x) { return x.goes <= now; })) reads.push(loadHeld(p), loadNews());
+      });
+      if (!reads.length) { draw(); return; }
+      Promise.all(reads).then(function () {
+        draw();
+        if (open) followTalk(open);
+      });
+    }, 1000);
+  }
+
+  // undoHeld asks the host to take item x back; back puts its text where
+  // the captain wrote it. The outcome goes on drawer key's result line.
+  function undoHeld(name, x, key, back) {
+    return press({ action: "undo", project: name, held: x.id }).then(function () {
+      delete outcomes[key];
+      if (back) back(x.text);
+    }, function (err) {
+      outcomes[key] = outcomeOf(err);
+    }).then(function () {
+      return Promise.all([loadDetail(), loadWork(), captainHeld[name] ? loadHeld(name) : null]);
+    }).then(draw);
+  }
+
+  function heldLine(x, label, focus, onUndo) {
+    var undo = el("button", { class: "link news-more", type: "button", "data-focus": focus }, "Undo");
+    undo.addEventListener("click", function (e) { if (e && e.stopPropagation) e.stopPropagation(); onUndo(); });
+    return [el("span", { text: label + " in " + leftOf(x) + "s · " }), undo];
   }
 
   var TURNS_SHOWN = 20;
@@ -1917,6 +1993,14 @@
         ]));
       });
     }
+    x.held.filter(function (h) { return h.kind === "say"; }).forEach(function (h) {
+      nodes.push(el("div", { class: "tx held" }, [
+        el("div", { class: "msg me", text: h.text }),
+        el("div", { class: "wundo", role: "status" }, heldLine(h, "Sending", "talk-undo:" + h.id, function () {
+          undoHeld(name, h, "talk/" + enc(name), function (text) { if (!(talkDraft[name] || "").trim()) talkDraft[name] = text; });
+        }))
+      ]));
+    });
     if (x.state && x.state.busy) {
       nodes.push(el("span", { class: "phase" }, el("span", { class: "chip t-ok" }, [el("span", { class: "dots", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]),
         x.state.turn_source === "app" ? "working" : "thinking"])));
@@ -2287,6 +2371,16 @@
     nodes.push(own);
     var project = key.slice(0, key.lastIndexOf("/"));
     var sending = !!running["news/" + key];
+    // An answer the Mate's host holds for its undo (CON-222).
+    var held = (captainHeld[project] || []).filter(function (x) { return x.kind === "answer" && x.news === n.id; }).pop();
+    if (held) {
+      nodes.push(el("div", { class: "wundo", role: "status" }, heldLine(held, "Sending “" + firstLine(held.text) + "”", "answer-undo:" + key, function () {
+        undoHeld(project, held, "news/" + key, function (text) {
+          var o = (n.options || []).filter(function (x) { return text === "[" + x.key + "] " + x.text; })[0];
+          if (o) { d.opt = o.key; d.own = ""; } else if (!d.own.trim()) d.own = text;
+        });
+      })));
+    }
     // The answer the Mate gets: the captain's words, else the option as
     // the City sends it.
     var answer = function () {
@@ -2297,6 +2391,7 @@
     var whyNot = function () {
       if (wsReadOnly) return "read-only dashboard";
       if (sending) return "";
+      if (held) return "the answer above goes when its undo is over";
       return answer() ? "" : "pick an option or type an answer";
     };
     var send = el("button", { class: "btn primary", type: "button", disabled: sending || !!whyNot(), "data-focus": "send:" + key },
@@ -2333,7 +2428,7 @@
       outcomes[okey] = outcomeOf(err);
     }).then(function () {
       delete running[okey];
-      return loadNews();
+      return Promise.all([loadNews(), loadHeld(project)]);
     }).then(draw);
   }
 
@@ -2565,7 +2660,6 @@
     return WORK_STATES[status] || { word: status ? String(status) : "unknown", tone: "t-gone", icon: "unknown" };
   }
   var OKAYED_SHOWN = 10;
-  var OKAY_UNDO_MS = 5000;
 
   // workOf is one project's board, {logged, rows, error}, or null before
   // /api/work answered.
@@ -2642,16 +2736,17 @@
     var key = name + "/" + r.id;
     var st = workState(r.status);
     var open = !!workOpen[key];
-    var pending = okaying[key];
+    var pressing = !!okaying[key];
+    var pending = r.status === "done" ? heldOf(name).filter(function (x) { return x.kind === "okay" && x.work === r.id; })[0] : null;
     var okayed = r.status === "okayed";
-    var canTick = r.status === "done" && !wsReadOnly && !pending;
+    var canTick = r.status === "done" && !wsReadOnly && !pending && !pressing;
 
     var tick;
     if (okayed) {
       tick = el("span", { class: "wck wok", "aria-hidden": "true", text: "✓" });
     } else {
-      tick = el("input", { type: "checkbox", class: "wck", disabled: !canTick, checked: !!pending,
-        "aria-label": r.status === "done" ? (pending ? "Okaying " + r.title : "OK " + r.title) : "Not done yet", "data-focus": "work-ok:" + key });
+      tick = el("input", { type: "checkbox", class: "wck", disabled: !canTick, checked: !!pending || pressing,
+        "aria-label": r.status === "done" ? (pending || pressing ? "Okaying " + r.title : "OK " + r.title) : "Not done yet", "data-focus": "work-ok:" + key });
       tick.addEventListener("click", function (e) {
         if (e && e.stopPropagation) e.stopPropagation();
         if (!canTick) return;
@@ -2686,12 +2781,11 @@
     var row = el("div", { class: "wr" }, [tick, body, el("span", { class: "nwa", title: when || null, text: age(when) + " ago" })]);
 
     var extra = [];
-    if (pending) {
-      var left = Math.max(0, Math.ceil((pending.until - Date.now()) / 1000));
-      var undo = el("button", { class: "link news-more", type: "button", "data-focus": "work-undo:" + key }, "Undo");
-      undo.addEventListener("click", function (e) { if (e && e.stopPropagation) e.stopPropagation(); undoWork(key); });
-      extra.push(el("div", { class: "wundo", role: "status" },
-        pending.pressing ? [el("span", { text: "Okaying…" })] : [el("span", { text: "Okaying in " + left + "s · " }), undo]));
+    if (pressing) extra.push(el("div", { class: "wundo", role: "status" }, [el("span", { text: "Okaying…" })]));
+    else if (pending) {
+      extra.push(el("div", { class: "wundo", role: "status" }, heldLine(pending, "Okaying", "work-undo:" + key, function () {
+        undoHeld(name, pending, "work/" + enc(name), null).then(function () { focusOn("work-ok:" + key); });
+      })));
     }
     if (workErr[key]) extra.push(el("p", { class: "err-note wfail", text: "OK did not go through: " + workErr[key] }));
     if (open) extra.push(workNotes(r));
@@ -2714,46 +2808,22 @@
     if (sel && sel.kind === "captain") draw(); else select("captain");
   }
 
-  // tickWork starts the undo window: the OK is sent when it runs out, not
-  // at the click. A second timer redraws the countdown while any is open.
-  var okayTick = 0;
+  // tickWork sends the OK at the click: the Mate's host holds it for its
+  // undo, and the row counts down what the host holds (watchHeld). With no
+  // host to hold it the console ticks the row at once.
   function tickWork(name, r) {
     var key = name + "/" + r.id;
     if (okaying[key]) return;
     delete workErr[key];
-    okaying[key] = { until: Date.now() + OKAY_UNDO_MS, pressing: false, timer: setTimeout(function () { okayNow(name, r.id); }, OKAY_UNDO_MS) };
-    if (!okayTick) {
-      okayTick = setInterval(function () {
-        if (Object.keys(okaying).length) { draw(); return; }
-        clearInterval(okayTick);
-        okayTick = 0;
-      }, 1000);
-    }
+    okaying[key] = true;
     draw();
-  }
-
-  function undoWork(key) {
-    var o = okaying[key];
-    if (!o || o.pressing) return;
-    clearTimeout(o.timer);
-    delete okaying[key];
-    draw();
-    focusOn("work-ok:" + key);
-  }
-
-  function okayNow(name, id) {
-    var key = name + "/" + id;
-    var o = okaying[key];
-    if (!o) return;
-    o.pressing = true;
-    draw();
-    return press({ action: "okay", project: name, work: id }).then(function () {
+    return press({ action: "okay", project: name, work: r.id }).then(function () {
       delete workErr[key];
     }, function (err) {
       workErr[key] = err.reason || err.message;
     }).then(function () {
       delete okaying[key];
-      return loadWork();
+      return Promise.all([loadDetail(), loadWork()]);
     }).then(draw);
   }
 
@@ -3329,6 +3399,8 @@
     if (toast) root.appendChild(toastNode());
     if (asking) root.appendChild(confirmDialog());
     if (sel && sel.kind === "add") refreshAdd();
+    // Whatever sent it - this page, the REPL, City - what the host holds counts down here.
+    watchHeld();
 
     if (focusKey) {
       var again = root.querySelector("[data-focus=\"" + focusKey + "\"]");
