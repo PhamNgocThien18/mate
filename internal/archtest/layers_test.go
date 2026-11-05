@@ -130,6 +130,7 @@ var layers = map[string]layer{
 	"internal/hook":            service,
 	"internal/wake":            service,
 	"internal/dashboard":       service,
+	"internal/usage":           service,
 	"internal/core":            service,
 	"internal/ui/console":      ui,
 	"cmd/mate":                 binary,

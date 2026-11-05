@@ -12,7 +12,8 @@ mate is splitting its core into a process of its own (CON-203). Done so far:
 shared snapshot, Office/City and notifications (CON-208), and the one entry
 for every UI's actions (CON-209); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
-(CON-165); the CLI command table (CON-171); `internal/wake` (CON-169). Every
+(CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
+`internal/usage` (CON-168). Every
 part marked **Target** below is planned, not built; the issue named beside it
 owns the change. A PR that moves a package or a process updates the
 paragraph it changes.
@@ -36,7 +37,7 @@ names the layers its imports and importers allow.
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `timeline/read`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
-| 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `core` |
+| 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `usage`, `core` |
 | 6 UI (giao diện) | What the captain looks at; Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` (service) | `ui/console` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
@@ -84,6 +85,12 @@ reads `store`, `db`, `timeline` and `matehost` itself; its SQL is in
 `timeline/read` (CON-166). The UI is the web
 pages it serves. Since CON-165 it no longer imports `spawn`
 (`store.Workspace.CrewIsScout`).
+
+`usage` (CON-168) builds the pages `mate usage` prints; `cmd/mate/usage.go`
+only reads the flags. It is in service because `--why` reads through
+`dashboard.Server`, so that page and the Task page cannot disagree, and the
+ledger reads the crews through `spawn`. Its reads of `mate.db` are in
+`timeline/read`; it holds no SQL.
 
 ## 2. Processes and how they talk
 
