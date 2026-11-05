@@ -42,7 +42,7 @@ import (
 //     even with a fresh question waiting, which is the case that would catch
 //     a daemon that had cached the flag
 //
-// Everything runs through the seams cmdConsole wires (consoleMateHandle over
+// Everything runs through the seams cmdConsole wires (spawn.MateOutbox over
 // the real Herdr adapter). The Bubble Tea Program is not run - it needs a
 // terminal - but no part of the path being proved lives inside it.
 func TestLiveAutoDigestReachesTheMate(t *testing.T) {

@@ -264,7 +264,7 @@ func TestConsoleBoxResolveQueuesBehindAPendingComposer(t *testing.T) {
 	// The captain submits their own line and the Mate's turn ends: the
 	// console's loop, not another keystroke, delivers the assign.
 	f.rt.SetReadOutput(f.mate, claudeEmptyScreen)
-	loop := consoleOutbox(f.ws, f.deps)
+	loop := spawn.MateOutbox(f.ws, f.deps)
 	for i := 0; i < 3; i++ {
 		if err := loop.Drain(context.Background()); err != nil {
 			t.Fatalf("Drain: %v", err)

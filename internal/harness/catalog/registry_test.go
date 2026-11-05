@@ -47,6 +47,12 @@ func TestRegistryParseIsTheRegisteredKinds(t *testing.T) {
 	if p, err := r.Lookup("lab"); err != nil || p.Kind() != "lab" {
 		t.Errorf("Lookup(lab) = %v, %v", p, err)
 	}
+	if s, err := r.Screen("lab"); err != nil || s == nil || s.Kind() != claude.KindClaude {
+		t.Errorf("Screen(lab) = %v, %v; want the profile's own screen", s, err)
+	}
+	if _, err := r.Screen(claude.KindClaude); err == nil || !strings.Contains(err.Error(), "codex, lab") {
+		t.Errorf("Screen(claude) = %v, want Lookup's refusal", err)
+	}
 	if k, err := r.Default(harness.RoleCrew); err != nil || k != "lab" {
 		t.Errorf("Default(crew) = %q, %v; want lab", k, err)
 	}

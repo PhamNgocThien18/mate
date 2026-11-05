@@ -226,7 +226,7 @@ func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
 			t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
 		}
 	}
-	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "consoleOutbox", "db.Open"} {
+	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open"} {
 		if calls[opener] {
 			t.Errorf("runConsole calls %s; engineOptions builds the loops and opens the timeline", opener)
 		}

@@ -68,7 +68,7 @@ const (
 // dealt with, whatever was shown before.
 func Render(ctx context.Context, w *store.Workspace, deps Deps, project string, now time.Time, advance bool) (string, error) {
 	git := deps.Git
-	if err := requireProject(w, project); err != nil {
+	if err := w.RequireProject(project); err != nil {
 		return "", err
 	}
 	view, err := box.Load(w, project)
@@ -623,16 +623,6 @@ func ClipRunes(s string, n int) string {
 
 // timeLayout is the header's time.
 const timeLayout = "2006-01-02 15:04"
-
-func requireProject(w *store.Workspace, project string) error {
-	if err := store.ValidateProjectName(project); err != nil {
-		return err
-	}
-	if _, ok := w.Project(project); !ok {
-		return fmt.Errorf("%w: %s", store.ErrNoProject, project)
-	}
-	return nil
-}
 
 // dashIfEmpty keeps a field from reading as a missing one.
 func dashIfEmpty(s string) string {

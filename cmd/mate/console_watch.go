@@ -138,7 +138,7 @@ func consoleCrewHandle(ws *store.Workspace, deps spawn.Deps) watch.HandleFunc {
 		if err != nil {
 			return runtime.AgentHandle{}, nil, err
 		}
-		screens, err := screenOf(deps, kind)
+		screens, err := deps.Harnesses.Screen(kind)
 		if err != nil {
 			return runtime.AgentHandle{}, nil, err
 		}

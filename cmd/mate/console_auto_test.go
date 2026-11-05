@@ -49,7 +49,7 @@ func TestConsolePilotDigestsToAStartedMate(t *testing.T) {
 		Outbox: outbox.New(w, outbox.Deps{
 			Harnesses: harnesses,
 			Runtime:   deps.Runtime,
-			Handle:    consoleMateHandle(w, deps),
+			Handle:    spawn.MateOutboxDeps(w, deps).Handle,
 			Sleeper:   noSleep{},
 		}),
 		Sleeper: noSleep{},

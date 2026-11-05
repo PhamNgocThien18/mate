@@ -84,6 +84,19 @@ func TestStoreProjectAddLoadSave(t *testing.T) {
 	}
 }
 
+func TestRequireProject(t *testing.T) {
+	w := newProjectWorkspace(t)
+	if err := w.RequireProject("shop"); err != nil {
+		t.Fatalf("RequireProject(shop) = %v", err)
+	}
+	if err := w.RequireProject("blog"); !errors.Is(err, store.ErrNoProject) || !strings.HasSuffix(err.Error(), ": blog") {
+		t.Fatalf("RequireProject(blog) = %v, want ErrNoProject naming blog", err)
+	}
+	if err := w.RequireProject("Bad Name"); err == nil || errors.Is(err, store.ErrNoProject) {
+		t.Fatalf("RequireProject(Bad Name) = %v, want the name refused before the lookup", err)
+	}
+}
+
 func TestStoreProjectNameValidation(t *testing.T) {
 	cases := []struct {
 		name string

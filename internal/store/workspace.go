@@ -391,6 +391,19 @@ func (w *Workspace) Projects() []ProjectRef {
 	return append([]ProjectRef(nil), w.snapshot().Projects...)
 }
 
+// RequireProject refuses a name that is not a valid project name, or one
+// workspace.yaml does not register (ErrNoProject). Every command and action
+// that works on one project checks it this way first.
+func (w *Workspace) RequireProject(name string) error {
+	if err := ValidateProjectName(name); err != nil {
+		return err
+	}
+	if _, ok := w.Project(name); !ok {
+		return fmt.Errorf("%w: %s", ErrNoProject, name)
+	}
+	return nil
+}
+
 // Project returns the registration of one project.
 func (w *Workspace) Project(name string) (ProjectRef, bool) {
 	for _, p := range w.snapshot().Projects {
