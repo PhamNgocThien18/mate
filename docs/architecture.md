@@ -149,9 +149,11 @@ How processes exchange state:
   writer gets `db.ErrLocked` (a console then observes without recording).
   Readers use `db.OpenRead`.
 - **Unix sockets.** `.mate/projects/<p>/mate/host.sock`: one JSON request
-  and one JSON response per connection (`matehost.Client`); the outbox
-  delivers to a headless Mate through it (`OpDeliver`), and spawn, Office
-  chat and City ask it for state, history and answers. The console drives
+  and one JSON response per connection (`matehost.Client`), except
+  `subscribe`, which keeps the connection and streams every host event as
+  one JSON line (CON-221); the outbox delivers to a headless Mate through
+  it (`OpDeliver`), and spawn, Office chat and City ask it for state,
+  history and answers. The console drives
   each pane runner over its own socket in a temp directory
   (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
 - **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)
