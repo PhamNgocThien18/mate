@@ -3,17 +3,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
@@ -23,11 +26,11 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// A page's chat runs on the headless Mate's host (dashboardTalk), with the
-// text and the news the page sent, and never reaches the console's action
-// function; everything else runs through that function. A page's tick on
-// the work board is the work sheet's okay_work there (CON-206): it ticks
-// the row and says what the console says.
+// A page's chat runs in the core, on the headless Mate's host (core's
+// Engine.Act), with the text and the news the page sent, and never reaches
+// the console's action functions; everything else runs through them. A
+// page's tick on the work board is the work sheet's okay_work there
+// (CON-206): it ticks the row and says what the console says.
 func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
@@ -40,7 +43,7 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	if err := matehost.DoneWork(path, id, "", now); err != nil {
 		t.Fatal(err)
 	}
-	_, web := tuiAndWebActions(w, spawn.Deps{}, nil, nil)
+	web := engineActions(w, spawn.Deps{}, nil)
 	var mu sync.Mutex
 	var ran []coreapi.ActionRequest
 	act := func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
@@ -49,29 +52,16 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 		mu.Unlock()
 		return web(ctx, req)
 	}
-	// The dashboard the console's engine serves, with the console's own
-	// Deps; the snapshot is handed in, as the engine hands in its own. A
-	// running Mate offers stop, which is what lets a page talk to it.
-	opts := consoleDashboard(w, "", false, act, false)
-	if opts.Deps.Act == nil || opts.Deps.Diff == nil || opts.Deps.BranchExists == nil {
-		t.Fatalf("consoleDashboard left the page's action or the CLI's answers out: %+v", opts.Deps)
+	opts := consoleDashboard(w, "", false, false)
+	if opts.Deps.Diff == nil || opts.Deps.BranchExists == nil {
+		t.Fatalf("consoleDashboard left the CLI's answers out: %+v", opts.Deps)
 	}
+	engine := core.New(core.Options{Workspace: w, Act: act})
+	defer engine.Stop()
+	// A running Mate offers stop, which is what lets a page talk to it.
 	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
 		Mate: query.MateNode{Actions: []query.ActionAvailability{{Action: "stop", Available: true}}}}}}
-	deps := opts.Deps
-	deps.Snapshot = func(context.Context) (query.Snapshot, error) { return snap, nil }
-	handle, err := db.OpenRead(w)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer handle.Close()
-	server, err := dashboard.New(dashboard.Options{Workspace: w, DB: handle, Deps: deps})
-	if err != nil {
-		t.Fatal(err)
-	}
-	page := httptest.NewServer(server.Handler())
-	defer page.Close()
-	base := page.URL
+	base := pageServer(t, w, opts, engine.Act, snap)
 
 	for _, tc := range []struct {
 		body, line string
@@ -115,6 +105,109 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 			t.Errorf("row %d is %s after the tick, want okayed", id, row.Status)
 		}
 	}
+}
+
+// The console and a page that act on one target at the same time go
+// through the same engine (CON-209): the first runs, and the second is
+// refused with the engine's line and starts nothing, whichever of the two
+// came first. The page gets it as a 409, the console as coreapi.ErrBusy,
+// whose text its message line shows verbatim (internal/ui/console's tests).
+func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
+	w := pageWorkspace(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var ran []coreapi.Action
+	act := func(_ context.Context, req coreapi.ActionRequest) (string, error) {
+		mu.Lock()
+		ran = append(ran, req.Action)
+		mu.Unlock()
+		entered <- struct{}{}
+		<-release
+		return "did " + string(req.Action), nil
+	}
+	engine := core.New(core.Options{Workspace: w, Act: act})
+	defer engine.Stop()
+	available := func(names ...string) []query.ActionAvailability {
+		var out []query.ActionAvailability
+		for _, n := range names {
+			out = append(out, query.ActionAvailability{Action: n, Available: true})
+		}
+		return out
+	}
+	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
+		Mate:  query.MateNode{Actions: available("stop", "restart_mate")},
+		Crews: []query.CrewNode{{CrewID: "buy", Actions: available("stop", "merge")}}}}}
+	base := pageServer(t, w, consoleDashboard(w, "", false, false), engine.Act, snap)
+	console := tuiAction(engine.Act, splitTerminal)
+	ctx := context.Background()
+
+	// The console's merge first: the page's stop of the same crew is
+	// refused while it runs.
+	merged := make(chan error, 1)
+	go func() {
+		_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"})
+		merged <- err
+	}()
+	<-entered
+	status, line := pagePress(t, base, `{"action":"stop","project":"shop","crew":"buy"}`)
+	if want := "Action refused: merge is still running on shop/buy · nothing started"; status != http.StatusConflict || line != want {
+		t.Errorf("the page's stop during the console's merge = %d %q, want 409 %q", status, line, want)
+	}
+	release <- struct{}{}
+	if err := <-merged; err != nil {
+		t.Fatalf("the console's merge: %v", err)
+	}
+
+	// The page's restart first: the console's stop of the same Mate is
+	// refused while it runs.
+	restarted := make(chan int, 1)
+	go func() {
+		resp, err := http.Post(base+"/api/actions", "application/json", strings.NewReader(`{"action":"restart_mate","project":"shop"}`))
+		if err != nil {
+			restarted <- 0
+			return
+		}
+		resp.Body.Close()
+		restarted <- resp.StatusCode
+	}()
+	<-entered
+	_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
+	if want := "Action refused: restart_mate is still running on shop · nothing started"; !errors.Is(err, coreapi.ErrBusy) || err.Error() != want {
+		t.Errorf("the console's stop during the page's restart = %v, want ErrBusy %q", err, want)
+	}
+	release <- struct{}{}
+	if status := <-restarted; status != http.StatusOK {
+		t.Fatalf("the page's restart = %d, want 200", status)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []coreapi.Action{coreapi.ActionMerge, coreapi.ActionRestartMate}; !slices.Equal(ran, want) {
+		t.Fatalf("ran %v, want only %v: a refused action starts nothing", ran, want)
+	}
+}
+
+// pageServer serves the dashboard the console's engine serves, over w, at
+// the URL it returns until the test ends: opts' Deps with act, the
+// engine's Act, and snap as every snapshot, as the engine hands in its own.
+func pageServer(t *testing.T, w *store.Workspace, opts *core.DashboardOptions, act coreapi.ActionFunc, snap query.Snapshot) string {
+	t.Helper()
+	deps := opts.Deps
+	deps.Act = act
+	deps.Snapshot = func(context.Context) (query.Snapshot, error) { return snap, nil }
+	handle, err := db.OpenRead(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { handle.Close() })
+	server, err := dashboard.New(dashboard.Options{Workspace: w, DB: handle, Deps: deps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := httptest.NewServer(server.Handler())
+	t.Cleanup(page.Close)
+	return page.URL
 }
 
 // pageWorkspace is tmpShopWorkspace with shop's Mate running headless, and

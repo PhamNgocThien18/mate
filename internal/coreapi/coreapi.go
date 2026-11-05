@@ -1,8 +1,9 @@
 // Package coreapi is the contract between mate's core and the UIs that
 // drive it (CON-206): the console, Mate Office and Agent City. A UI reads
 // the workspace through a LoadFunc and asks for an action through an
-// ActionFunc; the core is whatever implements the two. Today cmd/mate
-// builds both inside the console's process. Once the core runs as a
+// ActionFunc; the core is whatever implements the two. Today the engine of
+// internal/core does, inside the console's process: its Snapshot, and its
+// Act for every UI's actions (CON-209). Once the core runs as a
 // process of its own (CON-203), its engine and the client that reaches it
 // over a socket import this package as well.
 //
@@ -207,3 +208,24 @@ type ActionFunc func(context.Context, ActionRequest) (string, error)
 // ErrNoMateREPL is an open-work request for a Mate that runs without the
 // REPL: the console shows the board in its own sheet.
 var ErrNoMateREPL = errors.New("the Mate runs without the REPL")
+
+// ErrBusy is an action the core refused because another action, from this
+// UI or another one, is still running on the same target (CON-209):
+// nothing of it started. errors.Is finds it in a *BusyError, whose text is
+// the whole line a UI shows, verbatim.
+var ErrBusy = errors.New("another action is still running on the target")
+
+// BusyError is ErrBusy with what is running and where: Running is the
+// action that holds the target, Target the target as a UI names it (a
+// Project, `project/crew`, or "the workspace").
+type BusyError struct {
+	Running Action `json:"running"`
+	Target  string `json:"target"`
+}
+
+func (e *BusyError) Error() string {
+	return "Action refused: " + string(e.Running) + " is still running on " + e.Target + " · nothing started"
+}
+
+// Is makes errors.Is(err, ErrBusy) true for a *BusyError.
+func (e *BusyError) Is(target error) bool { return target == ErrBusy }

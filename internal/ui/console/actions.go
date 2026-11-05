@@ -1,6 +1,7 @@
 package console
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -449,6 +450,10 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 		m = m.onWorkDone(msg)
 	}
 	if msg.choice.action == coreapi.ActionNotice {
+		if busy, ok := refusedBusy(msg.err); ok {
+			m.msg = busy
+			return m, nil
+		}
 		if msg.err != nil {
 			m.msg = errMsg("Jev notice unavailable: " + msg.err.Error())
 			return m, nil
@@ -485,6 +490,12 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 		// the reader pressed a key on a line in the rail, and what they need
 		// back is whether that line reached the Mate and why not.
 		result = boxOutcome(msg, m.g)
+	}
+	if busy, ok := refusedBusy(msg.err); ok {
+		// Nothing ran: neither "failed" nor a box action's refusal says
+		// that, and the core's line already does, whatever UI holds the
+		// target.
+		result = busy
 	}
 	m.actions = m.actions.setAfterRead(result)
 	m.msg = result
@@ -644,6 +655,18 @@ func (m Model) recordedHarnessIndex() int {
 		}
 	}
 	return 0
+}
+
+// refusedBusy is the line for an action the core refused because another
+// action, from this console or another UI, is still running on its target
+// (coreapi.ErrBusy, CON-209): the core's own sentence, verbatim, with no
+// "Action failed" or "Assign refused" around it. ok is false for any other
+// outcome.
+func refusedBusy(err error) (footerMsg, bool) {
+	if !errors.Is(err, coreapi.ErrBusy) {
+		return footerMsg{}, false
+	}
+	return errMsg(err.Error()), true
 }
 
 // boxAction reports whether an action's outcome belongs on the rail's own

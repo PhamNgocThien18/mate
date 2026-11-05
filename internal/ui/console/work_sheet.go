@@ -89,6 +89,9 @@ func (m Model) onWorkOpened(msg workOpenedMsg) (Model, tea.Cmd) {
 	switch {
 	case errors.Is(msg.err, coreapi.ErrNoMateREPL):
 		return m.openWorkSheet(msg.project), nil
+	case errors.Is(msg.err, coreapi.ErrBusy):
+		m.msg, _ = refusedBusy(msg.err)
+		return m, nil
 	case msg.err != nil:
 		m.msg = errMsg("Open work refused: " + msg.err.Error())
 		return m, nil
@@ -215,6 +218,10 @@ func (m Model) okayWork() (tea.Model, tea.Cmd) {
 // onWorkDone is an okay's return: the sheet stays open with the outcome
 // under the rows, and the re-read moves the row to the okayed group.
 func (m Model) onWorkDone(msg actionDoneMsg) Model {
+	if errors.Is(msg.err, coreapi.ErrBusy) {
+		m.work.note = msg.err.Error()
+		return m
+	}
 	if msg.err != nil {
 		m.work.note = "okay refused: " + msg.err.Error()
 		return m
