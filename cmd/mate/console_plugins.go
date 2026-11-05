@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/consolecmd"
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/plugin"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -100,20 +100,16 @@ func (l pluginLinks) hasKey(key string) bool {
 	return false
 }
 
-// urlOpener names the machine's URL opener.
-func urlOpener(goos string) string {
-	switch goos {
-	case "darwin":
-		return "open"
-	case "linux":
-		return "xdg-open"
-	}
-	return ""
+// urlOpener is the program that opens a URL, and the arguments that go
+// before the URL.
+type urlOpener struct {
+	name string
+	args []string
 }
 
-// consolePluginView opens plugin link URLs with the machine's opener and
-// hands every other key to inner. No terminal tab is involved.
-func consolePluginView(links pluginLinks, opener string, runner consolecmd.Runner, inner console.CommandViewFunc) console.CommandViewFunc {
+// consolePluginView opens plugin link URLs with opener and hands every
+// other key to inner. No terminal tab is involved.
+func consolePluginView(links pluginLinks, opener urlOpener, runner consolecmd.Runner, inner console.CommandViewFunc) console.CommandViewFunc {
 	if len(links) == 0 {
 		return inner
 	}
@@ -133,24 +129,27 @@ func consolePluginView(links pluginLinks, opener string, runner consolecmd.Runne
 	}
 }
 
-func openURL(ctx context.Context, opener string, runner consolecmd.Runner, l plugin.Link) error {
-	name := opener
-	if name == "" {
-		return fmt.Errorf("%s: no URL opener for %s", l.Title, runtime.GOOS)
-	}
+func openURL(ctx context.Context, opener urlOpener, runner consolecmd.Runner, l plugin.Link) error {
+	name := opener.name
 	if !filepath.IsAbs(name) {
 		name = findTool(os.Getenv, name)
 	}
 	if !filepath.IsAbs(name) {
-		return fmt.Errorf("%s: URL opener %q not found", l.Title, opener)
+		return fmt.Errorf("%s: URL opener %q not found", l.Title, opener.name)
 	}
 	launchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var diagnostic bytes.Buffer
-	if err := runner(launchCtx, consolecmd.Invocation{Name: name, Args: []string{l.URL}}, nil, &diagnostic, &diagnostic); err != nil {
+	args := append(slices.Clone(opener.args), l.URL)
+	if err := runner(launchCtx, consolecmd.Invocation{Name: name, Args: args}, nil, &diagnostic, &diagnostic); err != nil {
 		return fmt.Errorf("%s: %w: %s", l.Title, err, strings.TrimSpace(diagnostic.String()))
 	}
 	return nil
 }
 
-func hostOpener() string { return urlOpener(runtime.GOOS) }
+// hostOpener is the program platform.URLOpener names for this system;
+// openURL finds it with findTool.
+func hostOpener() urlOpener {
+	name, args := platform.URLOpener()
+	return urlOpener{name: name, args: args}
+}

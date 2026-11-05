@@ -68,8 +68,6 @@ var platformAdapters = []platformEntry{
 // platformDebt are files that choose by operating system themselves; CON-185
 // moves that choice out of them and removes their entries.
 var platformDebt = []platformEntry{
-	{file: "cmd/mate/console_plugins.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: picks the program that opens a URL by the operating system"},
-	{file: "cmd/mate/dashboard.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: picks the program that opens the browser by the operating system"},
 	{file: "cmd/mate/notifications.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: turns notifications off outside darwin"},
 }
 

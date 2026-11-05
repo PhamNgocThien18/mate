@@ -6,10 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nguyenngocanh94/mate/internal/consolecmd"
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
@@ -73,12 +76,25 @@ func TestPluginLinksBindAndOpen(t *testing.T) {
 		return nil
 	}
 	opener := filepath.Join(t.TempDir(), "opener")
-	view := consolePluginView(links, opener, runner, nil)
+	view := consolePluginView(links, urlOpener{name: opener}, runner, nil)
 	if err := view(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err != nil {
 		t.Fatal(err)
 	}
 	if got.Name != opener || len(got.Args) != 1 || got.Args[0] != "https://board.example/shop-1" {
 		t.Fatalf("invocation %+v", got)
+	}
+
+	// An opener's own arguments, Windows' url.dll,FileProtocolHandler, go
+	// before the URL, the same on every open.
+	prefixed := consolePluginView(links, urlOpener{name: opener, args: []string{"url.dll,FileProtocolHandler"}}, runner, nil)
+	for range 2 {
+		got = consolecmd.Invocation{}
+		if err := prefixed(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err != nil {
+			t.Fatal(err)
+		}
+		if got.Name != opener || !slices.Equal(got.Args, []string{"url.dll,FileProtocolHandler", "https://board.example/shop-1"}) {
+			t.Fatalf("invocation with the opener's arguments %+v", got)
+		}
 	}
 
 	got = consolecmd.Invocation{}
@@ -90,10 +106,10 @@ func TestPluginLinksBindAndOpen(t *testing.T) {
 	failing := func(context.Context, consolecmd.Invocation, io.Reader, io.Writer, io.Writer) error {
 		return errors.New("boom")
 	}
-	if err := consolePluginView(links, opener, failing, nil)(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err == nil || !strings.Contains(err.Error(), "boom") {
+	if err := consolePluginView(links, urlOpener{name: opener}, failing, nil)(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("runner error lost: %v", err)
 	}
-	if err := consolePluginView(links, "no-such-opener-xyz", runner, nil)(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err == nil || !strings.Contains(err.Error(), "no-such-opener-xyz") {
+	if err := consolePluginView(links, urlOpener{name: "no-such-opener-xyz"}, runner, nil)(context.Background(), "b", console.StageTarget{ProjectID: "shop"}); err == nil || err.Error() != `Open board: URL opener "no-such-opener-xyz" not found` {
 		t.Fatalf("missing opener not named: %v", err)
 	}
 }
@@ -153,7 +169,7 @@ func TestNoPluginsYAMLChangesNothing(t *testing.T) {
 	if err != nil || len(links) != 0 || len(links.bindings()) != 0 {
 		t.Fatalf("links %v, %v", links, err)
 	}
-	if consolePluginView(links, "open", nil, nil) != nil {
+	if consolePluginView(links, urlOpener{name: "open"}, nil, nil) != nil {
 		t.Fatal("view installed without plugins")
 	}
 }
@@ -196,8 +212,16 @@ func TestPluginLinkConfigErrorDegradesToNotice(t *testing.T) {
 	}
 }
 
-func TestUrlOpenerByOS(t *testing.T) {
-	if urlOpener("darwin") != "open" || urlOpener("linux") != "xdg-open" || urlOpener("plan9") != "" {
-		t.Fatal("opener table")
+// The console's plugin links and `mate dashboard --open` open a URL with
+// the program internal/platform names for this system (platform.URLOpenerFor
+// has the table), and each says when it is missing.
+func TestURLOpenersAreThePlatforms(t *testing.T) {
+	name, args := platform.URLOpenerFor(runtime.GOOS)
+	if got := hostOpener(); got.name != name || !slices.Equal(got.args, args) {
+		t.Fatalf("console opener %+v, want %q %q", got, name, args)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if err := openInBrowser("http://127.0.0.1:7777/"); err == nil || err.Error() != "no "+name+" on PATH" {
+		t.Fatalf("dashboard opener without %s on PATH: %v", name, err)
 	}
 }
