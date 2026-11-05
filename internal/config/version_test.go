@@ -53,6 +53,19 @@ func TestFromBuildInfo(t *testing.T) {
 			version: "dev", commit: "unknown", at: "unknown",
 			want: [3]string{"dev", "unknown", "unknown"},
 		},
+		{
+			name:    "ok but nil build info",
+			version: "dev", commit: "unknown", at: "unknown",
+			ok:   true,
+			want: [3]string{"dev", "unknown", "unknown"},
+		},
+		{
+			name:    "empty module version",
+			version: "dev", commit: "unknown", at: "unknown",
+			info: &debug.BuildInfo{},
+			ok:   true,
+			want: [3]string{"dev", "unknown", "unknown"},
+		},
 	}
 	for _, tc := range tests {
 		v, c, d := fromBuildInfo(tc.version, tc.commit, tc.at, tc.info, tc.ok)
