@@ -9,7 +9,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/prwatch"
-	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/refresh"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
@@ -27,14 +26,16 @@ import (
 
 // engineOptions builds the parts internal/core's engine runs for an open
 // workspace (CON-207): the observer with the timeline it records, the outbox
-// sender and the auto daemon, and recovery. The console runs them under an
-// engine for as long as it is open; `mate core` is to run the same ones
-// (CON-211). The builders stay in this package, beside the commands that
-// build the same parts for one shot of their own (consoleOutbox,
-// consoleSessionRef, mateRefresher).
+// sender and the auto daemon, and recovery; and what its snapshot asks Herdr
+// through (CON-208). The console runs them under an engine for as long as
+// it is open, adding the dashboard and the notifications; `mate core` is to
+// run the same ones (CON-211). The builders stay in this package, beside
+// the commands that build the same parts for one shot of their own
+// (consoleOutbox, consoleSessionRef, mateRefresher).
 //
 // Each loop opens its own *store.Workspace over ws's directory, for the
-// reason consoleWatcher gives; recovery repairs ws itself.
+// reason consoleWatcher gives; recovery repairs ws itself, and the snapshot
+// and the dashboard read it.
 func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
 	// The observer of mvp.md section 4b runs for as long as the workspace is
 	// open, and only then: it lives in this process, so quitting the console
@@ -73,6 +74,10 @@ func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
 		Recover: func(ctx context.Context, ws *store.Workspace, progress func(recovery.Progress)) recovery.Result {
 			return recovery.Run(ctx, ws, deps, progress)
 		},
+		// The snapshot every UI reads asks the same Herdr which agents are
+		// up, and carries the harnesses this binary launches (CON-208).
+		Spawn:     deps,
+		Harnesses: consoleHarnesses(),
 	}
 	// No handle - another process writes the timeline - is no timeline to
 	// close, which a nil *db.DB in the interface would not say.
@@ -215,30 +220,4 @@ func consoleMateHandle(ws *store.Workspace, deps spawn.Deps) outbox.HandleFunc {
 	return func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error) {
 		return spawn.MateHandle(ctx, ws, deps, project)
 	}
-}
-
-// withAutoStatus puts the daemon's own state into a snapshot query.Load built
-// out of files alone.
-//
-// A project the daemon has never ticked keeps the zero AutoDaemon, which
-// renders as the bare mode word: "this console has sent nothing for it" is
-// the truth, and it is what the zero value already says.
-func withAutoStatus(snap query.Snapshot, status map[string]autopilot.Status) query.Snapshot {
-	if len(status) == 0 {
-		return snap
-	}
-	for p := range snap.Projects {
-		project := &snap.Projects[p]
-		s, ok := status[project.ProjectID]
-		if !ok {
-			continue
-		}
-		project.Daemon = query.AutoDaemon{
-			Sends:      s.Sends,
-			LastSentAt: s.LastSentAt,
-			Notice:     s.Notice,
-			NoticeAt:   s.NoticeAt,
-		}
-	}
-	return snap
 }

@@ -1,7 +1,10 @@
 // Package core runs the background loops of an open workspace (CON-203):
 // the observer of mvp.md section 4b with the timeline it records, the
-// outbox sender and the auto daemon of mvp.md section 5, and recovery
-// (docs/mvp.md M17).
+// outbox sender and the auto daemon of mvp.md section 5, recovery
+// (docs/mvp.md M17), the dashboard that serves Mate Office and Agent City,
+// and the captain's notifications. It also computes the one snapshot every
+// UI reads (Engine.Snapshot, CON-208), and keeps the workspace it shares
+// with the dashboard in step with workspace.yaml.
 //
 // Engine holds their lifecycle: the order they start in, the reverse order
 // they stop in, the timeline database it closes last, and the state a

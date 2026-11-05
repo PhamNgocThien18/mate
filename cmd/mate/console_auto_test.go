@@ -70,31 +70,18 @@ func TestConsolePilotDigestsToAStartedMate(t *testing.T) {
 	if got := snap.Projects[0].Daemon; got.Sends != 0 {
 		t.Fatalf("query.Load filled Daemon = %+v; it reads files and cannot know this", got)
 	}
-	merged := withAutoStatus(snap, pilot.Snapshot())
+	engine := core.New(core.Options{Workspace: w, Pilot: core.PilotLoop(pilot), Spawn: deps, Harnesses: consoleHarnesses()})
+	defer engine.Stop()
+	merged, err := engine.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("engine.Snapshot: %v", err)
+	}
 	daemon := merged.Projects[0].Daemon
 	if daemon.Sends != 1 || daemon.LastSentAt.IsZero() {
 		t.Fatalf("Daemon = %+v, want one send with a time", daemon)
 	}
 	if daemon.Notice != "" {
 		t.Fatalf("Daemon.Notice = %q after a delivered digest", daemon.Notice)
-	}
-}
-
-// A project the daemon has not ticked keeps the zero value: "this console has
-// sent nothing for it" is what the zero value already says, and borrowing a
-// neighbour's would put another project's clock on this row.
-func TestWithAutoStatusLeavesUntickedProjectsAlone(t *testing.T) {
-	snap := query.Snapshot{Projects: []query.ProjectNode{
-		{ProjectID: "shop"}, {ProjectID: "blog"},
-	}}
-	merged := withAutoStatus(snap, map[string]autopilot.Status{
-		"shop": {Sends: 3, Notice: "not delivered"},
-	})
-	if merged.Projects[0].Daemon.Sends != 3 {
-		t.Fatalf("shop = %+v, want the daemon's state", merged.Projects[0].Daemon)
-	}
-	if merged.Projects[1].Daemon != (query.AutoDaemon{}) {
-		t.Fatalf("blog = %+v, want the zero value", merged.Projects[1].Daemon)
 	}
 }
 
@@ -139,8 +126,13 @@ func TestEngineOptionsRunsTheConsoleLoops(t *testing.T) {
 	w, deps, ref := engineFixture(t)
 	engine, opts := startEngine(t, w, deps)
 	if opts.Workspace != w || opts.Watcher == nil || opts.Timeline == nil || opts.Ingest == nil ||
-		opts.Sender == nil || opts.Pilot == nil || opts.Recover == nil {
+		opts.Sender == nil || opts.Pilot == nil || opts.Recover == nil ||
+		opts.Spawn.Runtime != deps.Runtime || len(opts.Harnesses.List) == 0 {
 		t.Fatalf("engineOptions left a part out: %+v", opts)
+	}
+	// The console adds what serves the captain; engineOptions does not.
+	if opts.Dashboard != nil || opts.Notifier != nil {
+		t.Fatalf("engineOptions serves a dashboard (%v) or notifies (%v); only the console does", opts.Dashboard, opts.Notifier)
 	}
 
 	waitFor(t, func() bool {
@@ -180,7 +172,11 @@ func TestEngineObservesWithoutTheTimelineWhileAnotherProcessWritesIt(t *testing.
 		_, ok := engine.CrewHealth().Snapshot()[ref]
 		return ok
 	})
-	if snap := withTimelineStale(query.Snapshot{}, engine.Ingest()); snap.Runtime.Notice != "" {
+	snap, err := engine.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("engine.Snapshot: %v", err)
+	}
+	if strings.Contains(snap.Runtime.Notice, "timeline") {
 		t.Errorf("status line %q, want nothing about a timeline this console does not write", snap.Runtime.Notice)
 	}
 

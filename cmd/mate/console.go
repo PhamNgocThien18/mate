@@ -25,9 +25,10 @@ import (
 //
 // This is the one place internal/ui/console's boundary (no store, no
 // runtime, no Herdr - see internal/ui/console/doc.go) is bridged to real
-// state. LoadFunc closes over the opened workspace and calls query.Load;
-// everything that would need a live agent is refused with a message naming
-// the mvp.md task that wires it, never a fake success.
+// state. LoadFunc is the engine's snapshot (internal/core) plus the
+// console's own keys (consoleLoad); everything that would need a live agent
+// is refused with a message naming the mvp.md task that wires it, never a
+// fake success.
 func cmdConsole(dir string, stdout, stderr io.Writer) error {
 	return runConsole(dir, stdout, stderr, false)
 }
@@ -155,71 +156,47 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	var observerErr error
 	deps.Observer, observerErr = configuredObserver(ws)
 
-	// The observer with the timeline it records, the delivery into the Mates
-	// and recovery run in this process for as long as the workspace is open:
-	// the engine starts them in their order and, when the console quits,
-	// stops them in the reverse (internal/core). engineOptions says what each
-	// one is for.
+	// The action function is built before the engine so the dashboard's
+	// buttons run exactly what the action sheet runs (CON-141).
+	noticeClient, noticeErr := consoleNoticeClient(ws)
+	tuiAction, webAction := tuiAndWebActions(ws, deps, noticeClient, h)
+
+	// The observer with the timeline it records, the delivery into the Mates,
+	// recovery, the dashboard and the notifications run in this process for
+	// as long as the workspace is open: the engine starts them in their order
+	// and, when the console quits, stops them in the reverse (internal/core).
+	// engineOptions says what each one is for. The dashboard comes up after
+	// the observer has made sure the database exists; like the notifications
+	// it is a convenience, and a failure is said on the status line and never
+	// stops the console.
 	opts, err := engineOptions(ws, deps)
 	if err != nil {
 		return err
 	}
+	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, webAction, noticeClient != nil)
+	opts.Notifier = core.NativeNotifier()
 	engine := core.New(opts)
 	if err := engine.Start(ctx); err != nil {
 		return err
 	}
 	defer engine.Stop()
-	// loadFrom reads their state through the engine, by the names it read
-	// the loops by when runConsole ran them itself.
-	watcher, ingest, pilot := engine.CrewHealth(), engine.Ingest(), engine.AutoStatus()
-	recovery := &consoleRecovery{now: time.Now, state: engine.Recovery}
 
-	// loadFrom is the console's snapshot read over one Workspace. The
-	// console reads through its own; the dashboard opens a fresh one per
-	// read, because LoadLive re-reads workspace.yaml into the Workspace it
-	// is given and two goroutines must not do that to one value.
-	loadFrom := func(ws *store.Workspace) coreapi.LoadFunc {
-		return func(loadCtx context.Context) (query.Snapshot, error) {
-			bindings := append(consoleCommandBindings(commands), links.bindings()...)
-			snap, err := query.LoadLive(loadCtx, ws, consoleHarnesses(), bindings, consoleLiveness(loadCtx, ws, deps))
-			if err != nil {
-				return snap, err
-			}
-			// query.Load reads files; the health column is an observation. The
-			// snapshot picks up whatever the observer has seen by now, and the
-			// crews it has not seen keep their Absent health. The daemon's own
-			// state - when it last sent, why it last could not - rides along the
-			// same way, and so does the observer's standing word about the
-			// terminal runtime it could not reach.
-			snap = recovery.apply(snap)
-			snap = withCrewHealth(snap, watcher.Snapshot())
-			snap = withRuntimeNotice(snap, watcher)
-			snap = withTimelineStale(snap, ingest)
-			snap = withAutoStatus(snap, pilot.Snapshot())
-			return withTokens(snap, ws), nil
-		}
-	}
-	load := loadFrom(ws)
-	dashboardLoad := func(loadCtx context.Context) (query.Snapshot, error) {
-		fresh, err := store.Open(ws.Root())
-		if err != nil {
-			return query.Snapshot{}, err
-		}
-		return loadFrom(fresh)(loadCtx)
-	}
+	// The console reads the engine's snapshot, the one Mate Office and Agent
+	// City read, with its own keys and the notifications' word added. Every
+	// action it runs drops the cached snapshot, so the next read shows what
+	// the action changed.
+	bindings := append(consoleCommandBindings(commands), links.bindings()...)
+	load := consoleLoad(engine.Snapshot, bindings, func() string {
+		line, _ := engine.Notifications()
+		return line
+	})
+	tuiAction = invalidateAfter(tuiAction, engine.Invalidate)
+
 	notice := ""
 	dashboardURL := ""
-	// The dashboard comes up with the console, after the observer has made
-	// sure the database exists. It is a convenience: a failure is said on the
-	// status line and never stops the console.
-	// The action function is built before the dashboard so its buttons run
-	// exactly what the action sheet runs (CON-141).
-	noticeClient, noticeErr := consoleNoticeClient(ws)
-	tuiAction, webAction := tuiAndWebActions(ws, deps, noticeClient, h)
-	if url, stopDashboard, err := startConsoleDashboard(ctx, ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, ingest, dashboardLoad, webAction, noticeClient != nil); err != nil {
+	if url, err := engine.Dashboard(); err != nil {
 		notice = err.Error()
 	} else {
-		defer stopDashboard()
 		notice = "dashboard " + url
 		dashboardURL = url
 	}
@@ -238,22 +215,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 		notice += text
 	}
-	stopNotifications, notificationStatus, notificationErr := startConsoleNotifications(ctx, dir, dashboardURL)
-	if notificationErr != nil {
-		addNotice("notifications: " + notificationErr.Error())
-	} else {
-		defer stopNotifications()
-		baseLoad := load
-		load = func(loadCtx context.Context) (query.Snapshot, error) {
-			snap, err := baseLoad(loadCtx)
-			if line := notificationStatus(); line != "" {
-				if snap.Runtime.Notice != "" {
-					snap.Runtime.Notice += "; "
-				}
-				snap.Runtime.Notice += line
-			}
-			return snap, err
-		}
+	if _, err := engine.Notifications(); err != nil {
+		addNotice("notifications: " + err.Error())
 	}
 	// A plugin configuration problem is said on the status line too; the
 	// console runs on without plugin links.
@@ -320,6 +283,40 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 	}
 	return nil
+}
+
+// consoleLoad is the console's LoadFunc over the engine's snapshot (core's
+// Engine.Snapshot): the same read Mate Office and Agent City get, with the
+// console's own keys in Commands - from .mate/console.yaml and the plugins,
+// which the core knows nothing of - and the notification loop's word, when
+// it has one, on the runtime line.
+//
+// The snapshot is shared with every other reader of the engine, so only
+// fields of this copy are set here; nothing it points to is changed.
+func consoleLoad(snapshot coreapi.LoadFunc, bindings []query.CommandBinding, notifications func() string) coreapi.LoadFunc {
+	return func(ctx context.Context) (query.Snapshot, error) {
+		snap, err := snapshot(ctx)
+		if err != nil {
+			return snap, err
+		}
+		snap.Commands = append([]query.CommandBinding(nil), bindings...)
+		if line := notifications(); line != "" {
+			if snap.Runtime.Notice != "" {
+				snap.Runtime.Notice += "; "
+			}
+			snap.Runtime.Notice += line
+		}
+		return snap, nil
+	}
+}
+
+// invalidateAfter runs invalidate once act has returned, whatever it
+// returned: an action that failed halfway can have changed something too.
+func invalidateAfter(act coreapi.ActionFunc, invalidate func()) coreapi.ActionFunc {
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+		defer invalidate()
+		return act(ctx, req)
+	}
 }
 
 // consoleTerminalFiles requires the caller's own stdout to be a real

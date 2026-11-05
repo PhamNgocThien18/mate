@@ -30,8 +30,11 @@ test:
 test-race:
 	set -o pipefail; $(GO) test -race -json ./... | $(GO) run ./scripts/gotestreport
 
+# scripts/ptysmoke is its own module (it carries the vt replace that would
+# block `go install`), so ./... at the root no longer reaches it.
 vet:
 	$(GO) vet ./...
+	cd scripts/ptysmoke && $(GO) vet ./...
 
 fmt:
 	$(GOFMT) -w cmd internal scripts assets
@@ -44,7 +47,46 @@ check-fmt:
 		exit 1; \
 	fi
 
-check: check-fmt vet test
+check: check-fmt vet vet-linux test
+
+.PHONY: vet-linux check-linux
+
+# vet-linux compiles every package, tests included, for both Linux
+# architectures. check-linux only runs the host's architecture. ./... does
+# not reach a nested module, so each module directory is listed here.
+VET_LINUX_MODULES = . scripts/ptysmoke
+
+vet-linux:
+	@set -e; for dir in $(VET_LINUX_MODULES); do for arch in amd64 arm64; do \
+		echo "GOOS=linux GOARCH=$$arch $(GO) vet ./... in $$dir"; \
+		(cd $$dir && GOOS=linux GOARCH=$$arch $(GO) vet ./...); \
+	done; done
+
+# check-linux runs `make check` in a Linux container. Keep LINUX_GO_IMAGE on
+# the Go release the host runs. The module and build caches live in their own
+# Docker volumes, so a second run downloads nothing. The container runs as the
+# caller, so files the tests leave in the repo are not owned by root; a fresh
+# volume belongs to root, so a root helper hands it to the caller first. HOME
+# is an empty tmpfs outside /tmp: tests treat a home under the temp directory
+# as a lab home, not the operator's. GOTOOLCHAIN=local keeps a run from
+# fetching a toolchain; -buildvcs=false because a worktree's .git file points
+# outside the mount.
+DOCKER ?= docker
+LINUX_GO_IMAGE ?= golang:1.27
+LINUX_GOMODCACHE_VOLUME ?= mate-linux-gomodcache
+LINUX_GOCACHE_VOLUME ?= mate-linux-gocache
+LINUX_CACHE_MOUNTS = -v $(LINUX_GOMODCACHE_VOLUME):/cache/gomod -v $(LINUX_GOCACHE_VOLUME):/cache/gobuild
+
+check-linux:
+	@command -v $(DOCKER) >/dev/null 2>&1 || { echo "docker not found; make check-linux needs Docker"; exit 1; }
+	$(DOCKER) run --rm $(LINUX_CACHE_MOUNTS) $(LINUX_GO_IMAGE) \
+		chown $$(id -u):$$(id -g) /cache/gomod /cache/gobuild
+	$(DOCKER) run --rm --init -u $$(id -u):$$(id -g) \
+		-v "$(CURDIR)":/src -w /src $(LINUX_CACHE_MOUNTS) \
+		--mount type=tmpfs,destination=/home/mate,tmpfs-mode=1777 \
+		-e HOME=/home/mate -e GOMODCACHE=/cache/gomod -e GOCACHE=/cache/gobuild \
+		-e GOTOOLCHAIN=local -e GOFLAGS=-buildvcs=false \
+		$(LINUX_GO_IMAGE) make check
 
 clean:
 	rm -rf bin coverage.out coverage.html skip-report.md skip-report-race.md

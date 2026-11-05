@@ -75,7 +75,19 @@ func TestPiMCPConfigIgnoresGlobal(t *testing.T) {
 		t.Fatal("invalid native pi name accepted")
 	}
 }
+
+// requireNode skips a test that runs the extension under node when node is not
+// on PATH. expected-skips.txt allows that skip on linux only, until the image
+// make check-linux uses has node (CON-219). A Mac without node still fails.
+func requireNode(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not on PATH; this test runs the pi extension under node")
+	}
+}
+
 func TestPiMateExtensionEvents(t *testing.T) {
+	requireNode(t)
 	req := crewRequest(t)
 	req.Role = harness.RoleMate
 	logPath := filepath.Join(req.Cwd, "payloads.jsonl")
@@ -142,6 +154,7 @@ if(!(await events.before_agent_start({},ctx))?.message)throw Error('no resume re
 }
 
 func TestPiHookErrorsAreVisibleAndBounded(t *testing.T) {
+	requireNode(t)
 	req := crewRequest(t)
 	req.Role = harness.RoleMate
 	req.Binary = filepath.Join(req.Cwd, "hook-test")
@@ -187,6 +200,7 @@ if(Date.now()-started>2000)throw Error('timeout not bounded');
 // a receipt blocks the composer, so it keeps the short one. Both run at once
 // against a binary slower than the receipt bound.
 func TestPiRecallOutlastsTheReceiptTimeout(t *testing.T) {
+	requireNode(t)
 	req := crewRequest(t)
 	req.Role = harness.RoleMate
 	req.Binary = filepath.Join(req.Cwd, "hook-test")

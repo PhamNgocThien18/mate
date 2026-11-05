@@ -19,8 +19,8 @@ import (
 
 // cmdHook dispatches `mate hook <mate-prompt|mate-stop|mate-session>`
 // (docs/mvp.md tasks 08 and 37). These are hidden, agent-facing subcommands Claude Code's own hook
-// runner invokes on the Mate pane; a human never types them, and they are
-// deliberately left out of every usage string in this package.
+// runner invokes on the Mate pane; a human never types them, so the top-level
+// usage lists `hook` only on its internal line, without these subcommands.
 func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate hook <mate-prompt|mate-stop|mate-session>")

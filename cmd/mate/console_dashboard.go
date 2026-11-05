@@ -4,90 +4,38 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
-	"github.com/nguyenngocanh94/mate/internal/dashboard"
-	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
-// startConsoleDashboard serves the dashboard (docs/mvp.md M6) for as long as
-// the console is open, on the default address. Given the console's own
-// snapshot loader and action function, its pages can press the action
-// sheet's buttons too (CON-141); with either nil it is read-only. It lives in the
-// console's process like the observer does, so quitting the console stops it.
+// consoleDashboard is the dashboard (docs/mvp.md M6) the console's engine
+// serves for as long as the console is open (internal/core): Mate Office
+// and Agent City, on .mate/console.yaml's address (the dashboard's default
+// when empty). allowRemote is that file's dashboard.allow_remote: without
+// it a routable addr is refused the way `mate dashboard` refuses one.
 //
-// The database is opened with db.OpenRead, which takes no lock, so it runs
-// beside the observer that owns the writer. It returns the URL being served
-// and a stop func that is safe to call more than once.
-//
-// A busy port is not an error worth stopping the console for: another
-// console (or `mate dashboard`) is most likely already serving the same
-// workspace there. The caller says so on the status line and carries on.
-//
-// addr is the bind address, the dashboard's default when empty; a test
-// passes its own so it never depends on what this machine already serves.
-// allowRemote is .mate/console.yaml's dashboard.allow_remote: without it a
-// routable addr is refused the way `mate dashboard` refuses one.
-//
-// The returned URL is the loopback one; when the bind is reachable from the
-// LAN it is followed by that address too, so the status line shows what a
-// phone on the same network opens.
-func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string, allowRemote bool, ingest *timeline.Ingester, load coreapi.LoadFunc, act coreapi.ActionFunc, notice bool) (string, func(), error) {
-	handle, err := db.OpenRead(ws)
-	if err != nil {
-		return "", nil, err
-	}
+// Its pages press the action sheet's buttons too (CON-141): act is the
+// console's own action function, behind the page's chat (pageAction).
+// notice is whether the console has Jev to explain a crew's screen.
+func consoleDashboard(ws *store.Workspace, addr string, allowRemote bool, act coreapi.ActionFunc, notice bool) *core.DashboardOptions {
 	deps := dashboardDeps(ws)
-	if ingest != nil {
-		// The ingest is this process's; a console that is not the writer
-		// has none and the page says nothing about staleness.
-		deps.TimelineStale = ingest.Stale
-	}
-	if load != nil && act != nil {
-		deps.Snapshot = load
-		deps.Act = func(actCtx context.Context, req coreapi.ActionRequest) (string, error) {
-			if line, ok, err := dashboardTalk(actCtx, ws, req); ok {
-				return line, err
-			}
-			return act(actCtx, req)
-		}
-		deps.Notice = notice
-	}
-	opts := dashboard.Options{Workspace: ws, DB: handle, Deps: deps, Addr: addr, AllowRemote: allowRemote}
-	server, err := dashboard.New(opts)
-	if err != nil {
-		_ = handle.Close()
-		return "", nil, err
-	}
-	ln, err := dashboard.Listen(opts)
-	if err != nil {
-		_ = handle.Close()
-		return "", nil, fmt.Errorf("dashboard not started: %w", err)
-	}
+	deps.Act = pageAction(ws, act)
+	deps.Notice = notice
+	return &core.DashboardOptions{Addr: addr, AllowRemote: allowRemote, Deps: deps}
+}
 
-	serveCtx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = server.Serve(serveCtx, ln)
-	}()
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
-			cancel()
-			<-done
-			_ = handle.Close()
-		})
+// pageAction is what a page's press runs: its chat on the headless Mate's
+// host (dashboardTalk), anything else through act, the console's.
+func pageAction(ws *store.Workspace, act coreapi.ActionFunc) coreapi.ActionFunc {
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+		if line, ok, err := dashboardTalk(ctx, ws, req); ok {
+			return line, err
+		}
+		return act(ctx, req)
 	}
-	url := dashboard.URL(ln)
-	if lan := dashboard.LANURL(ln); lan != "" {
-		url += " " + lan
-	}
-	return url, stop, nil
 }
 
 // dashboardTalk runs a page's chat actions (CON-142) on the headless Mate's
@@ -141,7 +89,8 @@ func dashboardTalk(ctx context.Context, ws *store.Workspace, req coreapi.ActionR
 // headlessHint is what a console in a terminal it cannot split says
 // instead of a next pane (CON-150): its Mates run headless, and the
 // captain talks to them in Mate Office or Agent City. dashboardURL is
-// startConsoleDashboard's, "" when the dashboard did not start.
+// the console engine's (core.Engine.Dashboard), "" when the dashboard did
+// not start.
 func headlessHint(dashboardURL string) string {
 	fields := strings.Fields(dashboardURL)
 	if len(fields) == 0 {

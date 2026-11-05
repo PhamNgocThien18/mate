@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/notifications"
+	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 	"github.com/nguyenngocanh94/mate/internal/watch"
@@ -86,18 +89,46 @@ type Options struct {
 	// Recover is recovery (docs/mvp.md M17): what a machine restart or a
 	// copied workspace left behind, put right once in the background.
 	Recover RecoverFunc
+
+	// Spawn is the live dependencies a snapshot asks Herdr through, for
+	// which agents are up (query.LoadLive). With no Runtime it asks nothing
+	// and every row keeps its recorded state.
+	Spawn spawn.Deps
+	// Harnesses is the binary's harness catalog, which every snapshot and
+	// every notification read carries.
+	Harnesses query.Harnesses
+	// Dashboard is Mate Office and Agent City, served for as long as the
+	// engine runs; nil serves nothing.
+	Dashboard *DashboardOptions
+	// Notifier sends the captain a native notification for news waiting on
+	// them, for as long as the engine runs (NativeNotifier); nil sends none.
+	Notifier notifications.Sender
 }
 
-// Engine runs a workspace's background loops for as long as it is open.
+// Engine runs a workspace's background loops for as long as it is open, and
+// computes the snapshot every UI reads (Snapshot).
 //
-// Start starts the watcher, then the sender, then the pilot - so the daemon
-// never queues a digest no sender would type - and then recovery. Stop
-// stops them in the reverse order, recovery first, and closes the timeline
-// once nothing that writes it runs. The order is the one runConsole kept in
-// its own body before CON-207.
+// Start starts the reading of workspace.yaml, the watcher, then the sender,
+// then the pilot - so the daemon never queues a digest no sender would type
+// - then recovery, and last what serves the captain: the dashboard, then
+// the notifications, which link to it. Stop stops them in the reverse order
+// and closes the timeline once nothing that writes it runs. The order is
+// the one runConsole kept in its own body before CON-207 and CON-208.
 type Engine struct {
-	o        Options
-	recovery *recoveryRun
+	o         Options
+	recovery  *recoveryRun
+	reload    *tickLoop
+	dashboard *dashboardPart
+	notify    *notifyLoop
+	snaps     *snapshotCache
+	now       func() time.Time
+
+	// ctx is the engine's own: the shared snapshot computations run under
+	// it. cancel ends it when the engine stops, and so does the end of the
+	// context Start was given, through unhook's AfterFunc.
+	ctx    context.Context
+	cancel context.CancelFunc
+	unhook func() bool
 
 	// mu serializes Start and Stop; a Stop that comes while another runs
 	// waits for it and then finds the engine stopped.
@@ -122,9 +153,20 @@ var (
 // New builds an engine over its parts. It starts nothing until Start, and
 // from here on it owns the parts: Stop, or a failed Start, releases them.
 func New(o Options) *Engine {
-	e := &Engine{o: o}
+	e := &Engine{o: o, now: time.Now}
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.snaps = &snapshotCache{compute: e.assemble, ctx: e.ctx, maxAge: snapshotMaxAge, limit: snapshotLimit, now: time.Now}
 	if o.Recover != nil {
 		e.recovery = &recoveryRun{run: o.Recover, ws: o.Workspace, wait: recoveryWait, now: time.Now}
+	}
+	if o.Workspace != nil {
+		e.reload = configReload(o.Workspace)
+		if o.Dashboard != nil {
+			e.dashboard = &dashboardPart{ws: o.Workspace, o: *o.Dashboard, deps: e.dashboardDeps}
+		}
+		if o.Notifier != nil {
+			e.notify = &notifyLoop{root: o.Workspace.Root(), harnesses: o.Harnesses, sender: o.Notifier, url: e.dashboardURL}
+		}
 	}
 	return e
 }
@@ -132,7 +174,9 @@ func New(o Options) *Engine {
 // Start starts the loops in order under ctx, the caller's: cancelling it
 // ends them too, though Stop needs nothing of it. When a part fails to
 // start, Start stops the ones it had started, closes the timeline and
-// returns that part's error unchanged; the engine is then stopped.
+// returns that part's error unchanged; the engine is then stopped. The
+// dashboard and the notifications never fail it: what keeps either from
+// starting is said by Dashboard and Notifications.
 func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -142,6 +186,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	case stopped:
 		return errStopped
 	}
+	e.unhook = context.AfterFunc(ctx, e.cancel)
 	for _, part := range e.parts() {
 		if err := part.Start(ctx); err != nil {
 			e.stop()
@@ -156,6 +201,9 @@ func (e *Engine) Start(ctx context.Context) error {
 // parts is every part that runs, in the order Start starts them.
 func (e *Engine) parts() []Loop {
 	var out []Loop
+	if e.reload != nil {
+		out = append(out, e.reload)
+	}
 	for _, part := range []Loop{e.o.Watcher, e.o.Sender, e.o.Pilot} {
 		if part != nil {
 			out = append(out, part)
@@ -164,13 +212,23 @@ func (e *Engine) parts() []Loop {
 	if e.recovery != nil {
 		out = append(out, e.recovery)
 	}
+	if e.dashboard != nil {
+		out = append(out, e.dashboard)
+	}
+	if e.notify != nil {
+		out = append(out, e.notify)
+	}
 	return out
 }
 
-// Stop stops the loops in the reverse of the order they started in - a
-// recovery that will not stop gets 45 seconds - and then closes the
-// timeline. It is safe to call more than once, and on an engine that never
-// started: that one only closes the timeline it was given.
+// Stop stops the loops in the reverse of the order they started in - the
+// dashboard waits at most 5 seconds for its requests, a recovery that will
+// not stop gets 45 - and then closes the timeline. A shared snapshot being
+// computed is cancelled and waited for, and after Stop no snapshot is
+// handed out or computed (a FreshSnapshot already running is its reader's
+// to wait for). It is
+// safe to call more than once, and on an engine that never started: that
+// one only closes the timeline it was given.
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -182,10 +240,15 @@ func (e *Engine) stop() {
 		return
 	}
 	e.state = stopped
+	e.cancel()
+	if e.unhook != nil {
+		e.unhook()
+	}
 	for i := len(e.running) - 1; i >= 0; i-- {
 		e.running[i].Stop()
 	}
 	e.running = nil
+	e.snaps.close()
 	if e.o.Timeline != nil {
 		// As the console's deferred Close always has: nothing is left to
 		// tell about a database that would not close at exit.
@@ -213,4 +276,31 @@ func (e *Engine) Recovery() Recovery {
 		return Recovery{}
 	}
 	return e.recovery.read()
+}
+
+// Dashboard is what the dashboard serves at, once Start has returned: its
+// loopback URL, followed by the LAN one when the bind is reachable from the
+// LAN; or why it did not start. Both are empty for an engine that serves no
+// dashboard.
+func (e *Engine) Dashboard() (string, error) {
+	if e.dashboard == nil {
+		return "", nil
+	}
+	return e.dashboard.read()
+}
+
+func (e *Engine) dashboardURL() string {
+	url, _ := e.Dashboard()
+	return url
+}
+
+// Notifications is the notification loop's latest word - a line for the
+// status bar while its last tick failed, "" while it sends - and, once
+// Start has returned, why it did not start. Both are empty for an engine
+// that sends no notification.
+func (e *Engine) Notifications() (string, error) {
+	if e.notify == nil {
+		return "", nil
+	}
+	return e.notify.read()
 }

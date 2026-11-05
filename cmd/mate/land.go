@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/wake"
 )
 
 // cmdLand implements `mate land <project> <crew>` (CON-193): everything
@@ -236,7 +237,7 @@ func landLearning(w *store.Workspace, project, crew string, meta map[string]stri
 func landRevision(meta map[string]string, landed string) string {
 	branch := dashIfEmpty(meta[spawn.MetaBranch])
 	if landed != "" {
-		return fmt.Sprintf("branch %s merged as %s", branch, shortRevision(landed))
+		return fmt.Sprintf("branch %s merged as %s", branch, wake.ShortRevision(landed))
 	}
 	return "branch " + branch
 }
@@ -248,13 +249,13 @@ func landReviews(w *store.Workspace, project, crew string) string {
 	if err != nil {
 		return "unknown"
 	}
-	reviewers := reviewsByTarget(w, project, crews)[crew]
+	reviewers := wake.ReviewsByTarget(w, project, crews)[crew]
 	if len(reviewers) == 0 {
-		return "none (" + projectReviewWord(w, project) + ")"
+		return "none (" + wake.ProjectReviewWord(w, project) + ")"
 	}
 	var parts []string
 	for _, r := range reviewers {
-		parts = append(parts, r+" "+reviewVerdictWord(w, project, r))
+		parts = append(parts, r+" "+wake.ReviewVerdictWord(w, project, r))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -463,7 +464,7 @@ func landNext(w *store.Workspace, project string) string {
 	if len(queued) == 0 {
 		parts = append(parts, "queued: none")
 	} else {
-		parts = append(parts, fmt.Sprintf("queued: %d (first: %s)", len(queued), clipRunes(strings.TrimPrefix(strings.TrimSpace(queued[0]), "- "), 80)))
+		parts = append(parts, fmt.Sprintf("queued: %d (first: %s)", len(queued), wake.ClipRunes(strings.TrimPrefix(strings.TrimSpace(queued[0]), "- "), 80)))
 	}
 	if cfg, err := w.LoadProject(project); err == nil {
 		parts = append(parts, nextWorkLine(cfg))

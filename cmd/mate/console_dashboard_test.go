@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
@@ -15,83 +15,13 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
-
-// freeAddr lets the kernel pick the port: the default one belongs to
-// whatever console is open on this machine.
-const freeAddr = "127.0.0.1:0"
-
-// The console serves the dashboard while it is open and stops with it.
-func TestStartConsoleDashboardServesUntilStopped(t *testing.T) {
-	w := usageWorkspace(t)
-	url, stop, err := startConsoleDashboard(context.Background(), w, freeAddr, false, nil, nil, nil, false)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	resp, err := http.Get(url + "api/workspace")
-	if err != nil {
-		stop()
-		t.Fatalf("GET: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want 200", resp.StatusCode)
-	}
-	stop()
-	stop() // idempotent
-	if r, err := http.Get(url + "api/workspace"); err == nil {
-		r.Body.Close()
-		t.Error("dashboard still answering after stop")
-	}
-}
-
-// A busy port is reported, not fatal.
-func TestStartConsoleDashboardBusyPort(t *testing.T) {
-	w := usageWorkspace(t)
-	served, stop, err := startConsoleDashboard(context.Background(), w, freeAddr, false, nil, nil, nil, false)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	defer stop()
-	u, err := url.Parse(strings.Fields(served)[0])
-	if err != nil {
-		t.Fatalf("parse %q: %v", served, err)
-	}
-	if _, _, err := startConsoleDashboard(context.Background(), w, u.Host, false, nil, nil, nil, false); err == nil {
-		t.Fatal("second start on the same port should fail")
-	}
-}
-
-// A routable bind needs console.yaml's allow_remote, the way `mate dashboard`
-// needs --allow-remote: without it the dashboard is not started and the
-// error says what to set. With it the status line also names the LAN URL.
-func TestStartConsoleDashboardRemoteNeedsAllow(t *testing.T) {
-	w := usageWorkspace(t)
-	if _, _, err := startConsoleDashboard(context.Background(), w, "0.0.0.0:0", false, nil, nil, nil, false); err == nil || !strings.Contains(err.Error(), "allow-remote") {
-		t.Fatalf("routable bind without allow_remote: %v", err)
-	}
-	served, stop, err := startConsoleDashboard(context.Background(), w, "0.0.0.0:0", true, nil, nil, nil, false)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	defer stop()
-	urls := strings.Fields(served)
-	if !strings.HasPrefix(urls[0], "http://127.0.0.1:") {
-		t.Fatalf("first URL should be loopback: %q", served)
-	}
-	// The LAN URL exists only on a machine with a private IPv4 address.
-	if len(urls) == 2 && (strings.HasPrefix(urls[1], "http://127.") || !strings.HasPrefix(urls[1], "http://")) {
-		t.Fatalf("LAN URL: %q", served)
-	}
-	if len(urls) > 2 {
-		t.Fatalf("too many URLs: %q", served)
-	}
-}
 
 // A page's chat runs on the headless Mate's host (dashboardTalk), with the
 // text and the news the page sent, and never reaches the console's action
@@ -119,16 +49,29 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 		mu.Unlock()
 		return web(ctx, req)
 	}
-	// A running Mate offers stop, which is what lets a page talk to it.
+	// The dashboard the console's engine serves, with the console's own
+	// Deps; the snapshot is handed in, as the engine hands in its own. A
+	// running Mate offers stop, which is what lets a page talk to it.
+	opts := consoleDashboard(w, "", false, act, false)
+	if opts.Deps.Act == nil || opts.Deps.Diff == nil || opts.Deps.BranchExists == nil {
+		t.Fatalf("consoleDashboard left the page's action or the CLI's answers out: %+v", opts.Deps)
+	}
 	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
 		Mate: query.MateNode{Actions: []query.ActionAvailability{{Action: "stop", Available: true}}}}}}
-	load := func(context.Context) (query.Snapshot, error) { return snap, nil }
-	served, stop, err := startConsoleDashboard(context.Background(), w, freeAddr, false, nil, load, act, false)
+	deps := opts.Deps
+	deps.Snapshot = func(context.Context) (query.Snapshot, error) { return snap, nil }
+	handle, err := db.OpenRead(w)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stop()
-	base := strings.Fields(served)[0]
+	defer handle.Close()
+	server, err := dashboard.New(dashboard.Options{Workspace: w, DB: handle, Deps: deps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := httptest.NewServer(server.Handler())
+	defer page.Close()
+	base := page.URL
 
 	for _, tc := range []struct {
 		body, line string
