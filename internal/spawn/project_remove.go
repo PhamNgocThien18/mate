@@ -16,9 +16,8 @@ type RemoveProjectOptions struct {
 	// Stow asks a running Mate to record what exists only in its
 	// conversation, just before the Mate is stopped. RemoveProjectStow
 	// passes the same stow `mate mate stop` runs; nil stops the Mate at
-	// once. It is
-	// called only for a Mate Herdr lists (or whose liveness could not be
-	// asked), and an error from it fails the Mate's stop.
+	// once. It is called only for a Mate Herdr lists (or whose liveness
+	// could not be asked), and an error from it fails the Mate's stop.
 	Stow func(ctx context.Context, project string) error
 	// Progress, when set, is told each step as it begins, in words fit for
 	// a status line.
