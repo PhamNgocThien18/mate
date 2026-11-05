@@ -33,13 +33,12 @@ import (
 
 // Deps are what a wake needs from its caller.
 type Deps struct {
-	// Git reads a ship's branch and head for part 1.
+	// Git reads a ship's branch and head for part 1. Required.
 	Git gitx.Git
-	// Friction is part 4 (CON-200): one line per repo over its friction
-	// budget, and with ask true it may open the news that asks the captain
-	// about a review. ask is false for a --peek. cmd/mate passes its
-	// frictionCheck, which `mate land` and `mate merge` also run. Nil, or no
-	// lines, prints no part 4.
+	// Friction is part 4 (CON-200): the lines naming each repo over its
+	// friction budget. With ask true it may open the news that asks the
+	// captain about a review; Render passes ask false for a --peek. Nil, or
+	// no lines, prints no part 4.
 	Friction func(w *store.Workspace, project string, now time.Time, ask bool) []string
 }
 
@@ -607,7 +606,8 @@ func markdownSection(text, title string, max int) string {
 	return body
 }
 
-// ClipRunes cuts s to n runes, marking the cut.
+// ClipRunes trims s and cuts it to n runes, the last one an ellipsis
+// marking the cut. n must be at least 1.
 func ClipRunes(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if utf8.RuneCountInString(s) <= n {
@@ -617,7 +617,11 @@ func ClipRunes(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// timeLayout is the header's time, as `mate recall` prints its own.
+// The helpers below are private copies of cmd/mate's, kept here so the
+// wake's text does not depend on cmd/mate; they are part of that text, so
+// a change to one is a change to the wake's output.
+
+// timeLayout is the header's time.
 const timeLayout = "2006-01-02 15:04"
 
 func requireProject(w *store.Workspace, project string) error {
@@ -638,8 +642,7 @@ func dashIfEmpty(s string) string {
 	return s
 }
 
-// formatAge is an age in its largest whole unit, rounded down, as cmd/mate's
-// AGE column prints it.
+// formatAge is an age in its largest whole unit, rounded down.
 func formatAge(d time.Duration) string {
 	switch {
 	case d < time.Minute:
