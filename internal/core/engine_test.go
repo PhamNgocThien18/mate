@@ -176,8 +176,8 @@ func TestEngineStartsInOrderAndStopsEverythingAtOnce(t *testing.T) {
 }
 
 // Nothing fails to start today; core.lock will (CON-211). A part that does
-// not start is not stopped, every part before it is, in the reverse order,
-// and the timeline is closed: the engine holds nothing once Start has failed.
+// not start is not stopped, every part before it is, together, and the
+// timeline is closed: the engine holds nothing once Start has failed.
 func TestEngineStartFailureStopsWhatStartedAndReturnsTheError(t *testing.T) {
 	errBoom := errors.New("boom")
 	for _, tc := range []struct {

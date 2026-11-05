@@ -343,6 +343,12 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	node, err := s.freshProjectNode(ctx, req.Project)
 	if err != nil {
 		var missing errNotFound
+		if errors.Is(err, coreapi.ErrStopping) {
+			// The core stopped between the press and its check: nothing
+			// started, as run says for a refusal by Act.
+			s.writeError(w, r, http.StatusConflict, coreapi.ErrStopping.Error(), "")
+			return
+		}
 		if errors.As(err, &missing) {
 			s.writeError(w, r, http.StatusNotFound, missing.reason, "")
 			return

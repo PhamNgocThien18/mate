@@ -135,7 +135,7 @@ func TestEngineStopReturnsAsSoonAsEverythingStopped(t *testing.T) {
 		if stderr.Len() != 0 {
 			t.Errorf("stderr %q, want nothing", stderr.String())
 		}
-		if got := rec.entries(); got[len(got)-1] != "close timeline" {
+		if got := rec.entries(); len(got) == 0 || got[len(got)-1] != "close timeline" {
 			t.Errorf("log %q, want the timeline closed last", got)
 		}
 	})

@@ -186,7 +186,10 @@ const (
 
 var (
 	errStarted = errors.New("core: the engine is already running")
-	errStopped = errors.New("core: the engine has been stopped")
+	// errStopped is also what a snapshot read gets once Stop has begun, so
+	// it is coreapi.ErrStopping too: a page's press, checked against a
+	// fresh snapshot before it reaches Act, is refused in the same words.
+	errStopped = fmt.Errorf("core: the engine has been stopped: %w", coreapi.ErrStopping)
 )
 
 // New builds an engine over its parts. It starts nothing until Start, and
@@ -212,8 +215,9 @@ func New(o Options) *Engine {
 
 // Start starts the loops in order under ctx, the caller's: cancelling it
 // ends them too, though Stop needs nothing of it. When a part fails to
-// start, Start stops the ones it had started, closes the timeline and
-// returns that part's error unchanged; the engine is then stopped. The
+// start, Start stops the ones it had started as Stop does - within
+// StopWait, closing the timeline once they have all stopped - and returns
+// that part's error unchanged; the engine is then stopped. The
 // dashboard and the notifications never fail it: what keeps either from
 // starting is said by Dashboard and Notifications.
 func (e *Engine) Start(ctx context.Context) error {
@@ -317,8 +321,11 @@ func (e *Engine) stop() {
 		if w == nil {
 			w = os.Stderr
 		}
-		fmt.Fprintf(w, "mate core: %s had not stopped %s after the stop began; mate.db is left open for the process exit to release\n",
-			strings.Join(late, ", "), e.stopWait)
+		line := fmt.Sprintf("mate core: %s had not stopped %s after the stop began", strings.Join(late, ", "), e.stopWait)
+		if e.o.Timeline != nil {
+			line += "; mate.db is left open for the process exit to release"
+		}
+		fmt.Fprintln(w, line)
 		return
 	}
 	if e.o.Timeline != nil {
