@@ -38,7 +38,7 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
 			return startMateAction(ctx, ws, deps, req)
 		case coreapi.ActionOnboard:
 			if req.TargetKind == "workspace" {
-				return addProjectAction(ws, req)
+				return addProjectAction(ctx, ws, req)
 			}
 			return startMateAction(ctx, ws, deps, req)
 		case coreapi.ActionStop:
@@ -211,7 +211,7 @@ func crewDiffAction(ctx context.Context, ws *store.Workspace, req coreapi.Action
 			"diff needs both a Project and a Crew; the Console sent "+
 				fmt.Sprintf("target=%q crew=%q", req.Target, req.Crew))
 	}
-	return crewDiffText(ctx, ws, gitx.New(), req.Target, req.Crew, false)
+	return spawn.CrewDiff(ctx, ws, gitx.New(), req.Target, req.Crew, false)
 }
 
 // startMateAction starts the Mate of one Project. The harness is whatever
@@ -330,7 +330,7 @@ func consoleHarness(kind query.HarnessKind) (harness.Kind, error) {
 // one: the snapshot loader re-reads workspace.yaml into that one on every
 // refresh, from another goroutine, and the next refresh picks the new
 // Project up from disk anyway.
-func addProjectAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
+func addProjectAction(ctx context.Context, ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	name, repo := strings.TrimSpace(req.Input), strings.TrimSpace(req.Repo)
 	if name == "" {
 		return "", observability.NewError(observability.CodeUsage, "project name is required")
@@ -340,7 +340,7 @@ func addProjectAction(ws *store.Workspace, req coreapi.ActionRequest) (string, e
 		return "", err
 	}
 	if repo == "" {
-		if _, err := addProject(fresh, name, projectAddOptions{}); err != nil {
+		if _, err := spawn.AddProject(fresh, name, spawn.AddProjectOptions{}); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Project %s added with no repo yet; add one with `mate project repo add %s <path>`", name, name), nil
@@ -349,11 +349,11 @@ func addProjectAction(ws *store.Workspace, req coreapi.ActionRequest) (string, e
 	if !filepath.IsAbs(absRepo) {
 		absRepo = filepath.Join(fresh.Root(), repo)
 	}
-	repoCfg, err := repoConfigFor(absRepo, repo, "", "")
+	repoCfg, err := spawn.RepoConfigFor(ctx, gitx.New(), absRepo, repo, "", "")
 	if err != nil {
 		return "", err
 	}
-	saved, err := addProject(fresh, name, projectAddOptions{Repos: []store.RepoConfig{repoCfg}})
+	saved, err := spawn.AddProject(fresh, name, spawn.AddProjectOptions{Repos: []store.RepoConfig{repoCfg}})
 	if err != nil {
 		return "", err
 	}

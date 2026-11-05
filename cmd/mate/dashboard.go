@@ -15,6 +15,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/platform"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -91,10 +92,10 @@ func cmdDashboard(args []string, stdout, stderr io.Writer) error {
 }
 
 // dashboardDeps wires the answers the database does not hold. Diff is
-// the CLI's own crewDiffText, so the page shows byte for byte what
+// the CLI's own spawn.CrewDiff, so the page shows byte for byte what
 // `mate diff` prints; BranchExists is `internal/gitx` over the primary
 // checkout of the crew's own repo, which is where a branch outliving its
-// worktree lives (see crewDiffText's own note). PluginHarness is the
+// worktree lives (see spawn.CrewDiff's own note). PluginHarness is the
 // harness profile's MCPConfig capability (pluginHarness), so the dashboard
 // names no harness.
 func dashboardDeps(w *store.Workspace) dashboard.Deps {
@@ -102,7 +103,7 @@ func dashboardDeps(w *store.Workspace) dashboard.Deps {
 	return dashboard.Deps{
 		PluginHarness: pluginHarness,
 		Diff: func(ctx context.Context, project, crew string) (string, error) {
-			return crewDiffText(ctx, w, git, project, crew, false)
+			return spawn.CrewDiff(ctx, w, git, project, crew, false)
 		},
 		BranchExists: func(ctx context.Context, project, crew, branch string) (bool, error) {
 			// The crew's meta names its repo (docs/mvp.md M9); asking every

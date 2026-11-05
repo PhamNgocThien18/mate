@@ -12,6 +12,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/brief"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
@@ -68,7 +69,7 @@ func TestLiveM7EmptyRepoDoesNotGuess(t *testing.T) {
 	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: shop, DefaultBranch: "main"}}}); err != nil {
 		t.Fatalf("AddProject shop: %v", err)
 	}
-	if err := os.WriteFile(w.ProjectDoc("shop"), []byte(projectDocTemplate("shop")), 0o644); err != nil {
+	if err := os.WriteFile(w.ProjectDoc("shop"), []byte(memory.ProjectTemplate("shop")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if n := strings.TrimSpace(gitOut(t, shop, "rev-list", "--count", "main")); n != "1" {

@@ -506,6 +506,18 @@ func (g Git) CurrentBranch(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// SymbolicHead is `git -C dir symbolic-ref --short HEAD`: the branch HEAD
+// points at. Unlike CurrentBranch it answers in a repository with no commit
+// yet, where HEAD names a branch that does not exist (docs/mvp.md M7), and
+// it fails on a detached HEAD instead of answering "HEAD".
+func (g Git) SymbolicHead(ctx context.Context, dir string) (string, error) {
+	out, err := g.run(ctx, dir, "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // DetachedHead is what CurrentBranch reports for a detached checkout: git
 // prints the word HEAD rather than a branch name.
 const DetachedHead = "HEAD"

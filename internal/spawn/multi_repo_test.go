@@ -199,6 +199,42 @@ func TestMergeCrewLandsEachCrewInItsOwnRepo(t *testing.T) {
 
 // assertSpawnLeftNothing is the other half of every spawn refusal: no
 // worktree, no crew record, no Herdr call, no branch in any repo.
+// TestCrewDiffReadsEachCrewsOwnRepo: crew k3 works in api and k4 in web,
+// each with one commit on its branch, and each diff shows that commit and
+// nothing of the other repo.
+func TestCrewDiffReadsEachCrewsOwnRepo(t *testing.T) {
+	w := twoRepoWorkspace(t)
+	for crew, repo := range map[string]string{"k3": "api", "k4": "web"} {
+		worktree := w.WorktreeDir("shop", crew)
+		if err := gitx.New().AddWorktree(context.Background(), repoDir(w, repo), worktree, "mate/"+crew, "main"); err != nil {
+			t.Fatalf("AddWorktree: %v", err)
+		}
+		commitIn(t, worktree, repo+".txt", repo+"\n", "crew commit in "+repo)
+		if err := w.WriteCrewMeta("shop", crew, map[string]string{
+			spawn.MetaTask:     "change " + repo,
+			spawn.MetaHarness:  "codex",
+			spawn.MetaBranch:   "mate/" + crew,
+			spawn.MetaWorktree: ".worktrees/shop-" + crew,
+			store.MetaRepo:     repo,
+			spawn.MetaState:    spawn.CrewStateSpawned,
+		}); err != nil {
+			t.Fatalf("WriteCrewMeta: %v", err)
+		}
+	}
+	for crew, c := range map[string]struct{ mine, other string }{"k3": {"api", "web"}, "k4": {"web", "api"}} {
+		text, err := spawn.CrewDiff(context.Background(), w, gitx.New(), "shop", crew, false)
+		if err != nil {
+			t.Fatalf("diff %s: %v", crew, err)
+		}
+		if !strings.Contains(text, "crew commit in "+c.mine) || !strings.Contains(text, c.mine+".txt") {
+			t.Errorf("diff %s does not show its commit in %s:\n%s", crew, c.mine, text)
+		}
+		if strings.Contains(text, c.other+".txt") {
+			t.Errorf("diff %s shows the %s repo's change:\n%s", crew, c.other, text)
+		}
+	}
+}
+
 func assertSpawnLeftNothing(t *testing.T, w *store.Workspace, rt *runtime.Fake, repos ...string) {
 	t.Helper()
 	if _, err := os.Stat(w.WorktreeDir("shop", "k3")); !os.IsNotExist(err) {

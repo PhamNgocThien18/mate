@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
+
+	"github.com/nguyenngocanh94/mate/internal/gitx"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 )
 
 // cmdProjectRepo dispatches `mate project repo <add|list|remove|teardown|lane>`:
@@ -67,7 +71,7 @@ func cmdProjectRepoAdd(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	repo, err := repoConfigFor(absRepo, shown, *nameFlag, *defaultBranchFlag)
+	repo, err := spawn.RepoConfigFor(context.Background(), gitx.New(), absRepo, shown, *nameFlag, *defaultBranchFlag)
 	if err != nil {
 		return err
 	}

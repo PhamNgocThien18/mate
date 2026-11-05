@@ -64,6 +64,33 @@ func TestCurrentBranchNamesTheCheckedOutBranchAndSaysHEADWhenDetached(t *testing
 	}
 }
 
+// TestSymbolicHeadNamesAnUnbornBranchAndFailsWhenDetached: a repository
+// with no commit still has HEAD naming a branch, which is the case
+// CurrentBranch cannot answer; a detached HEAD names none.
+func TestSymbolicHeadNamesAnUnbornBranchAndFailsWhenDetached(t *testing.T) {
+	g := gitx.New()
+	ctx := context.Background()
+
+	empty := t.TempDir()
+	run(t, empty, "init", "-b", "trunk")
+	got, err := g.SymbolicHead(ctx, empty)
+	if err != nil {
+		t.Fatalf("SymbolicHead in an empty repository: %v", err)
+	}
+	if got != "trunk" {
+		t.Fatalf("SymbolicHead in an empty repository = %q, want trunk", got)
+	}
+
+	repo := newRepo(t)
+	if got, err := g.SymbolicHead(ctx, repo); err != nil || got != "main" {
+		t.Fatalf("SymbolicHead = %q, %v; want main", got, err)
+	}
+	run(t, repo, "checkout", "--detach", "HEAD")
+	if got, err := g.SymbolicHead(ctx, repo); err == nil {
+		t.Fatalf("SymbolicHead on a detached HEAD = %q, want an error", got)
+	}
+}
+
 func TestMergeFFOnlyAdvancesTheCheckedOutBranchToTheCrewBranch(t *testing.T) {
 	repo := newRepo(t)
 	g := gitx.New()
