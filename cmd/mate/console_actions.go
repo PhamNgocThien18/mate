@@ -109,7 +109,7 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
 // confirmed in the other. A terminal the console cannot split (h is nil:
 // neither WezTerm nor Ghostty) has no column to show a pane Mate in, so
 // there every TUI request is HeadlessOnly; a page's request says so itself
-// (dashboardActionRequest).
+// (internal/dashboard's coreRequest).
 func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client, h host.Host) (tui, web coreapi.ActionFunc) {
 	web = consoleAction(ws, deps)
 	if noticeClient != nil {

@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
-	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
@@ -51,11 +49,11 @@ func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string
 	}
 	if load != nil && act != nil {
 		deps.Snapshot = load
-		deps.Act = func(actCtx context.Context, req dashboard.ActionRequest) (string, error) {
+		deps.Act = func(actCtx context.Context, req coreapi.ActionRequest) (string, error) {
 			if line, ok, err := dashboardTalk(actCtx, ws, req); ok {
 				return line, err
 			}
-			return act(actCtx, dashboardActionRequest(req))
+			return act(actCtx, req)
 		}
 		deps.Notice = notice
 	}
@@ -92,60 +90,25 @@ func startConsoleDashboard(ctx context.Context, ws *store.Workspace, addr string
 	return url, stop, nil
 }
 
-// dashboardActionRequest is a page's button press in the shape the console's
-// action sheet sends the same action: the target kinds are the ones its
-// entries build (internal/ui/console's actionRequest, restartMateChoice,
-// onboardChoice), so consoleAction branches on a press from either the
-// same way. A page cannot show a pane Mate, so every press is HeadlessOnly
-// (CON-205); the sheet's requests are HeadlessOnly only where the console
-// cannot split its terminal (tuiAndWebActions).
-func dashboardActionRequest(req dashboard.ActionRequest) coreapi.ActionRequest {
-	out := coreapi.ActionRequest{Action: coreapi.Action(req.Action), Target: req.Project, HeadlessOnly: true}
-	switch {
-	case req.Action == "add_project":
-		// The new-project form's request (newProjectChoice).
-		out.Action, out.TargetKind, out.Target, out.Input, out.Repo = coreapi.ActionOnboard, "workspace", "", req.Project, req.Repo
-	case req.Action == "assign":
-		// The box's [assign] (boxAssignChoice); Line is the server's.
-		out.Action, out.TargetKind, out.Crew, out.Input, out.Key = coreapi.ActionResolve, "project", req.Crew, req.Line, req.Key
-	case req.Crew != "":
-		out.TargetKind, out.Crew = "crew", req.Crew
-	case out.Action == coreapi.ActionOnboard:
-		out.TargetKind, out.Harness = "project-mate", query.HarnessKind(req.Harness)
-	case out.Action == coreapi.ActionRestartMate, out.Action == coreapi.ActionClearComposer, out.Action == coreapi.ActionMode,
-		out.Action == coreapi.ActionRemoveProject:
-		out.TargetKind = "project"
-	default:
-		out.TargetKind = "mate"
-	}
-	return out
-}
-
 // dashboardTalk runs a page's chat actions (CON-142) on the headless Mate's
-// host, the way its REPL runs them: ok is false for any other action. The
-// host is in the Mate's own process, so it answers for itself; a host that
-// is not there says so in its own error.
-func dashboardTalk(ctx context.Context, ws *store.Workspace, req dashboard.ActionRequest) (string, bool, error) {
-	if req.Action == "okay" {
-		// The captain's tick on the work board (CON-158) is the app's own
-		// write; no Mate takes part.
-		if err := matehost.OkayWork(matehost.WorkPath(ws.MateDir(req.Project)), req.Work, time.Now()); err != nil {
-			return "", true, err
-		}
-		return fmt.Sprintf("okayed work #%d of %s; it is off the board", req.Work, req.Project), true, nil
-	}
-	c := matehost.Dial(ws.MateDir(req.Project))
+// host, the way its REPL runs them: ok is false for any other action, the
+// work board's tick included, which is the console's okay_work (CON-206).
+// The host is in the Mate's own process, so it answers for itself; a host
+// that is not there says so in its own error.
+func dashboardTalk(ctx context.Context, ws *store.Workspace, req coreapi.ActionRequest) (string, bool, error) {
+	project := req.Target
+	c := matehost.Dial(ws.MateDir(project))
 	switch req.Action {
-	case "say":
-		st, err := c.Submit(ctx, req.Text)
+	case coreapi.ActionSay:
+		st, err := c.Submit(ctx, req.Input)
 		if err != nil {
 			return "", true, err
 		}
 		if st.Queued > 0 {
-			return fmt.Sprintf("queued for the Mate of %s, behind the turn in flight (%d waiting)", req.Project, st.Queued), true, nil
+			return fmt.Sprintf("queued for the Mate of %s, behind the turn in flight (%d waiting)", project, st.Queued), true, nil
 		}
-		return "sent to the Mate of " + req.Project, true, nil
-	case "interrupt":
+		return "sent to the Mate of " + project, true, nil
+	case coreapi.ActionInterrupt:
 		stopped, err := c.Interrupt(ctx, req.News)
 		switch {
 		case err != nil:
@@ -156,17 +119,17 @@ func dashboardTalk(ctx context.Context, ws *store.Workspace, req dashboard.Actio
 			return fmt.Sprintf("interrupted the session of news #%d", req.News), true, nil
 		}
 		return "interrupted the Mate's turn", true, nil
-	case "answer":
-		if err := c.AnswerNews(ctx, req.News, req.Text); err != nil {
+	case coreapi.ActionAnswer:
+		if err := c.AnswerNews(ctx, req.News, req.Input); err != nil {
 			return "", true, err
 		}
-		return fmt.Sprintf("answer to news #%d sent to the Mate of %s", req.News, req.Project), true, nil
-	case "fork":
-		if err := c.AskSession(ctx, req.News, req.Text); err != nil {
+		return fmt.Sprintf("answer to news #%d sent to the Mate of %s", req.News, project), true, nil
+	case coreapi.ActionFork:
+		if err := c.AskSession(ctx, req.News, req.Input); err != nil {
 			return "", true, err
 		}
 		return fmt.Sprintf("asked the session of news #%d; it answers read-only and changes nothing", req.News), true, nil
-	case "fork_close":
+	case coreapi.ActionForkClose:
 		if err := c.CloseSession(ctx, req.News); err != nil {
 			return "", true, err
 		}

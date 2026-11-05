@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
-	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
@@ -181,7 +180,12 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 				var out string
 				var err error
 				if ui.page {
-					out, err = web(context.Background(), dashboardActionRequest(dashboard.ActionRequest{Action: string(req.Action), Project: "shop"}))
+					// A page's press is the sheet's request, which the
+					// dashboard says is HeadlessOnly (its coreRequest,
+					// pinned by internal/dashboard's tests).
+					page := req
+					page.HeadlessOnly = true
+					out, err = web(context.Background(), page)
 				} else {
 					out, err = tui(context.Background(), req)
 				}
@@ -201,7 +205,7 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	_, web := tuiAndWebActions(w, deps, nil, splitTerminal)
-	out, err := web(context.Background(), dashboardActionRequest(dashboard.ActionRequest{Action: "onboard", Project: "shop", Harness: "codex"}))
+	out, err := web(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate", Harness: "codex", HeadlessOnly: true})
 	if err != nil {
 		t.Fatalf("onboard a Codex Mate from a page: %v", err)
 	}
@@ -230,7 +234,7 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	if err != nil || !strings.HasPrefix(out, "held: ") {
 		t.Fatalf("the console's press = %q, %v; want it held for the unsent text", out, err)
 	}
-	out, err = web(ctx, dashboardActionRequest(dashboard.ActionRequest{Action: "restart_mate", Project: "shop"}))
+	out, err = web(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project", HeadlessOnly: true})
 	if err != nil {
 		t.Fatalf("the page's press: %v", err)
 	}

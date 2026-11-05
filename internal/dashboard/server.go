@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
-	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
@@ -55,12 +55,13 @@ type Deps struct {
 	// Snapshot is the console's own read of the workspace (query.LoadLive
 	// and what the console adds to it): the availability its action sheet
 	// shows, and the one the action buttons show (CON-141).
-	Snapshot func(ctx context.Context) (query.Snapshot, error)
+	Snapshot coreapi.LoadFunc
 	// Act runs one action exactly as the console's action sheet does, and
-	// returns its one line. Act and Snapshot are wired only by the console;
-	// with either nil - `mate dashboard` on its own - the dashboard stays
-	// read-only and says so.
-	Act func(ctx context.Context, req ActionRequest) (string, error)
+	// returns its one line. A page's press reaches it as the core's request
+	// (coreRequest, CON-206). Act and Snapshot are wired only by the
+	// console; with either nil - `mate dashboard` on its own - the
+	// dashboard stays read-only and says so.
+	Act coreapi.ActionFunc
 	// Notice is whether the console has Jev to explain a crew's screen
 	// (`explain_notice`); false greys the button out with the reason.
 	Notice bool

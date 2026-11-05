@@ -7,17 +7,20 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
 // ActionRequest is one press of an action button on a page: the action's
 // wire word (query.ActionAvailability's), the Project, and the Crew when
-// the action is a crew's. cmd/mate turns it into the console's own
-// request, so the page and the console's action sheet run one function.
+// the action is a crew's. coreRequest turns it into the core's request,
+// the one the console's action sheet sends, so the page and the sheet run
+// one function.
 type ActionRequest struct {
 	Action  string `json:"action"`
 	Project string `json:"project"`
@@ -42,6 +45,45 @@ type ActionRequest struct {
 	// Line is the entry's resolve line, filled in by the server from its
 	// own snapshot so a page cannot put words in the Mate's composer.
 	Line string `json:"-"`
+}
+
+// coreRequest is a page's press in the shape the console's action sheet
+// sends the same action (CON-206): the target kinds are the ones its
+// entries build (internal/ui/console's actionRequest, restartMateChoice,
+// onboardChoice), so cmd/mate's consoleAction branches on a press from
+// either the same way. The chat keeps its own actions, with the text in
+// Input as a reply's line is and the news in News; the work board's tick
+// is the work sheet's okay_work, with the row in Input. Nothing else a
+// page typed goes on: an assign hands over Line, the server's own.
+//
+// A page cannot show a pane Mate, so every press is HeadlessOnly
+// (CON-205); the sheet's requests are HeadlessOnly only where the console
+// cannot split its terminal.
+func coreRequest(req ActionRequest) coreapi.ActionRequest {
+	out := coreapi.ActionRequest{Action: coreapi.Action(req.Action), Target: req.Project, HeadlessOnly: true}
+	switch {
+	case req.Action == actAddProject:
+		// The new-project form's request (newProjectChoice).
+		out.Action, out.TargetKind, out.Target, out.Input, out.Repo = coreapi.ActionOnboard, "workspace", "", req.Project, req.Repo
+	case req.Action == actAssign:
+		// The box's [assign] (boxAssignChoice); Line is the server's.
+		out.Action, out.TargetKind, out.Crew, out.Input, out.Key = coreapi.ActionResolve, "project", req.Crew, req.Line, req.Key
+	case req.Action == actOkay:
+		// The work sheet's Space (okayWork).
+		out.Action, out.TargetKind, out.Input = coreapi.ActionOkayWork, "project", strconv.Itoa(req.Work)
+	case talk[req.Action]:
+		out.TargetKind, out.Input, out.News = "mate", req.Text, req.News
+	case req.Crew != "":
+		out.TargetKind, out.Crew = "crew", req.Crew
+	case out.Action == coreapi.ActionOnboard:
+		out.TargetKind, out.Harness = "project-mate", query.HarnessKind(req.Harness)
+	case out.Action == coreapi.ActionRestartMate, out.Action == coreapi.ActionClearComposer, out.Action == coreapi.ActionMode,
+		out.Action == coreapi.ActionRemoveProject:
+		out.TargetKind = "project"
+	default:
+		out.TargetKind = "mate"
+	}
+	return out
 }
 
 // Button is one action button: what it does in the console's words,
@@ -374,11 +416,12 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	s.run(w, r, ctx, req)
 }
 
-// run hands a checked request to the console and answers with its one
-// line, or with the service's error verbatim as a 422: it ran and failed,
-// which a page tells apart from a 409, refused and nothing changed.
+// run hands a checked request to the console, as the core's request, and
+// answers with its one line, or with the service's error verbatim as a
+// 422: it ran and failed, which a page tells apart from a 409, refused and
+// nothing changed.
 func (s *Server) run(w http.ResponseWriter, r *http.Request, ctx context.Context, req ActionRequest) {
-	line, err := s.deps.Act(ctx, req)
+	line, err := s.deps.Act(ctx, coreRequest(req))
 	if err != nil {
 		s.writeError(w, r, http.StatusUnprocessableEntity, err.Error(), "")
 		return
