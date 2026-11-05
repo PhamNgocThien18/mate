@@ -92,13 +92,19 @@ func hostStatus(ctx context.Context, w *store.Workspace, project string, meta ma
 	out.Harness = meta[MetaHarness]
 	out.SessionID = meta[MetaSessionID]
 	pid := meta[MetaPID]
-	if pingHost(ctx, w.MateDir(project)) != nil {
-		out.State = StateStale
-		out.Detail = fmt.Sprintf("the headless host (pid %s) does not answer on %s", pid, matehost.SocketPath(w.MateDir(project)))
+	socket := matehost.SocketPath(w.MateDir(project))
+	if pingHost(ctx, w.MateDir(project)) == nil {
+		out.State = StateRunning
+		out.Detail = fmt.Sprintf("headless host pid %s answers on its socket", pid)
 		return out
 	}
-	out.State = StateRunning
-	out.Detail = fmt.Sprintf("headless host pid %s answers on its socket", pid)
+	if alive, asked := hostAlive(ctx, w, project); asked && alive {
+		out.State = StateRunning
+		out.Detail = fmt.Sprintf("headless host pid %s still runs but does not answer on %s; mate mate stop ends it", pid, socket)
+		return out
+	}
+	out.State = StateStale
+	out.Detail = fmt.Sprintf("the headless host (pid %s) does not answer on %s", pid, socket)
 	return out
 }
 

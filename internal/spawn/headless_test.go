@@ -645,3 +645,94 @@ func TestReloadMateRefusesWhatItCannotSwitch(t *testing.T) {
 		}
 	}
 }
+
+// A stop cut short (the captain's ^C, a page's deadline) still gives a
+// host that stays its SIGTERM, so it can end its turn, before any SIGKILL.
+func TestAStopCutShortSendsSIGTERMFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(claude.ClaudeConfigDirEnv, "")
+	w := shortWorkspace(t, "shop")
+	deps := fakeDeps(t, runtime.NewFake())
+	play := playHost(t, w, &deps, "shop")
+	play.stays = true
+	res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Mode: spawn.ModeHeadless})
+	if err != nil {
+		t.Fatalf("StartMate: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stop, err := spawn.StopMate(ctx, w, deps, "shop")
+	if err != nil {
+		t.Fatalf("StopMate: %v", err)
+	}
+	if want := []string{fmt.Sprintf("%s %d", syscall.SIGTERM, res.PID)}; !stop.Confirmed || !slices.Equal(play.signals, want) {
+		t.Fatalf("stop = %+v, signals %q; want %q and a confirmed stop", stop, play.signals, want)
+	}
+}
+
+// A start whose own host is not the one answering on the socket fails
+// rather than record the wrong pid.
+func TestStartMateHeadlessWantsItsOwnHostToAnswer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(claude.ClaudeConfigDirEnv, "")
+	w := shortWorkspace(t, "shop")
+	deps := fakeDeps(t, runtime.NewFake())
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	t.Cleanup(func() { cancel(); <-served })
+	deps.Hosts = spawn.HostFuncs{Start: func(spec spawn.HostSpec) (int, <-chan struct{}, error) {
+		l, err := matehost.ReadLaunch(spec.Dir)
+		if err != nil {
+			return 0, nil, err
+		}
+		other := matehost.New(&matehost.Runner{Launch: l, Turns: claude.Claude{}}, matehost.Options{PID: 99})
+		go func() {
+			defer close(served)
+			_ = other.Serve(ctx, matehost.SocketPath(spec.Dir), nil)
+		}()
+		return 7, nil, nil
+	}}
+	deps.Sleep = func(ctx context.Context, d time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+			return nil
+		}
+	}
+	_, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Mode: spawn.ModeHeadless})
+	if err == nil || !strings.Contains(err.Error(), "did not answer") {
+		t.Fatalf("err = %v, want the start refused", err)
+	}
+	if _, statErr := os.Stat(w.MateMeta("shop")); !os.IsNotExist(statErr) {
+		t.Fatalf("mate.meta after a refused start: %v", statErr)
+	}
+}
+
+// A host that holds its lock but does not answer is alive, not gone: a
+// stop ends it, and recovery must not start a second one beside it. A
+// question cut short is not asked.
+func TestHostLivenessReadsTheHostLock(t *testing.T) {
+	w := shortWorkspace(t, "shop")
+	if err := w.WriteMateMeta("shop", map[string]string{
+		spawn.MetaHarness: "claude", spawn.MetaAgent: "mate-shop", spawn.MetaMode: spawn.ModeHeadless, spawn.MetaPID: "4242",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := spawn.HostLiveness(context.Background(), w); len(got) != 1 || got["shop"] {
+		t.Fatalf("liveness = %v, want shop asked and gone", got)
+	}
+	release, ok, err := w.TryMateLock("shop", matehost.HostLock)
+	if err != nil || !ok {
+		t.Fatalf("lock: %v %v", ok, err)
+	}
+	if got := spawn.HostLiveness(context.Background(), w); !got["shop"] {
+		t.Fatalf("liveness = %v, want a host that holds its lock alive", got)
+	}
+	release()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := spawn.HostLiveness(ctx, w); len(got) != 0 {
+		t.Fatalf("liveness = %v, want nothing asked under a done context", got)
+	}
+}

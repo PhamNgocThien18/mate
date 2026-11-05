@@ -212,9 +212,10 @@ func (d Deps) hostStopWait() time.Duration {
 const hostPingTimeout = time.Second
 
 // HostLiveness asks the host of every headless Mate that runs as a process
-// of its own (store.MateHostDetached) whether it answers on its socket, all
-// at once: project -> answered. A project whose Mate is not such a host is
-// left out, which query.Liveness reads as not asked.
+// of its own (store.MateHostDetached) whether it is alive, all at once:
+// project -> alive (hostAlive). A project whose Mate is not such a host,
+// or whose question ctx cut short, is left out, which query.Liveness
+// reads as not asked.
 func HostLiveness(ctx context.Context, w *store.Workspace) map[string]bool {
 	out := map[string]bool{}
 	var mu sync.Mutex
@@ -227,7 +228,10 @@ func HostLiveness(ctx context.Context, w *store.Workspace) map[string]bool {
 		wg.Add(1)
 		go func(project string) {
 			defer wg.Done()
-			alive := pingHost(ctx, w.MateDir(project)) == nil
+			alive, asked := hostAlive(ctx, w, project)
+			if !asked {
+				return
+			}
 			mu.Lock()
 			out[project] = alive
 			mu.Unlock()
@@ -235,6 +239,25 @@ func HostLiveness(ctx context.Context, w *store.Workspace) map[string]bool {
 	}
 	wg.Wait()
 	return out
+}
+
+// hostAlive is whether project's host of its own is alive: it answers on
+// its socket, or, wedged, its process still holds the host lock (a stop
+// ends it; a start would be refused). A host that died lets the lock go
+// with it. asked is false when ctx ended before the socket answered: that
+// says nothing about the host.
+func hostAlive(ctx context.Context, w *store.Workspace, project string) (alive, asked bool) {
+	if pingHost(ctx, w.MateDir(project)) == nil {
+		return true, true
+	}
+	if ctx.Err() != nil {
+		return false, false
+	}
+	held, err := hostLockHeld(w, project)
+	if err != nil {
+		return false, false
+	}
+	return held, true
 }
 
 func pingHost(ctx context.Context, mateDir string) error {
@@ -280,7 +303,7 @@ func hostGone(ctx context.Context, w *store.Workspace, deps Deps, project string
 			return true
 		}
 		if deps.sleep()(ctx, 100*time.Millisecond) != nil {
-			return false
+			break
 		}
 	}
 	held, err := hostLockHeld(w, project)
@@ -288,27 +311,44 @@ func hostGone(ctx context.Context, w *store.Workspace, deps Deps, project string
 }
 
 // endHost ends a host that runs as a process of its own: the socket's stop
-// op first, which lets a turn in flight finish within the stop wait, then,
-// when the process stays, SIGTERM and at last SIGKILL to pid. A signal goes
-// only to a process that still holds the host lock, so a pid reused since
-// is never signalled. forced says why the end was not the host's own clean
-// exit, empty when it was; an error means the process is still there.
-func endHost(ctx context.Context, w *store.Workspace, deps Deps, project string, pid int) (string, error) {
+// op first, when the host answers, which lets a turn in flight finish
+// within the stop wait; then, when the process stays, SIGTERM, on which
+// the host kills its turn and exits, and at last SIGKILL, to pid. A signal
+// goes only to a process that still holds the host lock, and not when the
+// host that answers names another pid; a pid reused by a process that
+// holds no lock is never signalled. forced says why the end was not the
+// host's own clean exit, empty when it was; an error means the process is
+// still there.
+func endHost(ctx context.Context, w *store.Workspace, deps Deps, project string, pid int, answers bool) (string, error) {
 	wait := deps.hostStopWait()
-	var forced string
-	killed, err := matehost.Dial(w.MateDir(project)).Stop(ctx, wait, false)
-	switch {
-	case err != nil:
-		forced = fmt.Sprintf("the headless host did not answer its stop (%s)", oneLineErr(err))
-	case killed:
-		forced = fmt.Sprintf("the headless Mate's turn was still running after %s and was killed", wait)
+	client := matehost.Dial(w.MateDir(project))
+	forced := "the headless host did not answer on its socket"
+	if answers {
+		forced = ""
+		killed, err := client.Stop(ctx, wait, false)
+		switch {
+		case err != nil:
+			forced = fmt.Sprintf("the headless host did not answer its stop (%s)", oneLineErr(err))
+		case killed:
+			forced = fmt.Sprintf("the headless Mate's turn was still running after %s and was killed", wait)
+		}
 	}
+	// The rest runs to its end even once ctx is done: a stop cut short
+	// must still give the host its SIGTERM, and the time to kill its turn,
+	// before a SIGKILL that would leave the turn running on its own.
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if hostGone(ctx, w, deps, project, hostExitPolls) {
 		return forced, nil
 	}
 	if pid <= 0 {
 		return forced, observability.NewError(observability.CodeUnknown,
 			"the headless host still runs after its stop and mate.meta records no pid to signal; stop is not confirmed")
+	}
+	client.Timeout = hostPingTimeout
+	if st, err := client.State(ctx); err == nil && st.PID > 0 && st.PID != pid {
+		return forced, observability.NewError(observability.CodeUnknown, fmt.Sprintf(
+			"the headless host that answers is pid %d, not pid %d as mate.meta records; nothing was signalled, stop is not confirmed", st.PID, pid))
 	}
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
 		if err := deps.hosts().SignalHost(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
@@ -334,15 +374,24 @@ func sigName(sig syscall.Signal) string {
 	return sig.String()
 }
 
-// waitHostUp waits, within the readiness timeout, for a host just started
-// to answer on its socket. A host that exits first fails at once, with the
-// end of its log.
-func waitHostUp(ctx context.Context, deps Deps, mateDir string, exited <-chan struct{}) error {
+// waitHostUp waits, within the readiness timeout, for the host just
+// started as pid to answer on its socket, under its own pid: another host
+// answering there (a start beside this one) is not it. A host that exits
+// first fails at once, with the end of its log.
+func waitHostUp(ctx context.Context, deps Deps, mateDir string, pid int, exited <-chan struct{}) error {
 	ctx, cancel := context.WithTimeout(ctx, deps.readinessTimeout())
 	defer cancel()
+	client := matehost.Dial(mateDir)
+	client.Timeout = hostPingTimeout
 	var last error
 	for {
-		if last = pingHost(ctx, mateDir); last == nil {
+		st, err := client.State(ctx)
+		switch {
+		case err != nil:
+			last = err
+		case pid > 0 && st.PID > 0 && st.PID != pid:
+			last = fmt.Errorf("the host answering on its socket is pid %d, not the one just started (pid %d)", st.PID, pid)
+		default:
 			return nil
 		}
 		select {

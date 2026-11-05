@@ -56,7 +56,7 @@ func cmdMateHost(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	release, ok, err := w.TryMateLock(project, matehost.HostLock)
+	release, ok, err := tryHostLock(w, project)
 	if err != nil {
 		return err
 	}
@@ -112,6 +112,22 @@ func cmdMateHost(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	return host.Live(ctx, live)
+}
+
+// hostLockWait is how long a host tries for its lock: a stop, a start or
+// a snapshot asks whether a host runs by taking the lock for an instant
+// (spawn's hostLockHeld), which must not turn a host away.
+const hostLockWait = 2 * time.Second
+
+func tryHostLock(w *store.Workspace, project string) (func(), bool, error) {
+	deadline := time.Now().Add(hostLockWait)
+	for {
+		release, ok, err := w.TryMateLock(project, matehost.HostLock)
+		if err != nil || ok || time.Now().After(deadline) {
+			return release, ok, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // runREPLProcess runs `mate mate repl --in-pane` on this terminal until it

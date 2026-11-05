@@ -254,7 +254,7 @@ func stopDetachedHost(ctx context.Context, w *store.Workspace, deps Deps, projec
 	answers := pingHost(ctx, mateDir) == nil
 	out.AlreadyGone = !answers && !held
 	if !out.AlreadyGone {
-		if out.Forced, err = endHost(ctx, w, deps, project, hostPID(meta)); err != nil {
+		if out.Forced, err = endHost(ctx, w, deps, project, hostPID(meta), answers); err != nil {
 			return StopResult{}, err
 		}
 	}

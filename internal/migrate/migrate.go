@@ -236,7 +236,11 @@ func Plan(ctx context.Context, ws *store.Workspace, deps Deps) ([]Move, []Refusa
 	}
 	lctx, cancel := context.WithTimeout(ctx, livenessBound)
 	live := query.ReadLiveness(lctx, deps.Runtime, deps.Session)
-	live.Hosts = spawn.HostLiveness(lctx, ws)
+	cancel()
+	// A host is asked within a bound of its own: a slow Herdr must not
+	// make a live headless Mate read as stopped.
+	hctx, cancel := context.WithTimeout(ctx, livenessBound)
+	live.Hosts = spawn.HostLiveness(hctx, ws)
 	cancel()
 	snap, err := query.LoadLive(ctx, ws, query.Harnesses{}, nil, live)
 	if err != nil {

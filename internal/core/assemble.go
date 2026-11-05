@@ -33,16 +33,26 @@ const livenessBound = 3 * time.Second
 // It never starts a server; a question that cannot be asked is left
 // unasked and the rows keep their recorded state. It was the console's
 // consoleLiveness.
+//
+// The two are asked side by side, each within its own bound: a Herdr that
+// is slow to answer must not use up the hosts' time, or every headless
+// Mate would read as stopped.
 func liveness(ctx context.Context, ws *store.Workspace, deps spawn.Deps) query.Liveness {
-	ctx, cancel := context.WithTimeout(ctx, livenessBound)
-	defer cancel()
+	hosts := make(chan map[string]bool, 1)
+	go func() {
+		hctx, cancel := context.WithTimeout(ctx, livenessBound)
+		defer cancel()
+		hosts <- spawn.HostLiveness(hctx, ws)
+	}()
 	var live query.Liveness
 	if deps.Runtime != nil {
 		if spec, err := spawn.SessionSpec(deps, ws); err == nil {
-			live = query.ReadLiveness(ctx, deps.Runtime, spec)
+			hctx, cancel := context.WithTimeout(ctx, livenessBound)
+			live = query.ReadLiveness(hctx, deps.Runtime, spec)
+			cancel()
 		}
 	}
-	live.Hosts = spawn.HostLiveness(ctx, ws)
+	live.Hosts = <-hosts
 	return live
 }
 

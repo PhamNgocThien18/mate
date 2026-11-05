@@ -136,7 +136,7 @@ func HostArgv(binary, root, project string) []string {
 }
 
 func waitAndRecordHost(ctx context.Context, w *store.Workspace, deps Deps, project string, kind harness.Kind, mateDir string, decision resumeDecision, session runtime.SessionHandle, agent string, pid int, exited <-chan struct{}, sessionID string, launchedAt time.Time, launch harness.LaunchSpec) (StartResult, error) {
-	if err := waitHostUp(ctx, deps, mateDir, exited); err != nil {
+	if err := waitHostUp(ctx, deps, mateDir, pid, exited); err != nil {
 		return StartResult{}, err
 	}
 	return recordHeadless(w, deps, project, kind, mateDir, decision, session, agent, hostPlace{pid: pid}, sessionID, launchedAt, launch)
@@ -148,7 +148,7 @@ func waitAndRecordHost(ctx context.Context, w *store.Workspace, deps Deps, proje
 func compensateHost(ctx context.Context, w *store.Workspace, deps Deps, project string, pid int) {
 	ctx, cancel := cleanupContext(ctx)
 	defer cancel()
-	_, _ = endHost(ctx, w, deps, project, pid)
+	_, _ = endHost(ctx, w, deps, project, pid, pingHost(ctx, w.MateDir(project)) == nil)
 	_ = os.Remove(w.MateMeta(project))
 }
 
@@ -379,6 +379,11 @@ func adoptInterruptedHost(ctx context.Context, w *store.Workspace, deps Deps, pr
 	l, err := matehost.ReadLaunch(mateDir)
 	if err != nil {
 		return StartResult{}, false, err
+	}
+	// The host runs the harness its launch names, whatever this start
+	// asked for.
+	if launched, err := deps.Harnesses.Parse(l.Harness); err == nil {
+		kind = launched
 	}
 	agent := l.Agent
 	if agent == "" {
