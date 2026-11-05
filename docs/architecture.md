@@ -9,8 +9,9 @@ to be; this file is the current map. Installing and building:
 
 mate is splitting its core into a process of its own (CON-203). Done so far:
 `internal/coreapi` (CON-206); the engine in `internal/core` (CON-207) with the
-shared snapshot, Office/City and notifications (CON-208), and the one entry
-for every UI's actions (CON-209); `internal/refresh`
+shared snapshot, Office/City and notifications (CON-208), the one entry
+for every UI's actions (CON-209), and a stop within one fixed bound
+(CON-210); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169). Every
 part marked **Target** below is planned, not built; the issue named beside it
@@ -106,8 +107,16 @@ of `workspace.yaml` every 2 s (`internal/core/reload.go`); the observer
 each poll (`internal/timeline`); the outbox sender (`internal/outbox`, every
 2 s); the auto daemon (`internal/autopilot`, every 90 s); recovery
 (`internal/recovery`); the Office/City server (`internal/core/dashboard.go`);
-the notification loop (`internal/core/notify.go`). `Stop` stops them in
-reverse.
+the notification loop (`internal/core/notify.go`). `Stop` returns within
+`core.StopWait` (45 s) plus the closing of `mate.db` (CON-210): it refuses
+every new action (`coreapi.ErrStopping`, "mate core is stopping · nothing
+started"; a page gets it as a 409), cancels every part, the snapshot being
+computed and every action in flight (the pages' too) at once, then waits for
+them all together under that one bound; the server's own shutdown takes at
+most 5 s of it. It closes `mate.db` only once everything has stopped; past
+the bound it names what still runs on stderr and leaves `mate.db` to the
+process exit. A console quit in the middle of an action waits for it inside
+that same bound (`quitAbandoned`, `cmd/mate/console.go`).
 
 `Engine.Snapshot` (`internal/core/snapshot.go`) is the one `query.Snapshot`
 every UI reads: `query.LoadLive` plus what the loops know, kept for up to

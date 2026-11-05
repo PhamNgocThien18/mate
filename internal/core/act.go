@@ -1,9 +1,11 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -26,9 +28,19 @@ import (
 // reads what this one did.
 //
 // ctx is the caller's: the console cancels it when it quits in the middle
-// of an action, and a page's press runs to the end (dashboard's handleAct).
+// of an action, and a page's press does not end with its request
+// (dashboard's handleAct). Stop cancels it either way, and waits for the
+// action within its bound (CON-210); once Stop has begun, Act refuses with
+// coreapi.ErrStopping and starts nothing.
 func (e *Engine) Act(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 	key, shown := lockOf(req)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	run, err := e.acts.begin("action "+string(req.Action)+" on "+shown, cancel)
+	if err != nil {
+		return "", err
+	}
+	defer e.acts.end(run)
 	if err := e.locks.take(key, shown, req.Action); err != nil {
 		return "", err
 	}
@@ -110,6 +122,67 @@ func (l *actionLocks) release(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.running, key)
+}
+
+// actionRuns is every action in flight, for Stop to cancel and wait for.
+type actionRuns struct {
+	mu sync.Mutex
+	// stopping is set by close: from then on begin refuses, so the set
+	// close handed to Stop is all there will ever be.
+	stopping bool
+	next     uint64
+	running  map[uint64]*actionRun
+}
+
+// actionRun is one action in flight: name is how Stop names it when it has
+// not stopped in time, cancel ends its context, and done closes once it
+// has returned.
+type actionRun struct {
+	id     uint64
+	name   string
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// begin counts an action in, or refuses it once the engine is stopping.
+func (a *actionRuns) begin(name string, cancel context.CancelFunc) (*actionRun, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopping {
+		return nil, coreapi.ErrStopping
+	}
+	if a.running == nil {
+		a.running = map[uint64]*actionRun{}
+	}
+	a.next++
+	run := &actionRun{id: a.next, name: name, cancel: cancel, done: make(chan struct{})}
+	a.running[run.id] = run
+	return run, nil
+}
+
+// end counts an action out once it has returned.
+func (a *actionRuns) end(run *actionRun) {
+	a.mu.Lock()
+	delete(a.running, run.id)
+	a.mu.Unlock()
+	close(run.done)
+}
+
+// close refuses every action from now on, cancels the ones in flight and
+// returns them, oldest first, for Stop to wait on.
+func (a *actionRuns) close() []*actionRun {
+	a.mu.Lock()
+	a.stopping = true
+	runs := make([]*actionRun, 0, len(a.running))
+	for _, run := range a.running {
+		runs = append(runs, run)
+	}
+	a.mu.Unlock()
+	slices.SortFunc(runs, func(x, y *actionRun) int { return cmp.Compare(x.id, y.id) })
+	for _, run := range runs {
+		run.cancel()
+	}
+	return runs
 }
 
 // The two refusals of a chat to a Mate it cannot reach, in the words the

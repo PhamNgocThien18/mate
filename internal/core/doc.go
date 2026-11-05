@@ -6,9 +6,9 @@
 // UI reads (Engine.Snapshot, CON-208), and keeps the workspace it shares
 // with the dashboard in step with workspace.yaml.
 //
-// Engine holds their lifecycle: the order they start in, the reverse order
-// they stop in, the timeline database it closes last, and the state a
-// snapshot reads off them. The parts themselves are built by the caller and
+// Engine holds their lifecycle: the order they start in, the one bound they
+// stop within (StopWait, CON-210), the timeline database it closes last, and
+// the state a snapshot reads off them. The parts themselves are built by the caller and
 // handed in through Options, the way spawn.Deps and dashboard.Deps take
 // theirs: cmd/mate builds them over the live Herdr adapter, and a test
 // hands in fakes.

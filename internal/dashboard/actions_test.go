@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -274,6 +275,11 @@ func TestABusyTargetIsAConflict(t *testing.T) {
 	want := "Action refused: restart_mate is still running on " + fixtureProject + " · nothing started"
 	if status != http.StatusConflict || e.Error != want {
 		t.Fatalf("the press = %d %+v, want 409 %q", status, e, want)
+	}
+	// A core that is stopping (CON-210) refuses the same way.
+	rec.fail(fmt.Errorf("wrapped: %w", coreapi.ErrStopping))
+	if status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil); status != http.StatusConflict || e.Error != "mate core is stopping · nothing started" {
+		t.Fatalf("a press while the core stops = %d %+v, want 409 with the core's line", status, e)
 	}
 	rec.fail(errors.New("the composer could not be read"))
 	if status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil); status != http.StatusUnprocessableEntity || e.Error != "the composer could not be read" {
