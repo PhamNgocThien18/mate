@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -89,6 +90,46 @@ func TestEveryCommandNameReachesItsRow(t *testing.T) {
 			if s.consoles != 0 {
 				t.Fatalf("%s: opened the console", name)
 			}
+		}
+	}
+}
+
+// TestTableKeepsEveryCommandAndItsHandler pins the commands the switch
+// dispatched before the table (CON-171) to their handlers, so a deleted row
+// or a row wired to the wrong handler fails here rather than in the field.
+// The handlers that read standard input are wrapped by withStdin, so for
+// them only the name is checked. A new command adds itself here too.
+func TestTableKeepsEveryCommandAndItsHandler(t *testing.T) {
+	t.Parallel()
+	want := map[string]any{
+		"--version": cmdVersion, "-V": cmdVersion,
+		"init": cmdInit, "project": cmdProject, "mate": cmdMate,
+		"crew": nil, "brief": nil, "hook": nil,
+		"remember": cmdRemember, "memory": cmdMemory, "checkpoint": cmdCheckpoint,
+		"recall": cmdRecall, "learnings": cmdLearnings, "wake": cmdWake,
+		"send": cmdSend, "notifications": cmdNotifications, "news": cmdNews,
+		"work": cmdWork, "peek": cmdPeek, "state": cmdState, "review": cmdReview,
+		"report": cmdReport, "diff": cmdDiff, "gc": cmdGC, "merge": cmdMerge,
+		"land": cmdLand, "backlog": cmdBacklog, "pr": cmdPR, "events": cmdEvents,
+		"reindex": cmdReindex, "usage": cmdUsage, "dashboard": cmdDashboard,
+		"console": cmdConsoleLaunch, "pane": cmdPane, "migrate": cmdMigrate,
+		"plugin": cmdPlugin,
+	}
+	var names []string
+	for _, c := range commands() {
+		names = append(names, c.names...)
+	}
+	if len(names) != len(want) {
+		t.Errorf("table has %d names %v, want %d", len(names), names, len(want))
+	}
+	for name, fn := range want {
+		c, ok := lookupCommand(commands(), name)
+		if !ok {
+			t.Errorf("%q is not in the table", name)
+			continue
+		}
+		if fn != nil && reflect.ValueOf(c.run).Pointer() != reflect.ValueOf(fn).Pointer() {
+			t.Errorf("%q runs the wrong handler", name)
 		}
 	}
 }
@@ -192,16 +233,10 @@ func TestDirectoryArgumentOpensConsole(t *testing.T) {
 }
 
 func TestCommandNameWinsOverSameNamedDirectory(t *testing.T) {
-	// Not parallel: `init` and `./init` are relative to the working
-	// directory, which is what the test is about, and t.Chdir forbids
-	// t.Parallel.
-	ws := t.TempDir()
-	if err := os.Mkdir(filepath.Join(ws, "init"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(ws)
+	t.Parallel()
+	// The working directory holds a directory named init.
 	s := newStubDispatcher()
-	s.isDir = isDir
+	s.isDir = func(p string) bool { return p == "init" || p == "./init" }
 	var out, errw bytes.Buffer
 	if err := s.run([]string{"init"}, &out, &errw); err != nil {
 		t.Fatal(err)
