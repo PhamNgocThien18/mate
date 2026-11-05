@@ -33,7 +33,7 @@ import (
 // names that its file no longer has, so the lists only get shorter. What a
 // file needs from the system belongs in this package; a file joins
 // platformAdapters only when it is an adapter bound to one system or one
-// tool.
+// tool, or the code that picks among such adapters by system.
 
 type platformEntry struct {
 	file   string   // module-relative, slash-separated
@@ -43,6 +43,10 @@ type platformEntry struct {
 
 // platformAdapters are adapters bound to one operating system or one tool.
 var platformAdapters = []platformEntry{
+	{
+		file: "internal/host/detect.go", uses: []string{"runtime.GOOS"},
+		reason: "picks the host terminal's driver by operating system: the Ghostty driver is AppleScript, which only macOS has",
+	},
 	{
 		file: "internal/host/ghostty.go", uses: []string{`"osascript"`},
 		reason: "drives Ghostty through AppleScript, which only macOS has",

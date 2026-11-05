@@ -1,45 +1,73 @@
 package host
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestDetect(t *testing.T) {
+func TestDetectFor(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
+		goos string
 		env  map[string]string
 		want Kind
 	}{
-		{name: "empty", want: None},
+		{name: "empty", goos: "darwin", want: None},
 		{
 			name: "wezterm pane",
+			goos: "darwin",
+			env:  map[string]string{"WEZTERM_PANE": "12"},
+			want: WezTerm,
+		},
+		{
+			name: "wezterm pane on linux",
+			goos: "linux",
 			env:  map[string]string{"WEZTERM_PANE": "12"},
 			want: WezTerm,
 		},
 		{
 			name: "wezterm wins over ghostty",
+			goos: "darwin",
 			env:  map[string]string{"WEZTERM_PANE": "1", "TERM_PROGRAM": "ghostty"},
 			want: WezTerm,
 		},
 		{
-			name: "ghostty",
+			name: "ghostty on macOS",
+			goos: "darwin",
 			env:  map[string]string{"TERM_PROGRAM": "ghostty"},
 			want: Ghostty,
 		},
+		// The Ghostty driver is AppleScript: elsewhere the console runs its
+		// Mates headless, as in any terminal it has no driver for.
+		{
+			name: "ghostty on linux",
+			goos: "linux",
+			env:  map[string]string{"TERM_PROGRAM": "ghostty"},
+			want: None,
+		},
+		{
+			name: "ghostty on freebsd",
+			goos: "freebsd",
+			env:  map[string]string{"TERM_PROGRAM": "ghostty"},
+			want: None,
+		},
 		{
 			name: "iterm",
+			goos: "darwin",
 			env:  map[string]string{"TERM_PROGRAM": "iTerm.app"},
 			want: ITerm,
 		},
 		{
 			name: "herdr desktop app says ghostty",
+			goos: "darwin",
 			env:  map[string]string{"TERM_PROGRAM": "ghostty", "HC_TERMINAL_ID": "7"},
 			want: None,
 		},
 		{
 			name: "blank wezterm pane is ignored",
+			goos: "darwin",
 			env:  map[string]string{"WEZTERM_PANE": "  ", "TERM_PROGRAM": "ghostty"},
 			want: Ghostty,
 		},
@@ -47,11 +75,23 @@ func TestDetect(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := Detect(func(k string) string { return tc.env[k] })
+			got := DetectFor(tc.goos, func(k string) string { return tc.env[k] })
 			if got != tc.want {
-				t.Fatalf("Detect = %q, want %q", got, tc.want)
+				t.Fatalf("DetectFor(%q) = %q, want %q", tc.goos, got, tc.want)
 			}
 		})
+	}
+}
+
+// Detect is DetectFor on the system the console runs on.
+func TestDetectIsDetectForThisSystem(t *testing.T) {
+	t.Parallel()
+	getenv := func(k string) string { return map[string]string{"TERM_PROGRAM": "ghostty"}[k] }
+	if got, want := Detect(getenv), DetectFor(runtime.GOOS, getenv); got != want {
+		t.Fatalf("Detect = %q, DetectFor(%q) = %q", got, runtime.GOOS, want)
+	}
+	if Detect(nil) != None || DetectFor("darwin", nil) != None {
+		t.Fatal("no environment must detect no host")
 	}
 }
 

@@ -1,6 +1,9 @@
 package host
 
-import "strings"
+import (
+	"runtime"
+	"strings"
+)
 
 // Kind is which host terminal the console is running inside.
 type Kind string
@@ -16,14 +19,21 @@ const (
 	ITerm Kind = "iterm"
 )
 
-// Detect inspects the environment and stops at the first match:
+// Detect is DetectFor the system the console runs on.
+func Detect(getenv func(string) string) Kind { return DetectFor(runtime.GOOS, getenv) }
+
+// DetectFor inspects the environment on goos and stops at the first match:
 // WEZTERM_PANE, TERM_PROGRAM=ghostty, TERM_PROGRAM=iTerm.app.
+//
+// Ghostty counts only on darwin: its driver is AppleScript. Elsewhere
+// Ghostty is a terminal with no driver, where the console runs its Mates
+// headless (CON-150).
 //
 // Herdr's desktop app is built on libghostty and sets TERM_PROGRAM=ghostty
 // too, but its panes are not Ghostty.app's: the AppleScript driver would
 // lay columns out in whatever Ghostty.app window is in front. Its
 // HC_TERMINAL_ID says the terminal is Herdr's, which has no driver.
-func Detect(getenv func(string) string) Kind {
+func DetectFor(goos string, getenv func(string) string) Kind {
 	if getenv == nil {
 		return None
 	}
@@ -35,6 +45,9 @@ func Detect(getenv func(string) string) Kind {
 	}
 	switch getenv("TERM_PROGRAM") {
 	case "ghostty":
+		if goos != "darwin" {
+			return None
+		}
 		return Ghostty
 	case "iTerm.app":
 		return ITerm
