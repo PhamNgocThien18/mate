@@ -3,11 +3,14 @@ package core
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/matehost"
 )
 
 // ownActions is one request for each action the engine runs itself
@@ -123,5 +126,46 @@ func TestRestartHoldsConfirmWithinTheWindowOnce(t *testing.T) {
 	h.put("shop", at)
 	if h.take("shop", at.Add(restartConfirmWindow+time.Second)) {
 		t.Fatal("a press after the window was taken as a confirmation")
+	}
+}
+
+// Each request reaches its own body: the two onboards differ by target
+// kind, and the REPL's requests and the mode answer in their own words
+// over a Mate that does not run headless and no Herdr.
+func TestEachOwnActionReachesItsBody(t *testing.T) {
+	w := shopWorkspace(t)
+	e := New(Options{Workspace: w})
+	defer e.Stop()
+	ctx := context.Background()
+
+	line, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "landing"})
+	if want := "Project landing added with no repo yet; add one with `mate project repo add landing <path>`"; err != nil || line != want {
+		t.Errorf("onboard of the workspace = %q, %v; want %q", line, err, want)
+	}
+	if _, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate"}); err == nil || !strings.Contains(err.Error(), "a runtime adapter is required") {
+		t.Errorf("onboard of a Project's Mate = %v, want StartMate's refusal", err)
+	}
+	line, err = e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "shop", TargetKind: "project"})
+	if err != nil || !strings.HasPrefix(line, "shop is now ") {
+		t.Errorf("mode = %q, %v; want the flipped mode", line, err)
+	}
+	line, err = e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionOpenNews, Target: "shop", TargetKind: "project", Input: "7"})
+	if err != nil || line != "news #7 opened in the Mate" {
+		t.Errorf("open news = %q, %v", line, err)
+	}
+	if _, err := os.Stat(filepath.Join(w.MateDir("shop"), matehost.NewsFocusName)); err != nil {
+		t.Errorf("open news wrote no request: %v", err)
+	}
+	if _, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionOpenWork, Target: "shop", TargetKind: "project"}); !errors.Is(err, coreapi.ErrNoMateREPL) {
+		t.Errorf("open work of a pane Mate = %v, want ErrNoMateREPL", err)
+	}
+	if _, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "x"}); err == nil || !strings.Contains(err.Error(), "okay work needs a Project and a row id") {
+		t.Errorf("okay work of no row = %v, want its usage refusal", err)
+	}
+	if _, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "project"}); err == nil || err.Error() != "usage: stop applies to a Mate or a Crew, not a project" {
+		t.Errorf("stop of a project = %v, want the stop's refusal", err)
+	}
+	if _, err := e.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionRepair, Target: "shop", TargetKind: "crew", Crew: "buy"}); err == nil || !strings.Contains(err.Error(), "repairing a Crew is not wired") {
+		t.Errorf("repair of a crew = %v, want the repair's refusal", err)
 	}
 }

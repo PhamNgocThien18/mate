@@ -67,7 +67,7 @@ var memoryLessonRE = regexp.MustCompile(`(?i)line[ -]?numbers?|path:line|file:li
 // the only continuity.
 //
 // Everything is driven the way the captain drives it: lines typed into the
-// Mate's pane, console gestures through consoleAction, the observer and the
+// Mate's pane, console gestures through the engine's Act, the observer and the
 // outbox sender started as cmdConsole starts them, manual mode. A failure is
 // a prompting bug - the manual, the stow skill or a nudge - never a reason
 // to weaken an assertion.

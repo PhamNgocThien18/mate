@@ -38,7 +38,7 @@ import (
 //
 // Nothing here is a second implementation of the button: the line is the one
 // query.BoxResolveLine built for the inbox item, and it goes through
-// consoleAction, which is the ActionFunc cmdConsole installs and the
+// the engine's Act, which is the ActionFunc cmdConsole installs and the
 // `[assign]` button's own path (TestLiveConsoleMouseDrivesTheBox drives the
 // pixels).
 //

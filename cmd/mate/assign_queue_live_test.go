@@ -40,7 +40,7 @@ import (
 //  2. a real Codex crew appends `needs-decision: pick A or B`
 //  3. the captain tells the Mate to wait 45s in a foreground shell command;
 //     its composer reads Busy
-//  4. `[assign]` through consoleAction returns "queued", and the inbox row
+//  4. `[assign]` through the engine's Act returns "queued", and the inbox row
 //     says "assigned, queued"
 //  5. within 60s of the Mate's turn ending, `sent.log` holds the line twice:
 //     the outbox's record (written once the composer cleared) and the Mate's

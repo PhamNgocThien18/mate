@@ -11,8 +11,8 @@ mate is splitting its core into a process of its own (CON-203). Done so far:
 `internal/coreapi` (CON-206); the engine in `internal/core` (CON-207) with the
 shared snapshot, Office/City and notifications (CON-208), the one entry
 for every UI's actions (CON-209), a stop within one fixed bound
-(CON-210), and the Mate's and the Project's actions (CON-231); `internal/refresh`
-(CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
+(CON-210), and the Mate's and the Project's actions (CON-231);
+`internal/refresh` (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
 `internal/usage` (CON-168); `internal/recall` (CON-167). Every
 part marked **Target** below is planned, not built; the issue named beside it

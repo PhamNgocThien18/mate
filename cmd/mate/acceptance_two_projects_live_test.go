@@ -69,7 +69,7 @@ const (
 // The last line the captain types is unmarked, which ends auto mode.
 //
 // The observer and the daemon are the ones cmdConsole starts, over the real
-// Herdr adapter, and every Console gesture goes through consoleAction, the
+// Herdr adapter, and every Console gesture goes through the engine's Act, the
 // ActionFunc cmdConsole installs. Spawning is never called directly here:
 // spawning is the Mate's job, and a test that did it would be proving its
 // own wiring rather than the Mate's.

@@ -40,7 +40,7 @@ import (
 //  7. the inbox is empty again - by the rules in internal/box/inbox.go, from
 //     the Mate's own reply and from the crew moving on
 //
-// Everything runs through the seams cmdConsole wires (consoleAction over the
+// Everything runs through the seams cmdConsole wires (the engine's Act over the
 // real Herdr adapter). The Bubble Tea Program is not run - it needs a
 // terminal - but no part of the path being proved lives inside it.
 func TestLiveConsoleInboxResolve(t *testing.T) {

@@ -195,8 +195,8 @@ func (c *consoleColumns) close() {
 // A headless Mate is shown by its REPL, run in the stage as a client of
 // the Mate's host (CON-224): it has no TUI to attach to, and its host
 // leaves Herdr (CON-216), so neither its pane nor the Herdr session is
-// asked. Its news and work requests (open_news, open_work: internal/core's
-// openNews, openWork) reach that REPL through the host. A Mate with a TUI - Codex, pi,
+// asked. Its news and work requests (open_news and open_work, which
+// internal/core runs) reach that REPL through the host. A Mate with a TUI - Codex, pi,
 // `mate.mode: pane` - and a crew are attached as before.
 func consoleStage(ws *store.Workspace, deps spawn.Deps, c *consoleColumns) console.StageFunc {
 	if c == nil {

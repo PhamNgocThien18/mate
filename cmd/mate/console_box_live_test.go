@@ -39,7 +39,7 @@ import (
 //     records a mate line - which it only can after reading the file the
 //     resolve line pointed it at
 //
-// Everything runs through the seams cmdConsole wires (consoleAction over the
+// Everything runs through the seams cmdConsole wires (the engine's Act over the
 // real Herdr adapter). The Bubble Tea Program is not run - it needs a
 // terminal - but no part of the path being proved lives inside it.
 func TestLiveConsoleBoxRoundTrip(t *testing.T) {

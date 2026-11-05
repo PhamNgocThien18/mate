@@ -301,14 +301,14 @@ func (e *Engine) clearComposer(ctx context.Context, req coreapi.ActionRequest) (
 	if err != nil {
 		return "", err
 	}
-	if err := deps.Runtime.SendKeys(ctx, handle, []string{ClearComposerKey}); err != nil {
+	if err := deps.Runtime.SendKeys(ctx, handle, []string{clearComposerKey}); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s pressed in %s's pane; nothing was sent", ClearComposerKey, handle.Name), nil
+	return fmt.Sprintf("%s pressed in %s's pane; nothing was sent", clearComposerKey, handle.Name), nil
 }
 
-// ClearComposerKey is the one key [clear composer] presses. Ctrl+U is the
+// clearComposerKey is the one key [clear composer] presses. Ctrl+U is the
 // readline kill-line every harness composer inherits (Claude Code and
 // Codex both run their input through one), so it clears the line without
 // submitting it.
-const ClearComposerKey = "ctrl+u"
+const clearComposerKey = "ctrl+u"

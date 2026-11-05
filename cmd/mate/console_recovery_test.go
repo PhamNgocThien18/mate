@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/query"
@@ -154,13 +153,13 @@ func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
 		t.Fatalf("clear composer action: %v", err)
 	}
 	t.Logf("clear composer action: %s", out)
-	if !strings.Contains(out, core.ClearComposerKey) || !strings.Contains(out, "nothing was sent") {
+	if !strings.Contains(out, "ctrl+u") || !strings.Contains(out, "nothing was sent") {
 		t.Fatalf("clear line = %q, want it to name the key and say nothing was sent", out)
 	}
 
 	keys := f.rt.SentKeys
-	if len(keys) != 1 || len(keys[0].Keys) != 1 || keys[0].Keys[0] != core.ClearComposerKey {
-		t.Fatalf("SendKeys calls = %+v, want exactly one %q", keys, core.ClearComposerKey)
+	if len(keys) != 1 || len(keys[0].Keys) != 1 || keys[0].Keys[0] != "ctrl+u" {
+		t.Fatalf("SendKeys calls = %+v, want exactly one %q", keys, "ctrl+u")
 	}
 	if keys[0].Handle.Name != f.mate.Name {
 		t.Fatalf("SendKeys went to %q, want the Mate %q", keys[0].Handle.Name, f.mate.Name)

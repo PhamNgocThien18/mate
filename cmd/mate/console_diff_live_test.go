@@ -28,7 +28,7 @@ import (
 //  2. its brief tells it to commit one line to README.md and then report
 //     `wait-mate: ready in branch <branch>`
 //  3. the crew's own status line proves the commit was its idea of done
-//  4. ActionDiff goes through consoleAction - the same ActionFunc the
+//  4. ActionDiff goes through the engine's Act - the same ActionFunc the
 //     Actions menu's `diff` entry calls - and the text that comes back names
 //     the crew's commit subject and the file it touched
 //  5. the same text is what `mate diff shop k3` prints, because both go
