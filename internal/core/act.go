@@ -67,10 +67,12 @@ var ownLock = map[coreapi.Action]bool{
 // The target is the Project, or `project/crew` when the request names a
 // crew; an onboard that adds a new Project to the workspace takes the one
 // workspace lock, since the Project it names is not there yet. These are
-// the targets the dashboard locked on before CON-209.
+// the targets the dashboard locked on before CON-209. The workspace's key
+// starts with "#", which no Project name does (store.ValidateProjectName),
+// so a Project named "workspace" has a lock of its own.
 func lockOf(req coreapi.ActionRequest) (key, shown string) {
 	if req.Action == coreapi.ActionOnboard && req.TargetKind == "workspace" {
-		key, shown = "workspace", "the workspace"
+		key, shown = "#workspace", "the workspace"
 	} else {
 		key = req.Target
 		if req.Crew != "" {
@@ -130,7 +132,13 @@ func (e *Engine) talk(ctx context.Context, req coreapi.ActionRequest) (string, e
 	if _, ok := ws.Project(project); !ok {
 		return "", fmt.Errorf("project %q is not in the workspace", project)
 	}
-	if meta, err := ws.ReadMateMeta(project); err != nil || strings.TrimSpace(meta["agent"]) == "" {
+	// A missing mate.meta reads empty; an error is a record that could not
+	// be read, which is said as it is.
+	meta, err := ws.ReadMateMeta(project)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(meta["agent"]) == "" {
 		return "", errMateNotRunning
 	}
 	if !ws.MateHeadless(project) {

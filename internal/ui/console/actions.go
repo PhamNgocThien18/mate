@@ -660,11 +660,15 @@ func (m Model) recordedHarnessIndex() int {
 // refusedBusy is the line for an action the core refused because another
 // action, from this console or another UI, is still running on its target
 // (coreapi.ErrBusy, CON-209): the core's own sentence, verbatim, with no
-// "Action failed" or "Assign refused" around it. ok is false for any other
-// outcome.
+// "Action failed" or "Assign refused" around it, nor whatever wrapped it on
+// the way. ok is false for any other outcome.
 func refusedBusy(err error) (footerMsg, bool) {
 	if !errors.Is(err, coreapi.ErrBusy) {
 		return footerMsg{}, false
+	}
+	var busy *coreapi.BusyError
+	if errors.As(err, &busy) {
+		return errMsg(busy.Error()), true
 	}
 	return errMsg(err.Error()), true
 }

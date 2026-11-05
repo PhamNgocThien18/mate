@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -154,6 +155,23 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	}
 	if _, err := deps.Snapshot(ctx); err != nil || computed != 2 {
 		t.Fatalf("a read after an action computed %d snapshots in all (%v), want 2", computed, err)
+	}
+
+	// The page's Act is the engine's: it shares the engine's locks with
+	// the console's presses (CON-209).
+	h := newHeldActs()
+	held := New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}})
+	defer held.Stop()
+	done := hold(t, held, h, stopMate)
+	if _, err := held.dashboardDeps().Act(ctx, stopMate); !errors.Is(err, coreapi.ErrBusy) {
+		t.Fatalf("a page's stop while the console's runs = %v, want ErrBusy", err)
+	}
+	close(h.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := h.count(); got != 1 {
+		t.Fatalf("%d actions ran, want the console's only", got)
 	}
 
 	readOnly := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Act: act, Notice: true}}})

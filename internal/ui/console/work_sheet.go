@@ -218,8 +218,8 @@ func (m Model) okayWork() (tea.Model, tea.Cmd) {
 // onWorkDone is an okay's return: the sheet stays open with the outcome
 // under the rows, and the re-read moves the row to the okayed group.
 func (m Model) onWorkDone(msg actionDoneMsg) Model {
-	if errors.Is(msg.err, coreapi.ErrBusy) {
-		m.work.note = msg.err.Error()
+	if busy, ok := refusedBusy(msg.err); ok {
+		m.work.note = busy.text
 		return m
 	}
 	if msg.err != nil {

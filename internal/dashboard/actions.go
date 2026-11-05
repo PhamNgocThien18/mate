@@ -401,7 +401,12 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 func (s *Server) run(w http.ResponseWriter, r *http.Request, ctx context.Context, req ActionRequest) {
 	line, err := s.deps.Act(ctx, coreRequest(req))
 	if errors.Is(err, coreapi.ErrBusy) {
-		s.writeError(w, r, http.StatusConflict, err.Error(), "")
+		line := err.Error()
+		var busy *coreapi.BusyError
+		if errors.As(err, &busy) {
+			line = busy.Error()
+		}
+		s.writeError(w, r, http.StatusConflict, line, "")
 		return
 	}
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
@@ -61,7 +62,13 @@ func hold(t *testing.T, e *Engine, h *heldActs, req coreapi.ActionRequest) <-cha
 		_, err := e.Act(context.Background(), req)
 		done <- err
 	}()
-	<-h.held
+	select {
+	case <-h.held:
+	case err := <-done:
+		t.Fatalf("%s to hold returned %v without running", req.Action, err)
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s to hold never ran", req.Action)
+	}
 	return done
 }
 
@@ -293,6 +300,22 @@ func TestActPassesTheCallersContextAndAlwaysCleansUp(t *testing.T) {
 	}
 	close(h.release)
 	if err := <-held; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Adding a Project holds the workspace, not a Project that happens to be
+// named "workspace".
+func TestAddingAProjectDoesNotHoldAProjectNamedWorkspace(t *testing.T) {
+	h := newHeldActs()
+	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
+	defer e.Stop()
+	done := hold(t, e, h, addProject)
+	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "workspace", TargetKind: "project"}); err != nil {
+		t.Fatalf("mode of project workspace while a project is added: %v", err)
+	}
+	close(h.release)
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 }

@@ -114,17 +114,30 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 // whose text its message line shows verbatim (internal/ui/console's tests).
 func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 	w := pageWorkspace(t)
-	entered := make(chan struct{})
-	release := make(chan struct{})
+	// The first action of each pair, a merge then a restart, runs until
+	// released; anything else that runs returns at once, so an action let
+	// through by mistake fails the test rather than hanging it.
+	entered := make(chan struct{}, 2)
+	release := map[coreapi.Action]chan struct{}{coreapi.ActionMerge: make(chan struct{}), coreapi.ActionRestartMate: make(chan struct{})}
 	var mu sync.Mutex
 	var ran []coreapi.Action
 	act := func(_ context.Context, req coreapi.ActionRequest) (string, error) {
 		mu.Lock()
 		ran = append(ran, req.Action)
 		mu.Unlock()
-		entered <- struct{}{}
-		<-release
+		if wait, ok := release[req.Action]; ok {
+			entered <- struct{}{}
+			<-wait
+		}
 		return "did " + string(req.Action), nil
+	}
+	running := func() {
+		t.Helper()
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the first action never ran")
+		}
 	}
 	engine := core.New(core.Options{Workspace: w, Act: act})
 	defer engine.Stop()
@@ -149,12 +162,12 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 		_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"})
 		merged <- err
 	}()
-	<-entered
+	running()
 	status, line := pagePress(t, base, `{"action":"stop","project":"shop","crew":"buy"}`)
 	if want := "Action refused: merge is still running on shop/buy · nothing started"; status != http.StatusConflict || line != want {
 		t.Errorf("the page's stop during the console's merge = %d %q, want 409 %q", status, line, want)
 	}
-	release <- struct{}{}
+	close(release[coreapi.ActionMerge])
 	if err := <-merged; err != nil {
 		t.Fatalf("the console's merge: %v", err)
 	}
@@ -171,12 +184,12 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 		resp.Body.Close()
 		restarted <- resp.StatusCode
 	}()
-	<-entered
+	running()
 	_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
 	if want := "Action refused: restart_mate is still running on shop · nothing started"; !errors.Is(err, coreapi.ErrBusy) || err.Error() != want {
 		t.Errorf("the console's stop during the page's restart = %v, want ErrBusy %q", err, want)
 	}
-	release <- struct{}{}
+	close(release[coreapi.ActionRestartMate])
 	if status := <-restarted; status != http.StatusOK {
 		t.Fatalf("the page's restart = %d, want 200", status)
 	}
