@@ -130,8 +130,19 @@ type Options struct {
 	// deliveries either way. The caller hands the same function to the
 	// outbox sender it builds (cmd/mate's engineOptions); the engine reports
 	// it (Engine.ConsolePresent). A console's engine says true; `mate core
-	// run` says false until clients can connect (CON-212). Nil is true.
+	// run` hands in ConsoleSeen's Present. Nil is ConsoleSeen's Present
+	// when there is one, else true.
 	ConsolePresent func() bool
+	// ConsoleSeen is where the engine records each request a console makes
+	// on its socket (coreapi.ClientHeader, CON-212); `mate core run`'s
+	// ConsolePresent is its Present. Nil records nothing.
+	ConsoleSeen *ConsoleSeen
+	// Jev is whether the caller has Jev configured to explain a crew's
+	// screen, and Notices what the caller knows is wrong and a console's
+	// status line says - Jev's and the observer's configuration errors.
+	// The engine only reports both (Status), after its own notices.
+	Jev     bool
+	Notices []string
 }
 
 // StopWait is how long Stop waits for everything it has cancelled: the
@@ -172,6 +183,9 @@ type Engine struct {
 	// takes it first (or the one Options.Claim handed in) and Stop
 	// releases it last.
 	claim *Claim
+	// holder is what core.lock recorded of this engine when Start took
+	// it, before any part could read it; zero without one.
+	holder store.CoreHolder
 
 	// ctx is the engine's own: the shared snapshot computations run under
 	// it. cancel ends it when the engine stops, and so does the end of the
@@ -396,12 +410,16 @@ func (e *Engine) stop() {
 }
 
 // ConsolePresent is Options.ConsolePresent's answer: whether a console is
-// open on the workspace. True when the caller gave no such function.
+// open on the workspace. With no such function it is ConsoleSeen's, and
+// true when the caller gave neither.
 func (e *Engine) ConsolePresent() bool {
-	if e.o.ConsolePresent == nil {
-		return true
+	switch {
+	case e.o.ConsolePresent != nil:
+		return e.o.ConsolePresent()
+	case e.o.ConsoleSeen != nil:
+		return e.o.ConsoleSeen.Present()
 	}
-	return e.o.ConsolePresent()
+	return true
 }
 
 // stopping is something Stop waits for: done closes once it has stopped.

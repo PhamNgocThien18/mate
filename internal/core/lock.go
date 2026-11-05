@@ -91,15 +91,14 @@ func (c *Claim) Release() {
 // lock is the engine's claim on core.lock: the one Options.Claim handed
 // in, or one taken now.
 func (e *Engine) lock() error {
-	if e.o.Claim != nil {
-		e.claim = e.o.Claim
-		return nil
+	claim := e.o.Claim
+	if claim == nil {
+		var err error
+		if claim, err = Lock(e.o.Workspace, e.o.Owner, e.now()); err != nil {
+			return err
+		}
 	}
-	claim, err := Lock(e.o.Workspace, e.o.Owner, e.now())
-	if err != nil {
-		return err
-	}
-	e.claim = claim
+	e.claim, e.holder = claim, claim.holder
 	return nil
 }
 

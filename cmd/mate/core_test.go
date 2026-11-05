@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/core"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/coreclient"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/send"
@@ -80,7 +82,9 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 	defer cancel()
 	var stdout, stderr lockedBuffer
 	done := make(chan error, 1)
-	go func() { done <- runCore(ctx, w, fakeCoreDeps(t), nil, &stdout, &stderr) }()
+	go func() {
+		done <- runCore(ctx, w, fakeCoreDeps(t), nil, []string{"observer: broken"}, &stdout, &stderr)
+	}()
 	waitFor(t, func() bool { return strings.Contains(stdout.String(), "Ctrl+C to stop") })
 
 	h, held, err := w.CoreRunning()
@@ -99,7 +103,22 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 		t.Fatalf("tcp: %d", resp.StatusCode)
 	}
 
-	err = runCore(context.Background(), w, fakeCoreDeps(t), nil, io.Discard, io.Discard)
+	// Its clients' API (CON-212): the core says what the caller found
+	// wrong, and its snapshot and actions are the engine's.
+	client, err := coreclient.Dial(w.CoreSocket(), coreclient.As(coreapi.ClientConsole))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if st, err := client.Core(ctx); err != nil || st.PID != os.Getpid() || st.URL != h.URL ||
+		len(st.Notices) != 1 || st.Notices[0] != "observer: broken" {
+		t.Fatalf("Core = %+v, %v; want this process and the observer's notice", st, err)
+	}
+	if snap, err := client.Snapshot(ctx); err != nil || len(snap.Projects) != 1 {
+		t.Fatalf("Snapshot = %+v, %v; want shop", snap.Projects, err)
+	}
+
+	err = runCore(context.Background(), w, fakeCoreDeps(t), nil, nil, io.Discard, io.Discard)
 	if want := "mate core: already running (pid " + strconv.Itoa(os.Getpid()) + ")"; err == nil || err.Error() != want {
 		t.Fatalf("second core = %v, want %q", err, want)
 	}
