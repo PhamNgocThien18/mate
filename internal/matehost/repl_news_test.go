@@ -27,6 +27,14 @@ func newsModel(w, h int) Model {
 	return m
 }
 
+// lastHeld is the newest item the REPL shows the host holding.
+func lastHeld(m Model) (Held, bool) {
+	if n := len(m.state.Held); n > 0 {
+		return m.state.Held[n-1], true
+	}
+	return Held{}, false
+}
+
 func press(t *testing.T, m *Model, keys ...any) {
 	t.Helper()
 	for _, k := range keys {
@@ -124,8 +132,8 @@ func TestREPLTopicPage(t *testing.T) {
 		// An option answers: the frame folds into the answered, the cursor
 		// goes to the next owed, unopened.
 		press(t, &m, "b")
-		if p := m.pending; p == nil || p.id != 3 || p.text != "[b] Chuyển cấu hình theme vào config/theme.ts" {
-			t.Fatalf("pending = %+v", m.pending)
+		if p, ok := lastHeld(m); !ok || p.News != 3 || p.Text != "[b] Chuyển cấu hình theme vào config/theme.ts" {
+			t.Fatalf("held = %+v", m.state.Held)
 		}
 		if m.openID != 0 || m.selID != 4 {
 			t.Fatalf("after the answer: open #%d, cursor #%d", m.openID, m.selID)
@@ -139,12 +147,13 @@ func TestREPLTopicPage(t *testing.T) {
 		}
 		// The next letters are keys of the page, not another choice.
 		press(t, &m, "a")
-		if m.pending.text != "[b] Chuyển cấu hình theme vào config/theme.ts" {
-			t.Fatalf("a after the answer chose again: %+v", m.pending)
+		if p, _ := lastHeld(m); len(m.state.Held) != 1 || p.Text != "[b] Chuyển cấu hình theme vào config/theme.ts" {
+			t.Fatalf("a after the answer chose again: %+v", m.state.Held)
 		}
+		// u takes it back from the host; the frame opens to choose again.
 		press(t, &m, "u")
-		if m.pending != nil || m.openID != 3 {
-			t.Fatalf("u: pending %+v, open #%d", m.pending, m.openID)
+		if f := m.conn.(*fakeConn); len(m.state.Held) != 0 || len(f.held) != 0 || m.openID != 3 || len(m.input) != 0 {
+			t.Fatalf("u: held %+v (host %+v), open #%d, input %q", m.state.Held, f.held, m.openID, string(m.input))
 		}
 
 		// Tab writes in the frame; its draft outlives Esc and ^N comes
@@ -161,8 +170,13 @@ func TestREPLTopicPage(t *testing.T) {
 			t.Errorf("draft@%d not in the frame:\n%s", w, v)
 		}
 		press(t, &m, tea.KeyTab, tea.KeyEnter)
-		if p := m.pending; p == nil || p.id != 3 || p.text != "làm a" || len(m.input) != 0 {
-			t.Fatalf("written answer: pending %+v, input %q", m.pending, string(m.input))
+		if p, ok := lastHeld(m); !ok || p.News != 3 || p.Text != "làm a" || len(m.input) != 0 {
+			t.Fatalf("written answer: held %+v, input %q", m.state.Held, string(m.input))
+		}
+		// u gives a written answer back to its frame's composer.
+		press(t, &m, "u")
+		if m.openID != 3 || string(m.input) != "làm a" || len(m.state.Held) != 0 {
+			t.Fatalf("u on a written answer: open #%d, input %q, held %+v", m.openID, string(m.input), m.state.Held)
 		}
 		if w == 100 && testing.Verbose() {
 			t.Logf("\n%s\n\n%s\n\n%s", chat, page, open)
@@ -229,8 +243,8 @@ func TestREPLTopicClicks(t *testing.T) {
 func TestREPLChatNewsReference(t *testing.T) {
 	m := newsModel(100, 30)
 	press(t, &m, "#3 chọn a", tea.KeyEnter)
-	if p := m.pending; p == nil || p.id != 3 || !strings.HasPrefix(p.text, "[a] Thêm THEME") {
-		t.Fatalf("pending = %+v", m.pending)
+	if p, ok := lastHeld(m); !ok || p.News != 3 || !strings.HasPrefix(p.Text, "[a] Thêm THEME") {
+		t.Fatalf("held = %+v", m.state.Held)
 	}
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "✓ #3 · Đã ghi từ chat · u hoàn tác") {
 		t.Errorf("no confirmation in the tray:\n%s", v)
@@ -246,8 +260,8 @@ func TestREPLClosedNewsReadOnly(t *testing.T) {
 		t.Fatalf("3 opened #%d", m.openID)
 	}
 	press(t, &m, "a", tea.KeyTab, "x", tea.KeyEnter)
-	if m.typing || len(m.input) != 0 || m.pending != nil {
-		t.Fatalf("a closed news took input %q, typing %v, pending %+v", string(m.input), m.typing, m.pending)
+	if m.typing || len(m.input) != 0 || len(m.state.Held) != 0 {
+		t.Fatalf("a closed news took input %q, typing %v, held %+v", string(m.input), m.typing, m.state.Held)
 	}
 	press(t, &m, "3")
 	v := fits(t, "closed", m)
@@ -255,8 +269,8 @@ func TestREPLClosedNewsReadOnly(t *testing.T) {
 		t.Errorf("closed frame still offers to write:\n%s", v)
 	}
 	press(t, &m, tea.KeyEsc)
-	if m.chatNewsRef("#1 a") || m.pending != nil || !strings.Contains(m.note, "#1 đã xong") {
-		t.Fatalf("a chat reference to a closed news: pending %+v, note %q", m.pending, m.note)
+	if m.chatNewsRef("#1 a") || len(m.state.Held) != 0 || !strings.Contains(m.note, "#1 đã xong") {
+		t.Fatalf("a chat reference to a closed news: held %+v, note %q", m.state.Held, m.note)
 	}
 }
 

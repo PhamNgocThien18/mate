@@ -100,8 +100,15 @@ func TestREPLWorkPageKeys(t *testing.T) {
 		t.Fatalf("Space on a working row: note %q", m.note)
 	}
 	press(t, &m, tea.KeyUp, tea.KeySpace)
-	if f := m.conn.(*fakeConn); !slices.Equal(f.okayed, []int{1}) || m.note != "✓ đã OK việc #1" {
-		t.Fatalf("Space on the done row okayed %v, note %q", f.okayed, m.note)
+	if f := m.conn.(*fakeConn); !slices.Equal(f.okayed, []int{1}) {
+		t.Fatalf("Space on the done row okayed %v", f.okayed)
+	}
+	// The host holds the tick for its undo; the line under the page says so.
+	if p, ok := lastHeld(m); !ok || p.Kind != HeldOkay || p.Work != 1 {
+		t.Fatalf("held after Space = %+v", m.state.Held)
+	}
+	if v := fits(t, "okay held", m); !strings.Contains(v, "✓ OK việc #1 · u hoàn tác (5s)") {
+		t.Errorf("the held tick is not shown:\n%s", v)
 	}
 
 	press(t, &m, "jj", tea.KeyEnter)

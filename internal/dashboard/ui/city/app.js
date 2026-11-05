@@ -121,7 +121,6 @@ const S = {
   busy: new Map(), // row key → label running
   results: new Map(), // row key → { kind, text, at }
   drafts: new Map(), // input id → text
-  pending: new Map(), // send id → { text, left, timer } waiting out its undo
   folded: new Map(), // project → show earlier chat turns
   flashes: [], // { anchor, kind, glyph, text, until }
 };
@@ -394,11 +393,19 @@ async function poll() {
 }
 
 // What the open panel reads besides the poll: the Mate's chat while it is
-// open, and a fork while it answers.
+// open, and a fork while it answers. The chat also carries what the Mate's
+// host holds for its undo, which the Work tab and a topic show.
 function refreshOpen() {
   const sel = S.sel;
-  if (sel?.kind === 'mate' && (sel.tab ?? 'chat') === 'chat') loadChat(sel.project);
+  if (sel && heldProject(sel)) loadChat(heldProject(sel));
   if (sel?.kind === 'hall' && sel.topic && S.forks.has(sel.topic)) loadFork(sel.topic);
+}
+// heldProject is the project whose chat the open panel reads: the Mate's
+// chat and Work tabs, and a topic.
+function heldProject(sel) {
+  if (sel.kind === 'mate' && ['chat', 'work'].includes(sel.tab ?? 'chat')) return sel.project;
+  if (sel.kind === 'hall' && sel.topic) return topicOf(sel.topic)?.project ?? '';
+  return '';
 }
 
 // ---- What needs the captain ---------------------------------------------------------
@@ -597,7 +604,7 @@ function select(sel, { fly: doFly = true } = {}) {
   render();
   $('#dock-title').focus({ preventScroll: true });
   // What the panel reads for itself.
-  if (sel.kind === 'mate' && (sel.tab ?? 'chat') === 'chat') loadChat(sel.project);
+  if (heldProject(sel)) loadChat(heldProject(sel));
   if (sel.kind === 'mate' && sel.tab === 'apps') loadPlugins(sel.project);
   if (sel.kind === 'mate' && sel.tab === 'work') refreshWork();
   if (sel.kind === 'crew' && sel.tab === 'peek') loadPeek(sel.project, sel.crew);
@@ -800,31 +807,50 @@ function confirmBox({ title, scope, body, list, yes, onYes }) {
   cancel.focus();
 }
 
-// A send with a short undo: the text waits `left` seconds, then goes.
-function sendLater(id, text, go) {
-  const p = { text, left: 5 };
-  p.timer = setInterval(() => {
-    p.left--;
-    if (p.left <= 0) {
-      clearInterval(p.timer);
-      S.pending.delete(id);
-      go(text);
+// What the captain sends - a message, an answer, a tick - goes to the
+// Mate's host at once, and the host holds it for its undo (CON-222): the
+// rule and its clock live there, not here. GET /chat's `held` says what it
+// holds and how long until each goes; `goes` is that moment by this page's
+// clock, which the countdown reads.
+const heldOf = (project) => S.chats.get(project)?.held ?? [];
+const leftOf = (x) => Math.max(0, Math.ceil((x.goes - Date.now()) / 1000));
+// While a host holds something the panel redraws each second, and reads
+// the chat again once an item's time is up, to see it gone.
+let heldTimer = 0;
+function watchHeld() {
+  const any = () => [...S.chats.values()].some((c) => c?.held?.length);
+  if (heldTimer || !any()) return;
+  heldTimer = setInterval(() => {
+    let gone = false;
+    for (const [project, c] of S.chats) {
+      if (c?.held?.some((x) => x.goes <= Date.now())) {
+        gone = true;
+        loadChat(project);
+      }
+    }
+    // A tick that went has changed the board.
+    if (gone) refreshWork();
+    if (!any()) {
+      clearInterval(heldTimer);
+      heldTimer = 0;
     }
     render();
   }, 1000);
-  S.pending.set(id, p);
-  render();
 }
-function undo(id, draftId) {
-  const p = S.pending.get(id);
-  if (!p) return;
-  clearInterval(p.timer);
-  S.pending.delete(id);
-  // A chat or an answer goes back to its draft; a tick has none to go back to.
-  if (draftId) S.drafts.set(draftId, p.text);
-  render();
-  if (draftId) document.getElementById(draftId)?.focus();
+// Undo asks the host to take an item back; `back` puts its text where the
+// captain wrote it (a tick has none). The outcome goes on result line key.
+async function undoHeld(project, x, key, back) {
+  try {
+    await press({ action: 'undo', project, held: x.id });
+    S.results.delete(key);
+    back?.(x.text);
+  } catch (e) {
+    S.results.set(key, { kind: outcome(e), text: e.message, at: nowISO() });
+  }
+  await loadChat(project);
 }
+const heldLine = (x, label, onUndo) =>
+  h('div', { class: 'meta' }, `${label} in ${leftOf(x)}s `, h('button', { type: 'button', class: 'undo', dataset: { held: String(x.id) }, onclick: onUndo }, 'Undo'));
 function textarea(id, attrs = {}) {
   const el = h('textarea', { id, ...attrs, oninput: attrs.oninput ?? ((e) => S.drafts.set(id, e.target.value)) });
   el.value = S.drafts.get(id) ?? '';
@@ -878,20 +904,24 @@ VIEWS.mate = () => {
 
 // The headless Mate's chat (GET /chat), as its REPL shows it: the
 // captain's messages and the Mate's replies, nothing the crews or the app
-// said and none of the Mate's tools (CON-151). A message waits 5 s for an
-// undo, then goes to the Mate as the captain's.
+// said and none of the Mate's tools (CON-151). A message waits in the
+// Mate's host for its undo, then goes to the Mate as the captain's.
 const chatBusy = new Set();
 async function loadChat(project) {
   if (chatBusy.has(project)) return;
   chatBusy.add(project);
   try {
-    S.chats.set(project, await api(`/api/projects/${enc(project)}/chat`));
+    const body = await api(`/api/projects/${enc(project)}/chat`);
+    const at = Date.now();
+    body.held = (body.held ?? []).map((x) => ({ ...x, goes: at + (x.left_ms ?? 0) }));
+    S.chats.set(project, body);
   } catch (e) {
     S.chats.set(project, { ...(S.chats.get(project) ?? { items: [] }), error: e.message });
   } finally {
     chatBusy.delete(project);
   }
   render();
+  watchHeld();
   // While the Mate answers, read again until it is done.
   const c = S.chats.get(project);
   if (c?.state?.busy && S.sel?.kind === 'mate' && S.sel.project === project) setTimeout(() => S.sel?.project === project && loadChat(project), 2500);
@@ -900,7 +930,7 @@ async function loadChat(project) {
 function chatView(p) {
   const c = S.chats.get(p.name);
   const items = c?.items ?? [];
-  const pend = S.pending.get(`chat:${p.name}`);
+  const held = heldOf(p.name).filter((x) => x.kind === 'say');
   const say = S.acts.get(p.name)?.mate_more?.find((b) => b.action === 'say');
   const blocked = blockedBy(`${p.name}#chat`) || (!hasMate(p) ? 'no Mate yet · Create mate first' : say && !say.available ? say.reason : !say ? '?' : '');
   const busy = Boolean(c?.state?.busy);
@@ -917,7 +947,12 @@ function chatView(p) {
           : x.interrupted ? h('div', { class: 'msg mate' }, h('div', { class: 'meta' }, h('span', {}, '⊘ interrupted'))) : null,
     ]),
     !items.length ? h('p', { class: 'note' }, c ? (c.headless ? 'No messages yet.' : 'This Mate is not headless: its chat is in its own pane.') : 'loading…') : null,
-    pend ? h('div', { class: 'msg pending' }, pend.text, h('div', { class: 'meta' }, `Sending in ${pend.left}s`, h('button', { type: 'button', id: 'undo-chat', onclick: () => undo(`chat:${p.name}`, `chat-${p.name}`) }, 'Undo'))) : null,
+    ...held.map((x) => h('div', { class: 'msg pending' }, x.text, heldLine(x, 'Sending', () => undoHeld(p.name, x, `${p.name}#chat`, (text) => {
+      const id = `chat-${p.name}`;
+      if (!(S.drafts.get(id) ?? '').trim()) S.drafts.set(id, text);
+      render();
+      document.getElementById(id)?.focus();
+    })))),
     busy ? h('div', { class: 'turn', role: 'status' }, h('span', { class: 'g', 'aria-hidden': 'true' }, '◐'), `${c.state.turn_source === 'app' ? 'working' : 'thinking'}…${c.state.queued ? ` · ${c.state.queued} waiting` : ''}`) : null,
     c?.state_error ? h('p', { class: 'note' }, `The Mate's host did not answer: ${c.state_error}`) : null,
   ];
@@ -930,9 +965,9 @@ function chatView(p) {
   return [
     h('div', { class: 'chat', 'aria-live': 'polite' }, list),
     h('div', { class: 'composer' }, ta,
-      h('div', { class: 'row' }, h('small', {}, blocked || '⌘↵ send · 5 s to undo · Enter for a new line'),
+      h('div', { class: 'row' }, h('small', {}, blocked || '⌘↵ send · Undo while it waits · Enter for a new line'),
         h('button', { type: 'button', class: 'btn', disabled: !busy || Boolean(blocked), title: busy ? '' : 'nothing to interrupt', onclick: () => interrupt(p.name) }, 'Interrupt'),
-        h('button', { type: 'button', class: 'btn solid', disabled: Boolean(blocked) || Boolean(pend), onclick: () => sendChat(p.name) }, 'Send'))),
+        h('button', { type: 'button', class: 'btn solid', disabled: Boolean(blocked), onclick: () => sendChat(p.name) }, 'Send'))),
     resultEl(`${p.name}#chat`),
   ];
 }
@@ -941,7 +976,7 @@ function sendChat(project) {
   const text = (S.drafts.get(id) ?? '').trim();
   if (!text) return;
   S.drafts.set(id, '');
-  sendLater(`chat:${project}`, text, (txt) => talk(project, { action: 'say', project, text: txt }, id));
+  talk(project, { action: 'say', project, text }, id);
 }
 function interrupt(project) {
   talk(project, { action: 'interrupt', project });
@@ -962,8 +997,8 @@ async function talk(project, req, draftId) {
 // ---- The Mate's work board (CON-158) ----------------------------------------------
 //
 // What the captain asked the Mate for and what it proposed, grouped by where
-// it stands. A done row carries a checkbox: the tick (`okay`) waits 5 s for
-// an undo, then takes the row off the board. A row waiting on a topic links
+// it stands. A done row carries a checkbox: the tick (`okay`) waits in the
+// Mate's host for its undo, then takes the row off the board. A row waiting on a topic links
 // to that topic in City Hall; the row itself never asks anything.
 const WORK_GROUPS = [['done', 'For you to OK'], ['working', 'In progress'], ['waiting', 'Waiting on a topic'], ['okayed', 'Okayed']];
 const WORK_SHOWN = 10; // okayed rows shown before "Show all"
@@ -987,10 +1022,11 @@ function workView(p) {
 }
 function workRow(project, x) {
   const key = `${project}#${x.id}`;
-  const pend = S.pending.get(`work:${key}`);
+  const pend = x.status === 'done' ? heldOf(project).find((y) => y.kind === 'okay' && y.work === x.id) : null;
+  const pressing = S.busy.get(`work:${key}`);
   const done = x.status === 'done';
   const glyph = done
-    ? h('span', { class: 'g tick' }, h('input', { type: 'checkbox', 'aria-label': `OK: ${x.title}`, disabled: Boolean(S.readOnly) || Boolean(pend), checked: Boolean(pend), onchange: (e) => e.target.checked && okayWork(project, x) }))
+    ? h('span', { class: 'g tick' }, h('input', { type: 'checkbox', 'aria-label': `OK: ${x.title}`, disabled: Boolean(S.readOnly) || Boolean(pend) || Boolean(pressing), checked: Boolean(pend) || Boolean(pressing), onchange: (e) => e.target.checked && okayWork(project, x) }))
     : h('span', { class: 'g', 'aria-hidden': 'true' }, x.status === 'working' ? '▶' : x.status === 'waiting' ? '?' : '✓');
   const side = x.status === 'waiting' && x.topic
     ? h('button', { type: 'button', class: 'link', onclick: () => select({ kind: 'hall', tab: 'topics', topic: topicKey(project, x.topic) }, { fly: false }) }, `topic #${x.topic} ›`)
@@ -1007,24 +1043,27 @@ function workRow(project, x) {
     h('b', {}, x.title),
     h('div', { class: 'side' }, side),
     pend
-      ? h('small', { class: 'okaying', role: 'status' }, `Okaying in ${pend.left}s `, h('button', { type: 'button', onclick: () => undo(`work:${key}`) }, 'Undo'))
+      ? h('small', { class: 'okaying', role: 'status' }, `Okaying in ${leftOf(pend)}s `, h('button', { type: 'button', class: 'undo', dataset: { held: String(pend.id) }, onclick: () => undoHeld(project, pend, `${project}#work`, () => render()) }, 'Undo'))
       : h('small', {}, x.kind === 'proposed' ? h('span', { class: 'tag' }, 'proposed') : 'assigned', x.last ? ` · ${x.last}` : ''),
     S.workOpen.has(key) ? h('ol', { class: 'notes' }, (x.notes ?? []).map((n) => h('li', {}, `${clock(n.at)} · ${n.op}${n.topic ? ` #${n.topic}` : ''}${n.text ? ` · ${n.text}` : ''}`))) : null);
 }
-// The tick: 5 s to undo, then `okay` on the row; the outcome on the board's result line.
-function okayWork(project, x) {
+// The tick: `okay` on the row at once; the Mate's host holds it for its
+// undo, and the row counts down from what it holds. The outcome goes on the
+// board's result line.
+async function okayWork(project, x) {
   const key = `${project}#${x.id}`;
   S.results.delete(`${project}#work`);
-  sendLater(`work:${key}`, String(x.id), async () => {
-    try {
-      const { line } = await press({ action: 'okay', project, work: x.id });
-      S.results.set(`${project}#work`, { kind: 'ok', text: line, at: nowISO() });
-    } catch (e) {
-      S.results.set(`${project}#work`, { kind: outcome(e), text: e.message, at: nowISO() });
-    }
-    render();
-    refreshWork();
-  });
+  S.busy.set(`work:${key}`, 'okay');
+  render();
+  try {
+    const { line } = await press({ action: 'okay', project, work: x.id });
+    S.results.set(`${project}#work`, { kind: 'ok', text: line, at: nowISO() });
+  } catch (e) {
+    S.results.set(`${project}#work`, { kind: outcome(e), text: e.message, at: nowISO() });
+  }
+  S.busy.delete(`work:${key}`);
+  await loadChat(project);
+  refreshWork();
 }
 
 // The project's inbox: what waits, as the console's box rail shows it.
@@ -1322,7 +1361,7 @@ function topicList() {
 // One topic: the Mate's question, its options, an answer; or talk it over
 // first in a read-only fork of the Mate (the REPL's session, CON-104).
 function topicView(x) {
-  const pend = S.pending.get(`topic:${x.key}`);
+  const pend = heldOf(x.project).findLast((y) => y.kind === 'answer' && y.news === x.id);
   const pick = S.drafts.get(`opt-${x.key}`);
   const own = (S.drafts.get(`own-${x.key}`) ?? '').trim();
   const opt = x.options?.find((o) => o.key === pick);
@@ -1349,21 +1388,35 @@ function topicView(x) {
           clearTimeout(topicView.t);
           topicView.t = setTimeout(render, 250);
         } })),
-        pend ? h('div', { class: 'msg pending' }, pend.text, h('div', { class: 'meta' }, `Sending in ${pend.left}s`, h('button', { type: 'button', id: 'undo-topic', onclick: () => undo(`topic:${x.key}`, `own-${x.key}`) }, 'Undo'))) : null,
+        pend ? h('div', { class: 'msg pending' }, pend.text, heldLine(pend, 'Sending', () => undoHeld(x.project, pend, `topic:${x.key}`, (text) => {
+          // A chosen option is picked again; a written answer goes back to its box.
+          const o = x.options?.find((y) => text === `[${y.key}] ${y.text}`);
+          if (o) S.drafts.set(`opt-${x.key}`, o.key);
+          else if (!(S.drafts.get(`own-${x.key}`) ?? '').trim()) S.drafts.set(`own-${x.key}`, text);
+          render();
+          document.getElementById(o ? `opt-${x.key}-${o.key}` : `own-${x.key}`)?.focus();
+        }))) : null,
         h('div', { class: 'actions' },
-          h('div', { class: 'act' }, h('button', { type: 'button', class: 'primary', id: `send-${x.key}`, disabled: Boolean(why) || Boolean(pend), onclick: () => {
+          h('div', { class: 'act' }, h('button', { type: 'button', class: 'primary', id: `send-${x.key}`, disabled: Boolean(why) || Boolean(pend) || S.busy.has(`topic:${x.key}`), onclick: async () => {
+            // The box as it is now: what was typed since the last draw counts.
+            const typed = (S.drafts.get(`own-${x.key}`) ?? '').trim();
+            const chosen = x.options?.find((o) => o.key === S.drafts.get(`opt-${x.key}`));
+            const answer = typed || (chosen ? `[${chosen.key}] ${chosen.text}` : '');
+            if (!answer) return;
             S.drafts.delete(`own-${x.key}`);
             S.drafts.delete(`opt-${x.key}`);
-            sendLater(`topic:${x.key}`, answer, async (a) => {
-              try {
-                const { line } = await press({ action: 'answer', project: x.project, news: x.id, text: a });
-                S.results.set(`topic:${x.key}`, { kind: 'ok', text: line, at: nowISO() });
-              } catch (e) {
-                S.results.set(`topic:${x.key}`, { kind: outcome(e), text: e.message, at: nowISO() });
-                S.drafts.set(`own-${x.key}`, a);
-              }
-              refreshNews();
-            });
+            S.busy.set(`topic:${x.key}`, 'answer');
+            render();
+            try {
+              const { line } = await press({ action: 'answer', project: x.project, news: x.id, text: answer });
+              S.results.set(`topic:${x.key}`, { kind: 'ok', text: line, at: nowISO() });
+            } catch (e) {
+              S.results.set(`topic:${x.key}`, { kind: outcome(e), text: e.message, at: nowISO() });
+              S.drafts.set(`own-${x.key}`, answer);
+            }
+            S.busy.delete(`topic:${x.key}`);
+            await loadChat(x.project);
+            refreshNews();
           } }, 'Send answer'), h('small', {}, why)),
           h('div', { class: 'act' }, h('button', { type: 'button', id: `fork-${x.key}`, disabled: Boolean(fork?.open) || Boolean(can), onclick: () => openFork(x) }, 'Discuss privately'), h('small', {}, can || (fork?.open ? 'session open below' : 'a read-only fork of the Mate')))),
         fork && (fork.open || fork.items?.length) ? forkView(x, fork) : null),

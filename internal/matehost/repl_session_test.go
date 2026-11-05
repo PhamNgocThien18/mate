@@ -128,8 +128,8 @@ func TestREPLSessionRefusals(t *testing.T) {
 }
 
 // Settling (CON-104 PR3): the session proposes the answer with `mate news
-// propose`; ^S sends it to the Mate as the captain's answer, behind the
-// undo delay, and closes the session. ↑ edits it first.
+// propose`; ^S sends it to the Mate as the captain's answer, held for its
+// undo, and closes the session. ↑ edits it first.
 func TestREPLSessionSettles(t *testing.T) {
 	m := sessionModel(100, 30)
 	press(t, &m, tea.KeyCtrlT, tea.KeyEnter, "f")
@@ -156,8 +156,8 @@ func TestREPLSessionSettles(t *testing.T) {
 	}
 	press(t, &m, tea.KeyCtrlS)
 	refresh(&m)
-	if m.mode != viewTopics || m.pending == nil || m.pending.id != 3 || m.pending.text != "Chọn a: THEME=system trong .env.example và ghi vào README" {
-		t.Fatalf("^S: mode %v, pending %+v", m.mode, m.pending)
+	if p, ok := lastHeld(m); m.mode != viewTopics || !ok || p.News != 3 || p.Text != "Chọn a: THEME=system trong .env.example và ghi vào README" {
+		t.Fatalf("^S: mode %v, held %+v", m.mode, m.state.Held)
 	}
 	if len(m.sessions) != 0 {
 		t.Fatalf("^S left the session open")

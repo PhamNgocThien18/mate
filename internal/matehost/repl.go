@@ -98,8 +98,11 @@ type Model struct {
 	// roundsOpen unfolds the settled rounds of the open frame (^O).
 	roundsOpen bool
 	// drafts keep the composer of each view: 0 the chat's, n frame n's.
-	drafts    map[int]string
-	pending   *pendingAnswer
+	drafts map[int]string
+	// labels say how the captain answered each news (answer), for the
+	// line of an answer the host holds (answerLine); confirm is the answer
+	// the host has since sent.
+	labels    map[int]string
 	confirm   string
 	confirmAt time.Time
 
@@ -175,7 +178,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
 		m.frame++
-		m.tickNews()
 		return m, tick()
 	case crewsMsg:
 		m.crews = int(msg)
@@ -260,10 +262,12 @@ func (m *Model) applyEvent(ev Event) {
 	// brings only what it alone carries: a finished turn, a note, a focus.
 	stale := ev.Seq != 0 && ev.Seq < m.seq
 	if !stale {
+		before := m.state.Held
 		m.seq = ev.Seq
 		m.state = ev.State
 		m.queue = ev.Queue
 		m.news = ev.News
+		m.sentAnswers(before)
 		m.work = ev.Work
 		m.sessions = ev.Sessions
 		if m.mode == viewSession {
@@ -555,7 +559,8 @@ func (m *Model) interrupt() {
 	})
 }
 
-// send hands the composer to the host: a turn now, or the queue.
+// send hands the composer to the host, which holds it for its undo, then
+// runs it or queues it behind the turn in flight.
 func (m *Model) send() {
 	text := strings.TrimSpace(string(m.input))
 	if text == "" {
@@ -570,10 +575,6 @@ func (m *Model) send() {
 		return
 	}
 	m.scroll, m.unseen = 0, 0
-	if !m.state.Busy && len(m.queue) == 0 {
-		// Shown at once; the host's start event replaces it.
-		m.running = &Item{At: m.now(), Source: SourceCaptain, Text: text}
-	}
 	m.submit(text)
 }
 
@@ -581,10 +582,11 @@ func (m *Model) send() {
 // to the composer.
 func (m *Model) submit(text string) {
 	m.call(func(ctx context.Context, c Conn) tea.Msg {
-		if err := c.Submit(ctx, text); err != nil {
+		held, err := c.Submit(ctx, text)
+		if err != nil {
 			return replyMsg{op: callSubmit, text: text, err: err}
 		}
-		return nil
+		return replyMsg{op: callHeld, held: held}
 	})
 }
 
@@ -602,7 +604,6 @@ func (m *Model) retry() {
 		m.note = offlineSend
 		return
 	}
-	m.running = &Item{At: m.now(), Source: SourceCaptain, Text: last.Text}
 	m.submit(last.Text)
 }
 
@@ -636,6 +637,8 @@ const (
 	callOpenSession
 	callAskSession
 	callInterruptSession
+	callHeld
+	callUndo
 )
 
 // replyMsg is the host's answer to a call the REPL acts on.
@@ -645,6 +648,9 @@ type replyMsg struct {
 	text string
 	ok   bool
 	err  error
+	// held is what the host put on hold (callHeld) or gave back
+	// (callUndo).
+	held Held
 }
 
 // reply acts on the host's answer to a call, as the REPL acted on the Host
@@ -659,11 +665,11 @@ func (m *Model) reply(r replyMsg) {
 	case callDraft:
 		// Never told back: no longer on its way.
 		m.draftHeard = min(m.draftHeard+1, m.draftSent)
+	case callHeld:
+		m.heard(r.held)
+	case callUndo:
+		m.undone(r)
 	case callSubmit:
-		// The message shown at once (send) never started.
-		if it := m.running; it != nil && it.Text == r.text && it.Reply == "" && len(it.Tools) == 0 {
-			m.running = nil
-		}
 		m.note = "Mate chưa nhận tin: " + failure(r.err)
 		if m.chatDraft() == "" {
 			m.setChatDraft(r.text)

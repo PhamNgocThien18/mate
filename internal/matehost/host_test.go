@@ -125,6 +125,8 @@ type fixture struct {
 	dir    string
 	host   *Host
 	opened map[string]bool
+	// timers runs out what the host holds for its undo (hold.go).
+	timers *fakeTimers
 
 	mu     sync.Mutex
 	events []Event
@@ -137,7 +139,7 @@ func newFixture(t *testing.T) *fixture {
 	if err := os.WriteFile(prog, []byte(fakeClaude), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{dir: dir, opened: map[string]bool{}}
+	f := &fixture{dir: dir, opened: map[string]bool{}, timers: &fakeTimers{}}
 	runner := &Runner{
 		Launch: Launch{Project: "p", Harness: "fake", Program: prog, Args: []string{"--model", "opus", "--session-id", "s1"}, Dir: dir, SessionID: "s1"},
 		Turns:  streamTurns{},
@@ -149,7 +151,7 @@ func newFixture(t *testing.T) *fixture {
 		},
 		Grace: 200 * time.Millisecond,
 	}
-	f.host = New(runner, Options{History: filepath.Join(dir, HistoryName), News: filepath.Join(dir, NewsName)})
+	f.host = New(runner, Options{History: filepath.Join(dir, HistoryName), News: filepath.Join(dir, NewsName), After: f.timers.after})
 	f.host.Subscribe(func(ev Event) {
 		f.mu.Lock()
 		f.events = append(f.events, ev)
@@ -568,7 +570,8 @@ func TestHostReloadSwitchesSessionBetweenTurns(t *testing.T) {
 }
 
 // A page's captain ops (CON-142) are the REPL's own: a submitted message is
-// a captain turn, an answer lands in its news, and a closed news refuses.
+// a captain turn once its undo is over, an answer lands in its news, and a
+// closed news refuses at once.
 func TestSocketCaptainOps(t *testing.T) {
 	f := newFixture(t)
 	sock, err := os.MkdirTemp("/tmp", "mh")
@@ -591,9 +594,10 @@ func TestSocketCaptainOps(t *testing.T) {
 	if _, err := c.Submit(ctx, "  "); err == nil {
 		t.Error("submitted an empty message")
 	}
-	if s, err := c.Submit(ctx, "hello from the city"); err != nil || !s.Busy {
-		t.Fatalf("submit = %+v, %v", s, err)
+	if held, err := c.Submit(ctx, "hello from the city"); err != nil || held.Kind != HeldSay || held.Text != "hello from the city" {
+		t.Fatalf("submit = %+v, %v", held, err)
 	}
+	f.timers.fire(t)
 	items := f.done(t, 1)
 	if it := items[0]; it.Source != SourceCaptain || it.Text != "hello from the city" {
 		t.Fatalf("submitted item = %+v", it)
@@ -607,9 +611,10 @@ func TestSocketCaptainOps(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.host.RefreshNews()
-	if err := c.AnswerNews(ctx, 1, "[a] env"); err != nil {
+	if _, err := c.AnswerNews(ctx, 1, "[a] env"); err != nil {
 		t.Fatal(err)
 	}
+	f.timers.fire(t)
 	if it := f.done(t, 2)[1]; it.News != 1 || it.Text != "[a] env" {
 		t.Fatalf("answer item = %+v", it)
 	}
@@ -617,7 +622,7 @@ func TestSocketCaptainOps(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.host.RefreshNews()
-	if err := c.AnswerNews(ctx, 1, "again"); err == nil || !strings.Contains(err.Error(), "already closed") {
+	if _, err := c.AnswerNews(ctx, 1, "again"); err == nil || !strings.Contains(err.Error(), "already closed") {
 		t.Fatalf("answer to a closed news = %v", err)
 	}
 	if err := c.AskSession(ctx, 1, "why?"); err == nil || !strings.Contains(err.Error(), ErrNoForks.Error()) {

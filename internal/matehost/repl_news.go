@@ -2,8 +2,10 @@ package matehost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,10 +24,10 @@ import (
 // Open, it holds all the captain needs to answer in place: the crew's
 // context, the options a–d, and a line to write in. One frame is open at a
 // time; the cursor moves between frames without opening them. An answer
-// waits undoDelay before it is sent, so `u` can take it back.
+// waits out its undo in the host (Host.Answer, CON-222), and `u` takes it
+// back.
 
 const (
-	undoDelay  = 5 * time.Second
 	confirmFor = 5 * time.Second
 	// ageFrom is the width from which a frame's border shows its age.
 	ageFrom = 90
@@ -47,24 +49,18 @@ const (
 	viewWork
 )
 
-// pendingAnswer is an answer waiting out its undo delay.
-type pendingAnswer struct {
-	id    int
-	text  string
-	label string
-	at    time.Time
-}
-
 // newsRef is a captain message in the chat that answers a news: `#3 …`.
 var newsRef = regexp.MustCompile(`^#(\d+)\s+(?s)(.+)$`)
 
 func (m Model) findNews(id int) (News, bool) { return findNews(m.news, id) }
 
 // answered reports whether a news reads as answered: the captain owes it
-// nothing, or their answer to it waits out its undo delay. The Mate at
-// work on an answer is answered too; the page shows only the two states.
+// nothing, or their answer to it waits out its undo in the host. The Mate
+// at work on an answer is answered too; the page shows only the two
+// states.
 func (m Model) answered(n News) bool {
-	return !n.Owed() || m.pending != nil && m.pending.id == n.ID
+	_, held := m.heldAnswer(n.ID)
+	return !n.Owed() || held
 }
 
 // owed are the news waiting on the captain, oldest first.
@@ -101,8 +97,8 @@ func (m Model) topicList() []News {
 // answeredAt is when a news last changed, or when the answer waiting out
 // its undo delay was given.
 func (m Model) answeredAt(n News) time.Time {
-	if p := m.pending; p != nil && p.id == n.ID {
-		return p.at
+	if p, ok := m.heldAnswer(n.ID); ok {
+		return p.At
 	}
 	if !n.AnsweredAt.IsZero() && n.AnsweredAt.After(n.At) {
 		return n.AnsweredAt
@@ -237,15 +233,27 @@ func (m *Model) nextOwed() {
 
 // --- answering ---
 
-// answer queues an answer to news id behind the undo delay. On the page
-// its frame folds into the answered, and the cursor moves to the frame
-// owed after it, unopened.
+// answer hands an answer to news id to the host, which holds it for its
+// undo (Host.Answer). On the page its frame folds into the answered, and
+// the cursor moves to the frame owed after it, unopened.
 func (m *Model) answer(id int, text, label string) {
-	if m.pending != nil {
-		m.flush()
+	if !m.linked {
+		m.note = fmt.Sprintf("chưa nối được với Mate; câu trả lời cho #%d vẫn nằm trong khung", id)
+		m.giveBackAnswer(id, text)
+		return
 	}
 	owed := m.owed()
-	m.pending = &pendingAnswer{id: id, text: text, label: label, at: m.now()}
+	if m.labels == nil {
+		m.labels = map[int]string{}
+	}
+	m.labels[id] = label
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		held, err := c.AnswerNews(ctx, id, text)
+		if err != nil {
+			return replyMsg{op: callAnswer, id: id, text: text, err: err}
+		}
+		return replyMsg{op: callHeld, held: held}
+	})
 	if m.mode != viewTopics {
 		return
 	}
@@ -264,36 +272,98 @@ func (m *Model) answer(id int, text, label string) {
 	}
 }
 
-// undo takes back the answer waiting out its delay; on the page its frame
-// opens again to be answered.
+// --- what the host holds for its undo ---
+
+// heldAnswer is the newest answer to news id the host holds.
+func (m Model) heldAnswer(id int) (Held, bool) {
+	for i := len(m.state.Held) - 1; i >= 0; i-- {
+		if p := m.state.Held[i]; p.Kind == HeldAnswer && p.News == id {
+			return p, true
+		}
+	}
+	return Held{}, false
+}
+
+// undo asks the host to take back the newest thing it holds (`u`): a
+// message, an answer or a tick, whichever UI sent it.
 func (m *Model) undo() {
-	p := m.pending
-	m.pending = nil
-	m.note = fmt.Sprintf("đã hoàn tác câu trả lời cho #%d", p.id)
-	if m.mode == viewTopics {
-		m.openTopic(p.id)
+	held := m.state.Held
+	if len(held) == 0 {
+		return
+	}
+	id := held[len(held)-1].ID
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		got, err := c.Undo(ctx, id)
+		return replyMsg{op: callUndo, id: id, held: got, err: err}
+	})
+}
+
+// undone puts back what the host gave back: a message in the chat's
+// composer, an answer in its frame, which opens again on the page.
+func (m *Model) undone(r replyMsg) {
+	m.dropHeld(r.id)
+	switch {
+	case errors.Is(r.err, ErrNotHeld):
+		m.note = "đã gửi rồi, không hoàn tác được nữa"
+		return
+	case r.err != nil:
+		m.note = failure(r.err)
+		return
+	}
+	p := r.held
+	switch p.Kind {
+	case HeldSay:
+		m.note = "đã hoàn tác tin vừa gửi"
+		if m.chatDraft() == "" {
+			m.setChatDraft(p.Text)
+			m.sendDraft(p.Text)
+		}
+	case HeldAnswer:
+		m.note = fmt.Sprintf("đã hoàn tác câu trả lời cho #%d", p.News)
+		if m.mode == viewTopics {
+			m.openTopic(p.News)
+		}
+		// A chosen option is chosen again from the options, not written.
+		if n, ok := m.findNews(p.News); !ok || !slices.ContainsFunc(n.Options, func(o NewsOption) bool { return p.Text == fmt.Sprintf("[%s] %s", o.Key, o.Text) }) {
+			m.giveBackAnswer(p.News, p.Text)
+		}
+	case HeldOkay:
+		m.note = fmt.Sprintf("đã bỏ OK việc #%d", p.Work)
 	}
 }
 
-// flush sends the pending answer.
-func (m *Model) flush() {
-	p := m.pending
-	if p == nil {
+// heard takes an item the host said it holds before its event comes.
+func (m *Model) heard(p Held) {
+	if p.ID == 0 || !p.Due.After(m.now()) {
 		return
 	}
-	m.pending = nil
-	if !m.linked {
-		m.note = fmt.Sprintf("chưa nối được với Mate; câu trả lời cho #%d vẫn nằm trong khung", p.id)
-		m.giveBackAnswer(p.id, p.text)
-		return
-	}
-	m.confirm, m.confirmAt = fmt.Sprintf("✓ #%d đã trả lời · Mate đang xử lý", p.id), m.now()
-	m.call(func(ctx context.Context, c Conn) tea.Msg {
-		if err := c.AnswerNews(ctx, p.id, p.text); err != nil {
-			return replyMsg{op: callAnswer, id: p.id, text: p.text, err: err}
+	for _, o := range m.state.Held {
+		if o.ID == p.ID {
+			return
 		}
-		return nil
-	})
+	}
+	m.state.Held = append(slices.Clone(m.state.Held), p)
+}
+
+func (m *Model) dropHeld(id int) {
+	m.state.Held = slices.DeleteFunc(slices.Clone(m.state.Held), func(p Held) bool { return p.ID == id })
+}
+
+// sentAnswers confirms each answer of before the host no longer holds and
+// whose news no longer waits on the captain: it went to the Mate. One
+// taken back, or refused, leaves its news owed.
+func (m *Model) sentAnswers(before []Held) {
+	for _, p := range before {
+		if p.Kind != HeldAnswer {
+			continue
+		}
+		if _, still := m.heldAnswer(p.News); still {
+			continue
+		}
+		if n, ok := m.findNews(p.News); ok && !n.Owed() {
+			m.confirm, m.confirmAt = fmt.Sprintf("✓ #%d đã trả lời · Mate đang xử lý", p.News), m.now()
+		}
+	}
 }
 
 // giveBackAnswer puts an answer the host never got back in its frame's
@@ -311,13 +381,6 @@ func (m *Model) giveBackAnswer(id int, text string) {
 	}
 	if m.drafts[id] == "" {
 		m.drafts[id] = text
-	}
-}
-
-// tickNews sends an answer whose undo delay is over.
-func (m *Model) tickNews() {
-	if p := m.pending; p != nil && m.now().Sub(p.at) >= undoDelay {
-		m.flush()
 	}
 }
 
@@ -350,7 +413,7 @@ func (m Model) newsKey(k tea.KeyMsg) (Model, bool) {
 		}
 		return m, true
 	}
-	if m.pending != nil && k.Type == tea.KeyRunes && string(k.Runes) == "u" && !m.typing && (m.mode == viewTopics || len(m.input) == 0) {
+	if len(m.state.Held) > 0 && k.Type == tea.KeyRunes && string(k.Runes) == "u" && !m.typing && (m.mode == viewTopics || len(m.input) == 0) {
 		m.undo()
 		return m, true
 	}
@@ -480,7 +543,7 @@ func (m Model) typingKey(k tea.KeyMsg) (Model, bool) {
 }
 
 // chatNewsRef sends a chat message that names a news (`#3 chọn a`) to that
-// news instead, behind the same undo delay.
+// news instead, held for the same undo.
 func (m *Model) chatNewsRef(text string) bool {
 	g := newsRef.FindStringSubmatch(text)
 	if g == nil {
@@ -558,12 +621,30 @@ func (m Model) badge() string {
 	return style.Render(fmt.Sprintf("● %d chưa trả lời", len(owed)))
 }
 
-// answerLine is the answer waiting out its undo delay, or the one just
-// sent.
+// answerLine is the newest thing the host holds for its undo, its seconds
+// counted down here from when it goes (Held.Due), or the answer just sent.
 func (m Model) answerLine() []string {
-	if p := m.pending; p != nil {
-		left := max(0, int((undoDelay-m.now().Sub(p.at)+time.Second-1)/time.Second))
-		return []string{styleSuccess.Render(fmt.Sprintf(" ✓ #%d · %s · u hoàn tác (%ds)", p.id, p.label, left))}
+	if held := m.state.Held; len(held) > 0 {
+		p := held[len(held)-1]
+		left := max(0, int((p.Due.Sub(m.now())+time.Second-1)/time.Second))
+		var line string
+		switch p.Kind {
+		case HeldAnswer:
+			label := m.labels[p.News]
+			if label == "" {
+				label = "Đã gửi"
+			}
+			line = fmt.Sprintf(" ✓ #%d · %s · u hoàn tác (%ds)", p.News, label, left)
+		case HeldOkay:
+			line = fmt.Sprintf(" ✓ OK việc #%d · u hoàn tác (%ds)", p.Work, left)
+		default:
+			first, _, _ := strings.Cut(p.Text, "\n")
+			line = fmt.Sprintf(" ⧗ gửi sau %ds · u hoàn tác › %s", left, first)
+		}
+		if len(held) > 1 {
+			line += fmt.Sprintf(" · +%d chờ", len(held)-1)
+		}
+		return []string{styleSuccess.Render(line)}
 	}
 	if m.confirm != "" && m.now().Sub(m.confirmAt) < confirmFor {
 		return []string{styleSuccess.Render(" " + m.confirm)}
@@ -613,8 +694,7 @@ func (m Model) topicRows() int {
 	return max(1, h-len(m.header(w))-len(m.topicBelow(w))-len(m.footer(w)))
 }
 
-// topicBelow is the strip under the page: the answer waiting out its
-// undo delay.
+// topicBelow is the strip under the page: what waits out its undo.
 func (m Model) topicBelow(w int) []string { return append(m.answerLine(), m.backgroundLine(w)...) }
 
 // topicView is the page as rows lines: the frames, scrolled so the frame

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -42,6 +41,10 @@ const (
 	OpSessionInterrupt = "session-interrupt"
 	OpWorkOkay         = "work-okay"
 	OpWorkRefresh      = "work-refresh"
+	// OpUndo takes back what the captain sent while it waits out its undo
+	// (hold.go, CON-222): a submit, an answer or a work-okay, each held
+	// UndoDelay before it goes.
+	OpUndo = "undo"
 )
 
 type request struct {
@@ -59,6 +62,8 @@ type request struct {
 	Work int `json:"work,omitempty"`
 	// From is the REPL a set-draft comes from (Host.SetDraftBy).
 	From string `json:"from,omitempty"`
+	// Held is the held item an undo takes back.
+	Held int `json:"held,omitempty"`
 }
 
 type response struct {
@@ -80,6 +85,9 @@ type response struct {
 	// Text and Taken are what OpTakeLast took.
 	Text  string `json:"text,omitempty"`
 	Taken bool   `json:"taken,omitempty"`
+	// Held is what a submit, an answer or a work-okay put on hold, and what
+	// an undo took back.
+	Held *Held `json:"held,omitempty"`
 }
 
 // errorCodes are the errors a client of the REPL's ops can tell apart.
@@ -96,6 +104,7 @@ var errorCodes = []struct {
 	{"too-many-sessions", ErrTooManySessions},
 	{"no-session", ErrNoSession},
 	{"session-busy", ErrSessionBusy},
+	{"not-held", ErrNotHeld},
 }
 
 // failed is the answer to an op whose Host method returned err.
@@ -225,32 +234,24 @@ func (h *Host) answer(req request) response {
 		}
 		return response{OK: true}
 	case OpSubmit:
-		if strings.TrimSpace(req.Text) == "" {
-			return response{Error: "a message has no text"}
+		held, err := h.Say(req.Text)
+		if err != nil {
+			resp := failed(err)
+			resp.Busy = errors.Is(err, ErrStopping)
+			return resp
 		}
-		h.mu.Lock()
-		stopping := h.stopping
-		h.mu.Unlock()
-		if stopping {
-			return response{Error: ErrStopping.Error(), Busy: true}
-		}
-		h.Submit(req.Text)
-		s := h.State()
-		return response{OK: true, State: &s}
+		return h.heldResponse(held)
 	case OpInterrupt:
 		if req.News > 0 {
 			return response{OK: true, Interrupted: h.InterruptSession(req.News)}
 		}
 		return response{OK: true, Interrupted: h.Interrupt()}
 	case OpAnswer:
-		if strings.TrimSpace(req.Text) == "" {
-			return response{Error: "an answer has no text"}
+		held, err := h.Answer(req.News, req.Text)
+		if err != nil {
+			return failed(err)
 		}
-		if err := h.AnswerNews(req.News, req.Text); err != nil {
-			return response{Error: err.Error()}
-		}
-		s := h.State()
-		return response{OK: true, State: &s}
+		return h.heldResponse(held)
 	case OpSessionAsk:
 		if err := h.OpenSession(req.News); err != nil {
 			return response{Error: err.Error()}
@@ -281,15 +282,36 @@ func (h *Host) answer(req request) response {
 	case OpSessionInterrupt:
 		return response{OK: true, Interrupted: h.InterruptSession(req.News)}
 	case OpWorkOkay:
-		if err := h.OkayWork(req.Work); err != nil {
+		held, err := h.Okay(req.Work)
+		if err != nil {
 			return failed(err)
 		}
-		return response{OK: true}
+		return h.heldResponse(held)
+	case OpUndo:
+		held, err := h.Undo(req.Held)
+		if err != nil {
+			return failed(err)
+		}
+		return response{OK: true, Held: &held, Text: held.Text}
 	case OpWorkRefresh:
 		h.RefreshWork()
 		return response{OK: true}
 	}
 	return response{Error: fmt.Sprintf("unknown op %q", req.Op)}
+}
+
+// heldResponse answers an op that put held on hold: it and the state.
+func (h *Host) heldResponse(held Held) response {
+	s := h.State()
+	return response{OK: true, State: &s, Held: &held}
+}
+
+// Refused reports whether err is the host's answer to an op (a refusal, or
+// a busy Mate) rather than a host that could not be reached.
+func Refused(err error) bool {
+	var refused *hostError
+	var busy *BusyError
+	return errors.As(err, &refused) || errors.As(err, &busy)
 }
 
 // Client talks to a host's socket.
@@ -416,14 +438,21 @@ func (c Client) Reload(ctx context.Context, l Launch) error {
 	return err
 }
 
-// Submit hands the host a captain message: it runs now or after the turn
-// in flight, exactly as one typed in the REPL's composer.
-func (c Client) Submit(ctx context.Context, text string) (State, error) {
+// Submit hands the host a captain message, exactly as one typed in the
+// REPL's composer: the host holds it UndoDelay (Host.Say), then it runs now
+// or after the turn in flight. A host older than the hold answers with no
+// Held, having started or queued it at once.
+func (c Client) Submit(ctx context.Context, text string) (Held, error) {
 	resp, err := c.do(ctx, request{Op: OpSubmit, Text: text}, 0)
-	if err != nil || resp.State == nil {
-		return State{}, err
+	return heldOf(resp), err
+}
+
+// heldOf is what an op's answer says it put on hold, or took back.
+func heldOf(resp response) Held {
+	if resp.Held == nil {
+		return Held{}
 	}
-	return *resp.State, nil
+	return *resp.Held
 }
 
 // Interrupt stops the Mate's turn in flight, or with news > 0 that news's
@@ -433,10 +462,11 @@ func (c Client) Interrupt(ctx context.Context, news int) (bool, error) {
 	return resp.Interrupted, err
 }
 
-// AnswerNews is the captain answering news id (Host.AnswerNews).
-func (c Client) AnswerNews(ctx context.Context, id int, text string) error {
-	_, err := c.do(ctx, request{Op: OpAnswer, News: id, Text: text}, 0)
-	return err
+// AnswerNews is the captain answering news id: held UndoDelay
+// (Host.Answer), then sent (Host.AnswerNews).
+func (c Client) AnswerNews(ctx context.Context, id int, text string) (Held, error) {
+	resp, err := c.do(ctx, request{Op: OpAnswer, News: id, Text: text}, 0)
+	return heldOf(resp), err
 }
 
 // AskSession opens news id's session if it is not open and asks it text.
@@ -490,11 +520,18 @@ func (c Client) InterruptSession(ctx context.Context, id int) (bool, error) {
 	return resp.Interrupted, err
 }
 
-// OkayWork is the captain's tick on done row id of the work board
-// (Host.OkayWork).
-func (c Client) OkayWork(ctx context.Context, id int) error {
-	_, err := c.call(ctx, request{Op: OpWorkOkay, Work: id})
-	return err
+// OkayWork is the captain's tick on done row id of the work board: held
+// UndoDelay (Host.Okay), then written (Host.OkayWork).
+func (c Client) OkayWork(ctx context.Context, id int) (Held, error) {
+	resp, err := c.call(ctx, request{Op: OpWorkOkay, Work: id})
+	return heldOf(resp), err
+}
+
+// Undo takes back held item id before it goes (Host.Undo); errors.Is
+// ErrNotHeld once it has gone.
+func (c Client) Undo(ctx context.Context, id int) (Held, error) {
+	resp, err := c.call(ctx, request{Op: OpUndo, Held: id})
+	return heldOf(resp), err
 }
 
 // RefreshWork has the host read the work board again (Host.RefreshWork).

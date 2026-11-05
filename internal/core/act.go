@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
@@ -49,6 +51,11 @@ func (e *Engine) Act(ctx context.Context, req coreapi.ActionRequest) (string, er
 	if chat[req.Action] {
 		return e.talk(ctx, req)
 	}
+	if req.Action == coreapi.ActionOkayWork {
+		if line, held, err := e.okayOnHost(ctx, req); held {
+			return line, err
+		}
+	}
 	if e.o.Act == nil {
 		return "", fmt.Errorf("%s is not wired in this engine", req.Action)
 	}
@@ -59,7 +66,7 @@ func (e *Engine) Act(ctx context.Context, req coreapi.ActionRequest) (string, er
 // its host, in its own process, and never reach Options.Act.
 var chat = map[coreapi.Action]bool{
 	coreapi.ActionSay: true, coreapi.ActionInterrupt: true, coreapi.ActionAnswer: true,
-	coreapi.ActionFork: true, coreapi.ActionForkClose: true,
+	coreapi.ActionFork: true, coreapi.ActionForkClose: true, coreapi.ActionUndo: true,
 }
 
 // ownLock are the actions that hold a lock of their own on their target,
@@ -70,7 +77,7 @@ var chat = map[coreapi.Action]bool{
 // so a double click runs once.
 var ownLock = map[coreapi.Action]bool{
 	coreapi.ActionSay: true, coreapi.ActionInterrupt: true, coreapi.ActionAnswer: true,
-	coreapi.ActionFork: true, coreapi.ActionForkClose: true,
+	coreapi.ActionFork: true, coreapi.ActionForkClose: true, coreapi.ActionUndo: true,
 	coreapi.ActionPeek: true, coreapi.ActionNotice: true, coreapi.ActionOkayWork: true,
 	coreapi.ActionOpenNews: true, coreapi.ActionOpenWork: true,
 }
@@ -195,39 +202,25 @@ var (
 // talk runs a chat action on the headless Mate's host, the way its REPL
 // runs it. Whether the Mate runs is its record's word (mate.meta names an
 // agent), not Herdr's: the host is the Mate's own process, so a host that
-// is gone says so in its own error.
+// is gone says so in its own error. The host holds a say and an answer
+// for their undo (CON-222), and an undo takes one back.
 func (e *Engine) talk(ctx context.Context, req coreapi.ActionRequest) (string, error) {
-	ws := e.o.Workspace
-	if ws == nil {
-		return "", errors.New("the engine has no workspace to talk in")
-	}
-	project := req.Target
-	if _, ok := ws.Project(project); !ok {
-		return "", fmt.Errorf("project %q is not in the workspace", project)
-	}
-	// A missing mate.meta reads empty; an error is a record that could not
-	// be read, which is said as it is.
-	meta, err := ws.ReadMateMeta(project)
+	c, err := e.mateHost(req.Target)
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(meta["agent"]) == "" {
-		return "", errMateNotRunning
-	}
-	if !ws.MateHeadless(project) {
-		return "", errMateNotHeadless
-	}
-	c := matehost.Dial(ws.MateDir(project))
+	project := req.Target
 	switch req.Action {
 	case coreapi.ActionSay:
-		st, err := c.Submit(ctx, req.Input)
+		held, err := c.Submit(ctx, req.Input)
 		if err != nil {
 			return "", err
 		}
-		if st.Queued > 0 {
-			return fmt.Sprintf("queued for the Mate of %s, behind the turn in flight (%d waiting)", project, st.Queued), nil
+		if held.ID == 0 {
+			// A host older than the hold ran or queued it at once.
+			return "sent to the Mate of " + project, nil
 		}
-		return "sent to the Mate of " + project, nil
+		return fmt.Sprintf("goes to the Mate of %s in %s · undo until then", project, undoIn()), nil
 	case coreapi.ActionInterrupt:
 		stopped, err := c.Interrupt(ctx, req.News)
 		switch {
@@ -240,10 +233,30 @@ func (e *Engine) talk(ctx context.Context, req coreapi.ActionRequest) (string, e
 		}
 		return "interrupted the Mate's turn", nil
 	case coreapi.ActionAnswer:
-		if err := c.AnswerNews(ctx, req.News, req.Input); err != nil {
+		held, err := c.AnswerNews(ctx, req.News, req.Input)
+		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("answer to news #%d sent to the Mate of %s", req.News, project), nil
+		if held.ID == 0 {
+			return fmt.Sprintf("answer to news #%d sent to the Mate of %s", req.News, project), nil
+		}
+		return fmt.Sprintf("answer to news #%d goes to the Mate of %s in %s · undo until then", req.News, project, undoIn()), nil
+	case coreapi.ActionUndo:
+		id, err := strconv.Atoi(req.Input)
+		if err != nil || id <= 0 {
+			return "", fmt.Errorf("undo names no held item: %q", req.Input)
+		}
+		held, err := c.Undo(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		switch held.Kind {
+		case matehost.HeldAnswer:
+			return fmt.Sprintf("took back the answer to news #%d · nothing sent", held.News), nil
+		case matehost.HeldOkay:
+			return fmt.Sprintf("took back the OK of work #%d · the row is still done", held.Work), nil
+		}
+		return "took back the message to the Mate of " + project + " · nothing sent", nil
 	case coreapi.ActionFork:
 		if err := c.AskSession(ctx, req.News, req.Input); err != nil {
 			return "", err
@@ -257,3 +270,55 @@ func (e *Engine) talk(ctx context.Context, req coreapi.ActionRequest) (string, e
 	}
 	return "", fmt.Errorf("%s is not a chat action", req.Action)
 }
+
+// mateHost is the host of project's Mate, when the Mate runs headless.
+func (e *Engine) mateHost(project string) (matehost.Client, error) {
+	ws := e.o.Workspace
+	if ws == nil {
+		return matehost.Client{}, errors.New("the engine has no workspace to talk in")
+	}
+	if _, ok := ws.Project(project); !ok {
+		return matehost.Client{}, fmt.Errorf("project %q is not in the workspace", project)
+	}
+	// A missing mate.meta reads empty; an error is a record that could not
+	// be read, which is said as it is.
+	meta, err := ws.ReadMateMeta(project)
+	if err != nil {
+		return matehost.Client{}, err
+	}
+	if strings.TrimSpace(meta["agent"]) == "" {
+		return matehost.Client{}, errMateNotRunning
+	}
+	if !ws.MateHeadless(project) {
+		return matehost.Client{}, errMateNotHeadless
+	}
+	return matehost.Dial(ws.MateDir(project)), nil
+}
+
+// okayOnHost hands a tick on the work board to the headless Mate's host,
+// which holds it for its undo like a message (CON-222). held is false
+// where no host takes it - no headless Mate, or its host does not answer -
+// and the tick then runs at once through Options.Act, as it did before.
+func (e *Engine) okayOnHost(ctx context.Context, req coreapi.ActionRequest) (line string, held bool, err error) {
+	id, convErr := strconv.Atoi(req.Input)
+	if convErr != nil || id <= 0 || e.o.Workspace == nil {
+		return "", false, nil
+	}
+	c, err := e.mateHost(req.Target)
+	if err != nil {
+		return "", false, nil
+	}
+	h, err := c.OkayWork(ctx, id)
+	switch {
+	case err != nil && !matehost.Refused(err):
+		return "", false, nil
+	case err != nil:
+		return "", true, err
+	case h.ID == 0:
+		return fmt.Sprintf("okayed work #%d of %s; it is off the board", id, req.Target), true, nil
+	}
+	return fmt.Sprintf("OK of work #%d of %s goes in %s · undo until then", id, req.Target, undoIn()), true, nil
+}
+
+// undoIn is the undo's time, as a line says it.
+func undoIn() string { return fmt.Sprintf("%d s", int(matehost.UndoDelay/time.Second)) }

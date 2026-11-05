@@ -29,11 +29,13 @@ import (
 // A page's chat runs in the core, on the headless Mate's host (core's
 // Engine.Act), with the text and the news the page sent, and never reaches
 // the console's action functions; everything else runs through them. A
-// page's tick on the work board is the work sheet's okay_work there
-// (CON-206): it ticks the row and says what the console says.
+// page's tick on the work board is the work sheet's okay_work (CON-206):
+// the Mate's host holds it for its undo (CON-222), and where no host
+// answers the console ticks the row and says what the console says.
 func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
+	hostGone := host.close
 	path := matehost.WorkPath(w.MateDir("shop"))
 	now := time.Now()
 	id, err := matehost.AddWork(path, matehost.WorkAssigned, "Buy button", "", now)
@@ -87,9 +89,19 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	}
 	mu.Unlock()
 
+	// The tick goes to the headless Mate's host too, which holds it for its
+	// undo (CON-222); with its host gone it runs in the console at once.
 	status, line := pagePress(t, base, fmt.Sprintf(`{"action":"okay","project":"shop","work":%d}`, id))
 	if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); status != http.StatusOK || line != want {
 		t.Fatalf("okay = %d %q, want %q", status, line, want)
+	}
+	if got, want := host.last(), (hostCall{Op: matehost.OpWorkOkay, Work: id}); got != want {
+		t.Errorf("the tick reached the Mate's host as %+v, want %+v", got, want)
+	}
+	hostGone()
+	status, line = pagePress(t, base, fmt.Sprintf(`{"action":"okay","project":"shop","work":%d}`, id))
+	if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); status != http.StatusOK || line != want {
+		t.Fatalf("okay with no host = %d %q, want %q", status, line, want)
 	}
 	mu.Lock()
 	if len(ran) != 1 || ran[0].Action != coreapi.ActionOkayWork || ran[0].Input != strconv.Itoa(id) || ran[0].Target != "shop" {
@@ -246,13 +258,18 @@ type hostCall struct {
 	Op   string `json:"op"`
 	Text string `json:"text"`
 	News int    `json:"news"`
+	Work int    `json:"work"`
 }
 
 // mateHostCalls is what a fakeMateHost was asked, in order.
 type mateHostCalls struct {
 	mu    sync.Mutex
 	calls []hostCall
+	ln    net.Listener
 }
+
+// close takes the host away: its socket is gone.
+func (h *mateHostCalls) close() { h.ln.Close() }
 
 // last is the latest request, or none.
 func (h *mateHostCalls) last() hostCall {
@@ -279,7 +296,7 @@ func fakeMateHost(t *testing.T, mateDir string) *mateHostCalls {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ln.Close() })
-	h := &mateHostCalls{}
+	h := &mateHostCalls{ln: ln}
 	go func() {
 		for {
 			conn, err := ln.Accept()

@@ -873,9 +873,9 @@ Every thing is a place, and one panel holds what it can do: docked on the right 
 
 | Place | Panel |
 | --- | --- |
-| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send with a 5-second undo, Interrupt), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
+| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send, Undo while the Mate's host holds the message for its undo (CON-222), Interrupt), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
 | a crew | state, status line, harness, branch, tokens; its buttons, Diff and Peek as toggles, `Explain notice`; links to the admin timeline, usage and the Office drawer |
-| City Hall | Topics (every news, waiting first: options, an own answer with a 5-second undo, `Discuss privately` in a read-only fork of the Mate) and Projects (each one's Mate and crews, `Remove…`, `+ Add project…`) |
+| City Hall | Topics (every news, waiting first: options, an own answer, which the Mate's host holds for its undo (CON-222), `Discuss privately` in a read-only fork of the Mate) and Projects (each one's Mate and crews, `Remove…`, `+ Add project…`) |
 | an empty park lot | the add-project form; the new project takes the next lot |
 | a block | its Mate, tents and crews |
 | a tent | its playback (below) and the crews in it |

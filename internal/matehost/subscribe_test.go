@@ -455,14 +455,24 @@ func TestSocketREPLOpsMatchDirectCalls(t *testing.T) {
 	if x, y := len(workOf(d.host)), len(workOf(s.host)); x != 1 || y != 1 {
 		t.Fatalf("work after refresh: direct %d, socket %d", x, y)
 	}
-	sameError(t, "work-okay 5", d.host.OkayWork(5), c.OkayWork(ctx, 5))
-	sameError(t, "work-okay not done", d.host.OkayWork(1), c.OkayWork(ctx, 1))
+	// The tick is held for its undo (Host.Okay): refused at once, or run
+	// once the timers run out.
+	okay := func(id int) error { _, err := d.host.Okay(id); return err }
+	sockOkay := func(id int) error { _, err := c.OkayWork(ctx, id); return err }
+	sameError(t, "work-okay 5", okay(5), sockOkay(5))
+	sameError(t, "work-okay not done", okay(1), sockOkay(1))
 	both(func(f *fixture) {
 		if err := DoneWork(WorkPath(f.dir), 1, "xong", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	})
-	sameError(t, "work-okay", d.host.OkayWork(1), c.OkayWork(ctx, 1))
+	sameError(t, "work-okay", okay(1), sockOkay(1))
+	for _, f := range []*fixture{d, s} {
+		if list, err := LoadWork(WorkPath(f.dir)); err != nil || list[0].Status != WorkDone {
+			t.Fatalf("work while the okay is held: %+v, %v", list, err)
+		}
+	}
+	both(func(f *fixture) { f.timers.fire(t) })
 	if x, y := workOf(d.host)[0].Status, workOf(s.host)[0].Status; x != y || x != WorkOkayed {
 		t.Fatalf("work after okay: direct %q, socket %q", x, y)
 	}
