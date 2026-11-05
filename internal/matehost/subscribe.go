@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -42,10 +43,14 @@ func (h *Host) publish(ev Event) {
 		return
 	}
 	line, err := eventLine(ev)
-	if err != nil {
-		return
-	}
 	for s := range h.subs {
+		if err != nil {
+			// A subscriber that missed an event would draw a stale state;
+			// cut it off, and it subscribes again from how things stand.
+			s.abort()
+			delete(h.subs, s)
+			continue
+		}
 		if !s.Put(line) {
 			delete(h.subs, s)
 		}
@@ -134,23 +139,7 @@ func (c Client) Subscribe(ctx context.Context) (<-chan Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	dec := json.NewDecoder(conn)
-	var resp response
-	if err := json.NewEncoder(conn).Encode(request{Op: OpSubscribe}); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if err := dec.Decode(&resp); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if !resp.OK {
-		conn.Close()
-		return nil, opError(resp)
-	}
-	_ = conn.SetDeadline(time.Time{})
-	out := make(chan Event)
+	// From here ctx ending closes the connection, the handshake included.
 	done := make(chan struct{})
 	go func() {
 		select {
@@ -159,6 +148,24 @@ func (c Client) Subscribe(ctx context.Context) (<-chan Event, error) {
 		}
 		_ = conn.Close()
 	}()
+	fail := func(err error) (<-chan Event, error) {
+		close(done)
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	dec := json.NewDecoder(conn)
+	if err := json.NewEncoder(conn).Encode(request{Op: OpSubscribe}); err != nil {
+		return fail(fmt.Errorf("matehost: %s: %w", OpSubscribe, err))
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return fail(fmt.Errorf("matehost: %s: %w", OpSubscribe, err))
+	}
+	if !resp.OK {
+		return fail(opError(resp))
+	}
+	_ = conn.SetDeadline(time.Time{})
+	out := make(chan Event)
 	go func() {
 		defer close(out)
 		defer close(done)
@@ -180,8 +187,10 @@ func (c Client) Subscribe(ctx context.Context) (<-chan Event, error) {
 // The wire form of an Event (CON-221). Item and SessionInfo keep a few
 // fields out of the history file and the sessions op (json:"-", or no
 // tags at all), which a client drawing the REPL still needs: the running
-// message's start (Lead) and the tools' ids and start times. Slices are
-// written even when empty, so nil and empty come back as they went.
+// message's start (Lead) and the tools' ids and start times. The Event's
+// own slices, an item's tools and a session's items are written even when
+// empty, so nil and empty come back as they went; the slices inside News
+// and Work keep their omitempty, and an empty one comes back nil.
 
 type wireTool struct {
 	ToolRecord

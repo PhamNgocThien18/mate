@@ -244,11 +244,14 @@ func TestSubscribeTwoClientsSeeTheSameEvents(t *testing.T) {
 	a, b := subscribeOnly(t, c), subscribeOnly(t, c)
 	next(t, a)
 	next(t, b)
+	f.mu.Lock()
+	from := len(f.events)
+	f.mu.Unlock()
 	f.host.Submit("chatty")
 	f.host.ClearDraft()
 	f.done(t, 1)
 	f.mu.Lock()
-	n := len(f.events)
+	n := len(f.events) - from
 	f.mu.Unlock()
 	for i := 0; i < n; i++ {
 		if x, y := wire(t, next(t, a)), wire(t, next(t, b)); x != y {
