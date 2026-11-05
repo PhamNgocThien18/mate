@@ -31,6 +31,17 @@ const (
 	OpSessionAsk   = "session-ask"
 	OpSessionClose = "session-close"
 	OpSessions     = "sessions"
+	// The REPL's own ops (CON-221), so a REPL can run as a client of the
+	// host: each answers as the Host method it is named after does, errors
+	// included.
+	OpSubscribe        = "subscribe"
+	OpSetDraft         = "set-draft"
+	OpTakeLast         = "take-last"
+	OpSeenNews         = "seen-news"
+	OpSessionOpen      = "session-open"
+	OpSessionInterrupt = "session-interrupt"
+	OpWorkOkay         = "work-okay"
+	OpWorkRefresh      = "work-refresh"
 )
 
 type request struct {
@@ -44,6 +55,8 @@ type request struct {
 	Launch *Launch `json:"launch,omitempty"`
 	// News is the news an answer or a session op is about.
 	News int `json:"news,omitempty"`
+	// Work is the work board row a work op is about.
+	Work int `json:"work,omitempty"`
 }
 
 type response struct {
@@ -59,6 +72,61 @@ type response struct {
 	Interrupted bool `json:"interrupted,omitempty"`
 	// Sessions are the open topic sessions, for OpSessions.
 	Sessions []SessionInfo `json:"sessions,omitempty"`
+	// Code names the host's error (errorCodes), so a client can give back
+	// the error the Host method returned, errors.Is and all.
+	Code string `json:"code,omitempty"`
+	// Text and Taken are what OpTakeLast took.
+	Text  string `json:"text,omitempty"`
+	Taken bool   `json:"taken,omitempty"`
+}
+
+// errorCodes are the errors a client of the REPL's ops can tell apart.
+var errorCodes = []struct {
+	code string
+	err  error
+}{
+	{"busy", ErrBusy},
+	{"queued", ErrQueued},
+	{"stopping", ErrStopping},
+	{"no-news", ErrNoNews},
+	{"no-work", ErrNoWork},
+	{"no-forks", ErrNoForks},
+	{"too-many-sessions", ErrTooManySessions},
+	{"no-session", ErrNoSession},
+	{"session-busy", ErrSessionBusy},
+}
+
+// failed is the answer to an op whose Host method returned err.
+func failed(err error) response {
+	resp := response{Error: err.Error()}
+	for _, c := range errorCodes {
+		if errors.Is(err, c.err) {
+			resp.Code = c.code
+			break
+		}
+	}
+	return resp
+}
+
+// hostError is an error the host answered with: the text the Host method's
+// error had, and the error it wrapped, when the host named one.
+type hostError struct {
+	msg string
+	err error
+}
+
+func (e *hostError) Error() string { return e.msg }
+func (e *hostError) Unwrap() error { return e.err }
+
+func opError(resp response) error {
+	e := &hostError{msg: resp.Error}
+	for _, c := range errorCodes {
+		if c.code == resp.Code {
+			e.err = c.err
+			break
+		}
+	}
+	return e
 }
 
 // maxSocketPath is the longest path a unix socket binds (panerun's rule).
@@ -72,11 +140,15 @@ func checkSocketPath(path string) error {
 }
 
 // Serve answers the socket at path until ctx ends. stop is called after a
-// stop request was answered, so the caller can exit.
+// stop request was answered, so the caller can exit. When it ends, every
+// subscriber is closed after what is queued for it, and Serve returns once
+// they are gone.
 func (h *Host) Serve(ctx context.Context, path string, stop func()) error {
 	if err := checkSocketPath(path); err != nil {
 		return err
 	}
+	h.openSubscribers()
+	defer h.closeSubscribers()
 	// A socket file left by a host that crashed would refuse the bind; the
 	// host lock already says no other host is alive.
 	_ = os.Remove(path)
@@ -106,6 +178,10 @@ func (h *Host) serveConn(conn net.Conn, stop func()) {
 	var req request
 	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&req); err != nil {
 		_ = json.NewEncoder(conn).Encode(response{Error: err.Error()})
+		return
+	}
+	if req.Op == OpSubscribe {
+		h.serveSubscriber(conn)
 		return
 	}
 	resp := h.answer(req)
@@ -186,6 +262,30 @@ func (h *Host) answer(req request) response {
 		return response{OK: true}
 	case OpSessions:
 		return response{OK: true, Sessions: h.Sessions()}
+	case OpSetDraft:
+		h.SetDraft(req.Text)
+		return response{OK: true}
+	case OpTakeLast:
+		text, ok := h.TakeLast()
+		return response{OK: true, Text: text, Taken: ok}
+	case OpSeenNews:
+		h.SeenNews(req.News)
+		return response{OK: true}
+	case OpSessionOpen:
+		if err := h.OpenSession(req.News); err != nil {
+			return failed(err)
+		}
+		return response{OK: true}
+	case OpSessionInterrupt:
+		return response{OK: true, Interrupted: h.InterruptSession(req.News)}
+	case OpWorkOkay:
+		if err := h.OkayWork(req.Work); err != nil {
+			return failed(err)
+		}
+		return response{OK: true}
+	case OpWorkRefresh:
+		h.RefreshWork()
+		return response{OK: true}
 	}
 	return response{Error: fmt.Sprintf("unknown op %q", req.Op)}
 }
@@ -206,12 +306,44 @@ type BusyError struct{ Reason string }
 
 func (e *BusyError) Error() string { return e.Reason }
 
-func (c Client) do(ctx context.Context, req request, extra time.Duration) (response, error) {
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
+func (c Client) timeout() time.Duration {
+	if c.Timeout <= 0 {
+		return 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout+extra)
+	return c.Timeout
+}
+
+// do is one request and its answer; a refusal comes back as an error
+// that names the op.
+func (c Client) do(ctx context.Context, req request, extra time.Duration) (response, error) {
+	resp, err := c.roundTrip(ctx, req, extra)
+	if err != nil {
+		return response{}, err
+	}
+	if !resp.OK {
+		if resp.Busy {
+			return resp, &BusyError{Reason: resp.Error}
+		}
+		return resp, fmt.Errorf("matehost: %s: %s", req.Op, resp.Error)
+	}
+	return resp, nil
+}
+
+// call is do for the REPL's ops: a refusal is the Host method's own error
+// (hostError).
+func (c Client) call(ctx context.Context, req request) (response, error) {
+	resp, err := c.roundTrip(ctx, req, 0)
+	if err != nil {
+		return response{}, err
+	}
+	if !resp.OK {
+		return resp, opError(resp)
+	}
+	return resp, nil
+}
+
+func (c Client) roundTrip(ctx context.Context, req request, extra time.Duration) (response, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout()+extra)
 	defer cancel()
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", c.Path)
@@ -228,12 +360,6 @@ func (c Client) do(ctx context.Context, req request, extra time.Duration) (respo
 	var resp response
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		return response{}, fmt.Errorf("matehost: %s: %w", req.Op, err)
-	}
-	if !resp.OK {
-		if resp.Busy {
-			return resp, &BusyError{Reason: resp.Error}
-		}
-		return resp, fmt.Errorf("matehost: %s: %s", req.Op, resp.Error)
 	}
 	return resp, nil
 }
@@ -328,4 +454,49 @@ func (c Client) CloseSession(ctx context.Context, id int) error {
 func (c Client) Sessions(ctx context.Context) ([]SessionInfo, error) {
 	resp, err := c.do(ctx, request{Op: OpSessions}, 0)
 	return resp.Sessions, err
+}
+
+// SetDraft records what the captain has typed and not sent (Host.SetDraft).
+func (c Client) SetDraft(ctx context.Context, text string) error {
+	_, err := c.call(ctx, request{Op: OpSetDraft, Text: text})
+	return err
+}
+
+// TakeLast takes back the newest queued captain message (Host.TakeLast).
+func (c Client) TakeLast(ctx context.Context) (string, bool, error) {
+	resp, err := c.call(ctx, request{Op: OpTakeLast})
+	return resp.Text, resp.Taken, err
+}
+
+// SeenNews marks news id as opened by the captain (Host.SeenNews).
+func (c Client) SeenNews(ctx context.Context, id int) error {
+	_, err := c.call(ctx, request{Op: OpSeenNews, News: id})
+	return err
+}
+
+// OpenSession opens news id's session, or shows the one open
+// (Host.OpenSession).
+func (c Client) OpenSession(ctx context.Context, id int) error {
+	_, err := c.call(ctx, request{Op: OpSessionOpen, News: id})
+	return err
+}
+
+// InterruptSession stops news id's session run in flight and reports
+// whether there was one (Host.InterruptSession).
+func (c Client) InterruptSession(ctx context.Context, id int) (bool, error) {
+	resp, err := c.call(ctx, request{Op: OpSessionInterrupt, News: id})
+	return resp.Interrupted, err
+}
+
+// OkayWork is the captain's tick on done row id of the work board
+// (Host.OkayWork).
+func (c Client) OkayWork(ctx context.Context, id int) error {
+	_, err := c.call(ctx, request{Op: OpWorkOkay, Work: id})
+	return err
+}
+
+// RefreshWork has the host read the work board again (Host.RefreshWork).
+func (c Client) RefreshWork(ctx context.Context) error {
+	_, err := c.call(ctx, request{Op: OpWorkRefresh})
+	return err
 }
