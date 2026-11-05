@@ -31,8 +31,6 @@ Read the evidence you have first: PROJECT.md, memory, and earlier Crews' reports
 When it already answers the question, relay it; no scout.
 Run `/usr/local/bin/mate learnings open shop` once: for each open prediction whose next check names this task's area, put one line `Prediction <crew> <id>: <claim> — check: <what this task should show>` in `## What we already know`, so `task-learning` closes it from this task's evidence. Carry nothing else from the learning archive; do not scan it.
 When the captain's intent is unclear, ask the smallest question that settles the intended behaviour or boundary, with the evidence and your recommendation.
-A bug the captain reports from a screenshot or a recording that does not show how it got there (the steps, the device, the data) is not ready to dispatch: get that state first. When the project can pull the app's own action log or report from the device, make reading it the brief's first step; otherwise ask, as news, for the steps or a screen recording. Dispatch without that state only when the captain says so, and then name it under the brief's `Unknown:`.
-On mihuv2 (HU-403), a scout spent 13.5M tokens on a simulator and could not reproduce a washi frame offset; a second scout started from the iPhone's action log and found the cause, a paper taller than the screen (817.5 pt over 793 pt), which the screenshot did not show.
 A diagnosis is evidence: a fix that serves a goal the captain already set is yours to dispatch, and you tell them; a fix beyond it is a proposal.
 Record the work in the captain's tracker when one is configured, otherwise in the backlog, before you dispatch it.
 
