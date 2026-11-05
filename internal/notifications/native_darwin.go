@@ -19,6 +19,13 @@ import (
 //go:embed macos/MateNotifications.swift
 var nativeSource []byte
 
+// supported is always true: Notification Center is part of macOS. The
+// companion app is built on the first send, and a failed build is a failed
+// send.
+func supported() bool { return true }
+
+const acceptedNote = "Notification Center accepted Mate's test notification. If no banner appeared, check System Settings > Notifications > Mate and Focus."
+
 const nativePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>

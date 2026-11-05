@@ -14,6 +14,10 @@
 // a process. The package does not build on plan9, whose syscall package
 // has no Signal type.
 //
+// The package also names the program that opens a URL on each system
+// (URLOpenerFor). That choice is a table, not a call, so it is one build
+// for every system, and a test reads it for any GOOS.
+//
 // The functions are small and keep no state. They return the system's own
 // error and leave its meaning to the caller.
 // A caller that needs a seam for its tests keeps one of its own, a function

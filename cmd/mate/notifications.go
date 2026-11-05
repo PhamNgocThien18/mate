@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,16 +19,17 @@ func cmdNotifications(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		_, err := io.WriteString(stdout, `Usage: mate notifications test
 
-Send a native macOS notification and request notification permission for Mate.
-The companion app is built once with Xcode Command Line Tools. Allow Mate in
-System Settings > Notifications. Acceptance does not prove a banner was shown;
-Focus and notification settings control presentation.
+Send a native notification. On macOS it requests notification permission for
+Mate: the companion app is built once with Xcode Command Line Tools; allow Mate
+in System Settings > Notifications. On Linux it runs notify-send, which needs a
+notification daemon. Acceptance does not prove a banner was shown; Focus and
+notification settings control presentation.
 
 While the console is running (including in the background), Mate notifies for
 news waiting on you and reports recorded state every 10 minutes without news.
-Click opens the workspace dashboard's captain desk when it is available;
-check and answer news in Mate with Ctrl+T. Quit the console to stop monitoring.
-Set MATE_NOTIFICATIONS=off in the workspace's .mate/.env to disable.
+On macOS a click opens the workspace dashboard's captain desk when it is
+available; check and answer news in Mate with Ctrl+T. Quit the console to stop
+monitoring. Set MATE_NOTIFICATIONS=off in the workspace's .mate/.env to disable.
 `)
 		return err
 	}
@@ -41,15 +41,28 @@ Set MATE_NOTIFICATIONS=off in the workspace's .mate/.env to disable.
 	}); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintln(stdout, "Notification Center accepted Mate's test notification. If no banner appeared, check System Settings > Notifications > Mate and Focus.")
+	_, err := fmt.Fprintln(stdout, notifications.AcceptedNote())
 	return err
 }
 
-// Independent from the UI refresh and Mate's turn. It owns a store handle,
-// and never waits on the Mate to deliver a notification. Like the observer,
-// its lifetime is the console's, including while the terminal is backgrounded.
+// startConsoleNotifications asks notifications.Supported once, as the
+// console starts: a machine that cannot notify (Linux without notify-send,
+// a system mate has no notifier for) runs no notification loop at all.
 func startConsoleNotifications(ctx context.Context, root, dashboardURL string) (func(), func() string, error) {
-	if runtime.GOOS != "darwin" {
+	var sender notifications.Sender
+	if notifications.Supported() {
+		sender = notifications.Native{}
+	}
+	return startNotificationLoop(ctx, root, dashboardURL, sender)
+}
+
+// startNotificationLoop sends through sender, and starts nothing when it is
+// nil. Independent from the UI refresh and Mate's turn. It owns a store
+// handle, and never waits on the Mate to deliver a notification. Like the
+// observer, its lifetime is the console's, including while the terminal is
+// backgrounded.
+func startNotificationLoop(ctx context.Context, root, dashboardURL string, sender notifications.Sender) (func(), func() string, error) {
+	if sender == nil {
 		return func() {}, func() string { return "" }, nil
 	}
 	ws, err := store.Open(root)
@@ -98,7 +111,7 @@ func startConsoleNotifications(ctx context.Context, root, dashboardURL string) (
 			}
 			snap, err := notificationSnapshot(ctx, ws, dashboardURL, time.Now())
 			if err == nil {
-				err = notifications.Tick(ctx, path, snap, notifications.Native{}, time.Now())
+				err = notifications.Tick(ctx, path, snap, sender, time.Now())
 			}
 			setStatus(err)
 			delay := 5 * time.Second

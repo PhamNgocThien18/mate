@@ -8,13 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -128,20 +128,11 @@ func dashboardDeps(w *store.Workspace) dashboard.Deps {
 	}
 }
 
-// openInBrowser is `--open`. One command per platform, the same three every
-// tool uses; a machine where none of them exists says so rather than
+// openInBrowser is `--open`: the program platform.URLOpener names for this
+// system, found on PATH; a machine without it says so rather than
 // pretending it opened something.
 func openInBrowser(url string) error {
-	var name string
-	var args []string
-	switch runtime.GOOS {
-	case "darwin":
-		name = "open"
-	case "windows":
-		name, args = "rundll32", []string{"url.dll,FileProtocolHandler"}
-	default:
-		name = "xdg-open"
-	}
+	name, args := platform.URLOpener()
 	path, err := exec.LookPath(name)
 	if err != nil {
 		return fmt.Errorf("no %s on PATH", name)
