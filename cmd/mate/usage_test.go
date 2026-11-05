@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -155,8 +156,15 @@ func TestUsageAndConsoleKeepAbsoluteContextWithoutAModelWindow(t *testing.T) {
 	if !row.Context.Valid || row.Context.Int64 != 400 || row.CtxPct.Valid {
 		t.Fatalf("absolute context requires no pricing: %+v", row)
 	}
-	tokens, ok := mateTokens(handle, "shop")
-	if !ok || tokens.ContextTokens == nil || *tokens.ContextTokens != 400 || tokens.ContextPct != nil {
+	// The console reads the engine's snapshot (internal/core).
+	engine := core.New(core.Options{Workspace: w, Harnesses: consoleHarnesses()})
+	defer engine.Stop()
+	snap, err := engine.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := snap.Projects[0].Mate.Tokens
+	if !tokens.IsKnown() || tokens.Value.ContextTokens == nil || *tokens.Value.ContextTokens != 400 || tokens.Value.ContextPct != nil {
 		t.Fatalf("console lost absolute context: %+v", tokens)
 	}
 	var out strings.Builder

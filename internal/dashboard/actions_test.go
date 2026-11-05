@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -181,6 +182,53 @@ func TestAPressRunsTheConsolesActionAndAnswersItsLine(t *testing.T) {
 	status, e, _ = post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil)
 	if status != http.StatusUnprocessableEntity || e.Error != "send: the composer is not empty" {
 		t.Fatalf("a failed action = %d %+v, want 422 with the service's own words", status, e)
+	}
+}
+
+// A press is checked against a snapshot read anew (Deps.FreshSnapshot), not
+// the one the core hands out for a couple of seconds: a stop drawn while the
+// Mate ran is refused once a fresh read says it no longer does, and the
+// buttons a GET draws still come from the handed-out one (CON-208).
+func TestAPressIsCheckedAgainstAFreshSnapshot(t *testing.T) {
+	f := newFixture(t)
+	rec := &actRecorder{}
+	handedOut := actionSnapshot()
+	fresh := actionSnapshot()
+	fresh.Projects[0].Mate.Actions = []query.ActionAvailability{{Action: "stop", Reason: "the Mate is not running"}}
+	var freshReads atomic.Int32
+	server, err := New(Options{Workspace: f.ws, DB: f.read, Deps: Deps{
+		Now:      func() time.Time { return fixtureNow },
+		Snapshot: func(context.Context) (query.Snapshot, error) { return handedOut, nil },
+		FreshSnapshot: func(context.Context) (query.Snapshot, error) {
+			freshReads.Add(1)
+			return fresh, nil
+		},
+		Act: rec.act,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(server.Handler())
+	defer ts.Close()
+
+	status, e, _ := post(t, ts, `{"action":"stop","project":"`+fixtureProject+`"}`, nil)
+	if status != http.StatusConflict || !strings.Contains(e.Error, "the Mate is not running") {
+		t.Fatalf("stop = %d %+v, want 409 with the fresh read's reason", status, e)
+	}
+	if freshReads.Load() != 1 || len(rec.got) != 0 {
+		t.Fatalf("%d fresh reads, acted %+v; want one read and nothing run", freshReads.Load(), rec.got)
+	}
+	resp, err := http.Get(ts.URL + "/api/projects/" + fixtureProject + "/actions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out ActionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if freshReads.Load() != 1 || len(out.Mate) < 2 || out.Mate[1].Action != "stop" || !out.Mate[1].Available {
+		t.Fatalf("GET drew %+v after %d fresh reads; want the handed-out snapshot's stop", out.Mate, freshReads.Load())
 	}
 }
 

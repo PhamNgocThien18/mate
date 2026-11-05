@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -23,12 +22,13 @@ func recoverySnapshot() query.Snapshot {
 	}}}
 }
 
-// Recovery runs in the engine (internal/core); the console draws where it
-// stands, read through the engine on every load.
-func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
+// Recovery runs in the engine; every snapshot says where it stands: the
+// status line while it works, a summary after, and an error on the row of
+// each agent that did not come back (it was cmd/mate's consoleRecovery).
+func TestSnapshotReportsRecoveryProgressThenASummaryAndRowErrors(t *testing.T) {
 	step := make(chan struct{})
 	release := make(chan struct{})
-	engine := core.New(core.Options{Recover: func(_ context.Context, _ *store.Workspace, progress func(recovery.Progress)) recovery.Result {
+	engine := New(Options{Recover: func(_ context.Context, _ *store.Workspace, progress func(recovery.Progress)) recovery.Result {
 		progress(recovery.Progress{Total: 2})
 		progress(recovery.Progress{Done: 1, Total: 2})
 		close(step)
@@ -42,17 +42,17 @@ func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	defer engine.Stop()
-	r := &consoleRecovery{now: time.Now, state: engine.Recovery}
 	<-step
 
-	snap := r.apply(recoverySnapshot())
+	snap := withRecovery(recoverySnapshot(), engine.Recovery(), time.Now())
 	if snap.Recovery.Line != "recovering 1 of 2…" || !snap.Recovery.Active {
 		t.Fatalf("while running: %+v, want `recovering 1 of 2…` active", snap.Recovery)
 	}
 	close(release)
 	engine.Stop() // waits for the released run to return
 
-	snap = r.apply(recoverySnapshot())
+	now := time.Now()
+	snap = withRecovery(recoverySnapshot(), engine.Recovery(), now)
 	want := "recovered 1; 1 failed: crew shop/k2: the worktree of crew k2 is gone"
 	if snap.Recovery.Line != want || snap.Recovery.Active || !snap.Recovery.Failed {
 		t.Fatalf("after: %+v, want %q failed", snap.Recovery, want)
@@ -65,9 +65,7 @@ func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
 	}
 
 	// The summary leaves the status line; the row keeps its error.
-	later := r.now().Add(recoverySummaryFor + time.Second)
-	r.now = func() time.Time { return later }
-	snap = r.apply(recoverySnapshot())
+	snap = withRecovery(recoverySnapshot(), engine.Recovery(), now.Add(recoverySummaryFor+time.Second))
 	if snap.Recovery.Line != "" || !snap.Projects[0].Crews[1].Error.IsKnown() {
 		t.Fatalf("after the summary expired: line %q, k2 error %+v", snap.Recovery.Line, snap.Projects[0].Crews[1].Error)
 	}

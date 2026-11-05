@@ -52,10 +52,14 @@ type Deps struct {
 	// stopped moving (CON-139). Nil - `mate dashboard` on its own, or a
 	// console that is not the writer - says nothing.
 	TimelineStale func() []timeline.Stale
-	// Snapshot is the console's own read of the workspace (query.LoadLive
-	// and what the console adds to it): the availability its action sheet
-	// shows, and the one the action buttons show (CON-141).
+	// Snapshot is the core's read of the workspace (query.LoadLive and
+	// what the engine adds to it, internal/core): the availability the
+	// console's action sheet shows, and the one the action buttons show
+	// (CON-141). The core may hand out one read for a couple of seconds.
 	Snapshot coreapi.LoadFunc
+	// FreshSnapshot is the same read made anew, which a press is checked
+	// against before its action runs. Nil checks against Snapshot.
+	FreshSnapshot coreapi.LoadFunc
 	// Act runs one action exactly as the console's action sheet does, and
 	// returns its one line. A page's press reaches it as the core's request
 	// (coreRequest, CON-206). Act and Snapshot are wired only by the

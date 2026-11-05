@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/notifications"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -35,6 +36,20 @@ func TestTheRealLoopsStopRightAfterTheyStart(t *testing.T) {
 		{"sender", SenderLoop(sender)},
 		{"pilot", PilotLoop(autopilot.New(ws, autopilot.Deps{Outbox: sender}))},
 	}
+	// And the ones the engine builds itself (CON-208): the reading of
+	// workspace.yaml, the dashboard and the notifications.
+	withTimelineDB(t, ws)
+	e := New(Options{Workspace: ws, Dashboard: &DashboardOptions{Addr: freeAddr},
+		Notifier: senderFunc(func(context.Context, notifications.Message) error { return nil })})
+	defer e.Stop()
+	loops = append(loops, []struct {
+		name string
+		loop Loop
+	}{
+		{"config reload", e.reload},
+		{"dashboard", e.dashboard},
+		{"notifications", e.notify},
+	}...)
 	for range 20 {
 		for _, l := range loops {
 			if err := l.loop.Start(context.Background()); err != nil {
