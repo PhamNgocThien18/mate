@@ -19,7 +19,10 @@ import (
 func ptysmokeBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "ptysmoke")
-	cmd := exec.Command("go", "build", "-o", bin, "github.com/nguyenngocanh94/mate/scripts/ptysmoke")
+	// ptysmoke is its own module, so it builds from its directory rather
+	// than by import path from this one. Tests run in cmd/mate.
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = filepath.Join("..", "..", "scripts", "ptysmoke")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build ptysmoke: %v\n%s", err, out)
 	}
