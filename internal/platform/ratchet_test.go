@@ -7,7 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,31 +28,45 @@ import (
 //     import of syscall or runtime, whose uses the scan could not tell;
 //   - "osascript" as a word of a string literal.
 //
-// Only a file listed below may have any. A use in any other file fails the
-// test, and so does a listed file that has none left, so the lists only get
-// shorter. What a file needs from the system belongs in this package; a
-// file joins platformLasting only when it is an adapter bound to one system
-// or one tool.
+// Only the files listed below may have any, and each only the uses its
+// entry names. Any other use fails the test, and so does a use an entry
+// names that its file no longer has, so the lists only get shorter. What a
+// file needs from the system belongs in this package; a file joins
+// platformAdapters only when it is an adapter bound to one system or one
+// tool.
 
 type platformEntry struct {
-	file   string // module-relative, slash-separated
+	file   string   // module-relative, slash-separated
+	uses   []string // what the file may use, as the scan names it
 	reason string
 }
 
-// platformLasting are adapters bound to one operating system or one tool.
-var platformLasting = []platformEntry{
-	{file: "internal/host/ghostty.go", reason: "drives Ghostty through AppleScript (osascript), which only macOS has"},
-	{file: "internal/matehost/input.go", reason: "reads the terminal's keys with poll(2) (golang.org/x/sys/unix)"},
-	{file: "internal/runtime/herdr.go", reason: "starts the Herdr server in a session of its own (Setsid)"},
-	{file: "internal/runtime/herdr_session_stream.go", reason: "runs a Herdr session stream on a pseudo-terminal (creack/pty), polls it (golang.org/x/sys/unix) and ends the stream's process group (syscall.Kill)"},
+// platformAdapters are adapters bound to one operating system or one tool.
+var platformAdapters = []platformEntry{
+	{
+		file: "internal/host/ghostty.go", uses: []string{`"osascript"`},
+		reason: "drives Ghostty through AppleScript, which only macOS has",
+	},
+	{
+		file: "internal/matehost/input.go", uses: []string{`import "golang.org/x/sys/unix"`},
+		reason: "reads the terminal's keys with poll(2)",
+	},
+	{
+		file: "internal/runtime/herdr.go", uses: []string{"Setsid"},
+		reason: "starts the Herdr server in a session of its own; the command is built, and its attributes tested, apart from its start, which platform.StartNewSession does in one call",
+	},
+	{
+		file: "internal/runtime/herdr_session_stream.go", uses: []string{`import "github.com/creack/pty"`, `import "golang.org/x/sys/unix"`, "syscall.Kill"},
+		reason: "runs a Herdr session stream on a pseudo-terminal and polls it; its syscall.Kill on the stream's process group could be platform.SignalGroup, debt left in a file CON-184 does not touch (CON-190 moves it)",
+	},
 }
 
 // platformDebt are files that choose by operating system themselves; CON-185
 // moves that choice out of them and removes their entries.
 var platformDebt = []platformEntry{
-	{file: "cmd/mate/console_plugins.go", reason: "CON-185: picks the program that opens a URL by runtime.GOOS"},
-	{file: "cmd/mate/dashboard.go", reason: "CON-185: picks the program that opens the browser by runtime.GOOS"},
-	{file: "cmd/mate/notifications.go", reason: "CON-185: turns notifications off outside darwin by runtime.GOOS"},
+	{file: "cmd/mate/console_plugins.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: picks the program that opens a URL by the operating system"},
+	{file: "cmd/mate/dashboard.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: picks the program that opens the browser by the operating system"},
+	{file: "cmd/mate/notifications.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: turns notifications off outside darwin"},
 }
 
 const ratchetFile = "internal/platform/ratchet_test.go"
@@ -67,56 +81,53 @@ func (u platformUse) String() string { return fmt.Sprintf("%s:%d: %s", u.file, u
 
 func TestOSCallsStayInPlatform(t *testing.T) {
 	root := moduleRoot(t)
+	entries := append(append([]platformEntry{}, platformAdapters...), platformDebt...)
 	allowed := map[string]platformEntry{}
-	for _, e := range append(append([]platformEntry{}, platformLasting...), platformDebt...) {
+	for _, e := range entries {
 		if _, twice := allowed[e.file]; twice {
 			t.Errorf("%s is listed twice in %s", e.file, ratchetFile)
 		}
-		if strings.TrimSpace(e.reason) == "" {
-			t.Errorf("%s is listed in %s without a reason", e.file, ratchetFile)
+		if len(e.uses) == 0 || strings.TrimSpace(e.reason) == "" {
+			t.Errorf("%s is listed in %s without the uses it may have and why", e.file, ratchetFile)
 		}
 		allowed[e.file] = e
 	}
 
-	byFile := map[string][]platformUse{}
+	seen := map[string]map[string]int{} // file, use: how many
 	var outside []platformUse
 	for _, path := range platformScanFiles(t, root) {
 		for _, u := range scanPlatformUses(t, root, path) {
-			if _, ok := allowed[u.file]; ok {
-				byFile[u.file] = append(byFile[u.file], u)
+			if e, ok := allowed[u.file]; !ok || !slices.Contains(e.uses, u.what) {
+				outside = append(outside, u)
 				continue
 			}
-			outside = append(outside, u)
+			if seen[u.file] == nil {
+				seen[u.file] = map[string]int{}
+			}
+			seen[u.file][u.what]++
 		}
 	}
 
-	files := make([]string, 0, len(byFile))
-	for f := range byFile {
-		files = append(files, f)
-	}
-	sort.Strings(files)
 	var inventory strings.Builder
-	for _, f := range files {
-		var what []string
-		for _, u := range byFile[f] {
-			what = append(what, u.what)
+	for _, e := range entries {
+		var uses []string
+		for _, use := range e.uses {
+			uses = append(uses, fmt.Sprintf("%s (%d)", use, seen[e.file][use]))
+			if seen[e.file][use] == 0 {
+				t.Errorf("%s no longer uses %s; remove it from the file's entry in %s, and the entry once it names nothing", e.file, use, ratchetFile)
+			}
 		}
-		fmt.Fprintf(&inventory, "  %-42s %s\n", f, strings.Join(what, ", "))
+		fmt.Fprintf(&inventory, "  %-42s %s\n", e.file, strings.Join(uses, ", "))
 	}
 	t.Logf("operating system calls outside internal/platform, by allowed file:\n%s", inventory.String())
 
-	for _, e := range append(append([]platformEntry{}, platformLasting...), platformDebt...) {
-		if len(byFile[e.file]) == 0 {
-			t.Errorf("%s is allowed the calls (%s) but uses none of them; remove its entry from %s", e.file, e.reason, ratchetFile)
-		}
-	}
 	if len(outside) > 0 {
 		var all strings.Builder
 		for _, u := range outside {
 			all.WriteString("  " + u.String() + "\n")
 		}
-		t.Errorf("%d operating system calls outside internal/platform, in files %s does not list:\n%s"+
-			"Call internal/platform instead, and add there what it lacks. Only an adapter bound to one system or one tool joins platformLasting, with its reason.",
+		t.Errorf("%d operating system calls outside internal/platform that %s does not allow:\n%s"+
+			"Call internal/platform instead, and add there what it lacks. Only an adapter bound to one system or one tool joins platformAdapters, with the uses it needs and why.",
 			len(outside), ratchetFile, all.String())
 	}
 }
@@ -248,8 +259,10 @@ func platformScanFiles(t *testing.T, root string) []string {
 }
 
 // platformSyscalls are the syscall names counted, besides the LOCK_
-// constants: the rest of package syscall (SIGTERM, EPERM, Signal) is the
-// same on every system mate builds for.
+// constants. The scan counts what CON-184 names, not every name a port would
+// trip on: the signals and errors the callers name (SIGINT, SIGTERM,
+// SIGKILL, EPERM, ESRCH) and the Signal type are defined on windows too, but
+// syscall.SIGTSTP, for one, is not.
 var platformSyscalls = map[string]bool{"Flock": true, "Kill": true, "Getpgid": true, "O_NOFOLLOW": true}
 
 // platformImports are the packages whose import is itself a use.
