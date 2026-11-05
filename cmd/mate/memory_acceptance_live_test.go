@@ -25,6 +25,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -318,11 +319,11 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 		t.Fatalf("memory check failed: %v\n%s%s", err, check.String(), checkErr.String())
 	}
 	t.Logf("EVIDENCE memory check: %s%s", check.String(), checkErr.String())
-	var recall bytes.Buffer
-	if err := run([]string{"recall", memoryProject, "--workspace", root}, &recall, os.Stderr); err != nil {
+	var recalled bytes.Buffer
+	if err := run([]string{"recall", memoryProject, "--workspace", root}, &recalled, os.Stderr); err != nil {
 		t.Fatalf("recall: %v", err)
 	}
-	digest := recall.String()
+	digest := recalled.String()
 	// The lesson as it stands now: a stow may rewrite it in place, but it
 	// must still be a ## Lessons entry, and the digest must carry it.
 	lessonNow := routedLesson(t, w, memoryProject)
@@ -336,7 +337,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	if !memoryLessonRE.MatchString(digest) {
 		t.Fatalf("recall carries no trace of the correction:\n%s", digest)
 	}
-	if nowHeld := recallClip(heldNews(t, w, memoryProject), 300); !strings.Contains(digest, nowHeld) {
+	if nowHeld := recall.Clip(heldNews(t, w, memoryProject), 300); !strings.Contains(digest, nowHeld) {
 		t.Fatalf("recall does not carry the held question %q:\n%s", nowHeld, digest)
 	}
 	if now := strings.TrimSpace(gitOut(t, repo, "rev-parse", "main")); now != mainBefore {

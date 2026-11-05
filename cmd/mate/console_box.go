@@ -13,6 +13,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -225,7 +226,7 @@ func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps
 		if !confirmed {
 			holds.put(req.Target, time.Now())
 			return fmt.Sprintf("held: the Mate's composer holds unsent text (%s), so mate typed nothing and restarted nothing; choose Restart again within %s to restart without stowing, which discards that text",
-				strconv.Quote(recallClip(stow.Pending, 80)), outbox.Span(restartConfirmWindow)), nil
+				strconv.Quote(recall.Clip(stow.Pending, 80)), outbox.Span(restartConfirmWindow)), nil
 		}
 		stow.Reason = "the composer held unsent text; restarted on your confirmation"
 	}

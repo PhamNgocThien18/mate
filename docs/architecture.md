@@ -13,7 +13,7 @@ shared snapshot, Office/City and notifications (CON-208), and the one entry
 for every UI's actions (CON-209); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
-`internal/usage` (CON-168). Every
+`internal/usage` (CON-168); `internal/recall` (CON-167). Every
 part marked **Target** below is planned, not built; the issue named beside it
 owns the change. A PR that moves a package or a process updates the
 paragraph it changes.
@@ -37,7 +37,7 @@ names the layers its imports and importers allow.
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `timeline/read`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
-| 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `usage`, `core` |
+| 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `recall`, `dashboard`, `usage`, `core` |
 | 6 UI (giao diện) | What the captain looks at; Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` (service) | `ui/console` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
@@ -270,7 +270,7 @@ itself runs); dispatch and the usage text both come from that table, and
 `cmd/mate/dispatch_test.go` checks every row is reachable and listed. Put the
 handler `cmdX` in `cmd/mate/<x>.go`, with only flag parsing and output there,
 and the logic in an `internal/` package, as `internal/wake` does for
-`mate wake` (CON-164; **Target**: CON-167 moves recall out). A command the
+`mate wake` and `internal/recall` for `mate recall` (CON-164). A command the
 Mate or a Crew uses must also be taught in its manual or skill under
 `assets/mate/` or the brief template `assets/crew/brief.md.tmpl`. A console
 key that runs a tool is not a CLI command: `.mate/console.yaml`,

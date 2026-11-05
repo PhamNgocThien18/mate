@@ -12,6 +12,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -282,7 +283,7 @@ func TestBacklogCLIEntriesRemainVisibleToRecall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, ids := splitBacklog(string(data))
+	_, _, ids := recall.SplitBacklog(string(data))
 	if len(ids) != 1 || ids[0] != "checkout" {
 		t.Fatalf("recall lost new CLI entry: %s", data)
 	}

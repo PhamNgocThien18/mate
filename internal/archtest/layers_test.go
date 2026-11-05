@@ -129,6 +129,7 @@ var layers = map[string]layer{
 	"internal/mateassets":      service,
 	"internal/hook":            service,
 	"internal/wake":            service,
+	"internal/recall":          service,
 	"internal/dashboard":       service,
 	"internal/usage":           service,
 	"internal/core":            service,
