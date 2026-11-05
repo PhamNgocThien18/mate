@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 
 	"github.com/nguyenngocanh94/mate/internal/platform"
@@ -50,6 +51,35 @@ func gone(t *testing.T, pid int) bool {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return false
+}
+
+// TestStartOnTerminalGivesTheCommandItsTerminal: the command leads a new
+// session whose controlling terminal is the pseudo-terminal on its stdin, so
+// that terminal's foreground process group is the command's.
+func TestStartOnTerminalGivesTheCommandItsTerminal(t *testing.T) {
+	master, tty, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = master.Close() })
+	cmd := exec.Command("sleep", "60")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+	err = platform.StartOnTerminal(cmd)
+	_ = tty.Close()
+	if err != nil {
+		t.Fatalf("StartOnTerminal = %v", err)
+	}
+	pid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	if sid, err := unix.Getsid(pid); err != nil || sid != pid {
+		t.Fatalf("Getsid(%d) = %d, %v; want the command's own pid", pid, sid, err)
+	}
+	if pgrp, err := unix.IoctlGetInt(int(master.Fd()), unix.TIOCGPGRP); err != nil || pgrp != pid {
+		t.Fatalf("the terminal's foreground group = %d, %v; want the command's own pid %d", pgrp, err, pid)
+	}
 }
 
 // TestSignalGroupReachesWhatTheLeaderStarted: a command started with
