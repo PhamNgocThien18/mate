@@ -28,12 +28,15 @@ func (c *capture) String() string {
 	return c.buf.String()
 }
 
-func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
+// screenPipe is a terminal for a runner: what the runner and its children
+// write to the file it returns lands on the screen.
+func screenPipe(t *testing.T) (*os.File, *capture) {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = w.Close() })
 	screen := &capture{}
 	go func() {
 		chunk := make([]byte, 4096)
@@ -47,6 +50,12 @@ func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
 			}
 		}
 	}()
+	return w, screen
+}
+
+func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
+	t.Helper()
+	w, screen := screenPipe(t)
 	var restores atomic.Int32
 	// A short path: a unix socket path is limited to about 100 bytes.
 	dir, err := SocketDir("pr", "none.sock")
@@ -63,7 +72,6 @@ func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
 		if err := <-served; err != nil {
 			t.Errorf("Serve: %v", err)
 		}
-		_ = w.Close()
 		_ = os.RemoveAll(dir)
 	})
 	return socket, screen, &restores
@@ -78,13 +86,21 @@ func waitFor(t *testing.T, ok func() bool) {
 // comes only after one of the runner's polls.
 func waitForWithin(t *testing.T, limit time.Duration, ok func() bool) {
 	t.Helper()
+	if !eventually(limit, ok) {
+		t.Fatalf("condition not met within %s", limit)
+	}
+}
+
+// eventually reports whether ok comes to hold within limit.
+func eventually(limit time.Duration, ok func() bool) bool {
 	deadline := time.Now().Add(limit)
 	for !ok() {
 		if time.Now().After(deadline) {
-			t.Fatalf("condition not met within %s", limit)
+			return false
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	return true
 }
 
 // send asks the runner on socket to show argv. A send is refused until the
@@ -174,6 +190,104 @@ func TestAChildThatExitsLeavesTheIdleLine(t *testing.T) {
 	waitFor(t, func() bool { return strings.Contains(screen.String(), "sh exited: exit status 3") })
 	if !strings.Contains(screen.String()[strings.Index(screen.String(), "exit status 3"):], "nothing shown yet") {
 		t.Fatal("the idle line did not follow the exit note")
+	}
+}
+
+// A program can exit on its own just as the Console sends the next one.
+// The runner used to decide under its lock that the exit was the column's,
+// then clean up after letting go, so Run could start the next program in
+// between and the late clean-up landed on it: the exit note and the idle
+// line drawn over it, the terminal modes it set put back (CON-217). The
+// test holds the clean-up at its first step, Term.Restore, as if the runner
+// were descheduled there, and sends meanwhile. The Console's sends reach
+// Run one at a time, as Serve's accept loop takes them.
+func TestAnExitNeverCleansUpOverTheNextProgram(t *testing.T) {
+	// How long the clean-up is held when the sends wait for it, as they
+	// should; had they not waited, they would have gone through by then.
+	const holdFor = 300 * time.Millisecond
+	// The screen shows where Term.Restore put the modes back.
+	const restored = "<modes restored>"
+	for _, tc := range []struct {
+		name  string
+		sends []string // scripts sent while the exit's clean-up is held
+		last  string   // what the last of them prints first
+	}{
+		{"one program", []string{"echo b-started; exec sleep 30"}, "b-started"},
+		{"two in a row", []string{"echo b-started; exec sleep 30", "echo c-started; exec sleep 30"}, "c-started"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, screen := screenPipe(t)
+			ended := filepath.Join(t.TempDir(), "ended")
+			cleanUpHeld, released := make(chan struct{}), make(chan struct{})
+			release := sync.OnceFunc(func() { close(released) })
+			var holding atomic.Bool
+			s := &Server{Idle: "idle-line", Term: Terminal{Out: w, Err: w, Restore: func() {
+				// The program touches ended as it ends, so the first
+				// restore after that is its clean-up, which puts the
+				// modes back only once released.
+				if _, err := os.Stat(ended); err == nil && holding.CompareAndSwap(false, true) {
+					close(cleanUpHeld)
+					<-released
+				}
+				_, _ = io.WriteString(w, restored)
+			}}}
+			t.Cleanup(func() {
+				release()
+				s.stop()
+			})
+			if err := s.Run(Command{Argv: []string{"sh", "-c", "touch " + ended}}); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-cleanUpHeld:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the program that exited was never cleaned up after")
+			}
+			var sendErr error
+			sent := make(chan struct{})
+			go func() {
+				defer close(sent)
+				for _, script := range tc.sends {
+					if sendErr = s.Run(Command{Argv: []string{"sh", "-c", script}}); sendErr != nil {
+						return
+					}
+				}
+			}()
+			// waitForLast waits, once the sends are done, for the last
+			// program to draw its first line.
+			waitForLast := func() {
+				t.Helper()
+				if sendErr != nil {
+					t.Fatal(sendErr)
+				}
+				waitFor(t, func() bool { return strings.Contains(screen.String(), tc.last) })
+			}
+			select {
+			case <-sent:
+				// The sends went through while the clean-up was held: it
+				// goes on once the last program is on the screen.
+				waitForLast()
+			case <-time.After(holdFor):
+			}
+			release()
+			select {
+			case <-sent:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the sends never went through")
+			}
+			waitForLast()
+			// The clean-up ends with the idle line when it draws one: let a
+			// late one land before the screen is read.
+			eventually(time.Second, func() bool { return strings.Contains(screen.String(), "idle-line") })
+			out := screen.String()
+			after := out[strings.LastIndex(out, tc.last):]
+			if strings.Contains(after, restored) {
+				t.Errorf("the terminal modes were put back after the last program started: %q", after)
+			}
+			if strings.Contains(after, "exited") || strings.Contains(after, "idle-line") {
+				t.Errorf("the exit note and the idle line were drawn over the last program: %q", after)
+			}
+		})
 	}
 }
 
