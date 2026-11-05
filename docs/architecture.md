@@ -20,11 +20,14 @@ paragraph it changes.
 
 Seven layers, lowest first. Every package with a non-test `.go` file under
 `cmd/`, `internal/` and `assets/` belongs to exactly one, except the
-test-only packages of rule 3. The Packages column is authoritative: a
-package not listed has no layer yet, and a subpackage does not inherit its
-parent's layer (`harness` is read, `harness/claude` integration;
-`timeline/scene` is read, `timeline` service). The "What belongs" column
-describes the layer; it does not decide it.
+test-only packages of rule 3. The Packages column decides: a package not
+listed has no layer yet, and a subpackage does not inherit its parent's
+layer (`harness` is read, `harness/claude` integration; `timeline/scene` is
+read, `timeline` service). The "What belongs" column describes the layer;
+it does not decide it. The same table is data in code, `layers` in
+`internal/archtest/layers_test.go`, and the test keeps both equal: a new
+package goes into both in one change, and the test's message names the
+layers its imports and importers allow.
 
 | Layer | What belongs | Packages |
 | -- | -- | -- |
@@ -33,7 +36,7 @@ describes the layer; it does not decide it.
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
 | 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `core` |
-| 6 UI (giao diện) | What the captain looks at | `ui/console` (Go); Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` |
+| 6 UI (giao diện) | What the captain looks at; Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` (service) | `ui/console` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
 Package paths are under `internal/` except `assets` and `cmd/mate`. Some
@@ -59,7 +62,12 @@ packages below storage still read or write a file under `.mate/` (section
    it, and `make vet` vets it separately.
 4. The boundary tests of section 4 add stricter local rules on top.
 
-Violations on `main` today, both debt:
+`internal/archtest/layers_test.go` checks rule 1 in `make check`: it fails
+on a package with no layer, on an import that breaks the rule, and on a
+line of `internal/archtest/violations.txt` that no longer happens. That
+file lists today's violations, one import pair per line, each either an
+exception (it stays; the reason is on the line) or debt (it must go). There
+are no exceptions. Debt on `main` today:
 
 - `memory` (leaf) imports `facts` (integration) for `facts.Anchor` and
   `facts.NoHead`, and so links `gitx`.
@@ -79,9 +87,6 @@ engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
 reads `store`, `db`, `timeline` and `matehost` itself. The UI is the web
 pages it serves. Since CON-165 it no longer imports `spawn`
 (`store.Workspace.CrewIsScout`).
-
-**Target**: CON-188 turns this table and these rules into a test with a
-per-package table in code and a list of today's violations.
 
 ## 2. Processes and how they talk
 
@@ -197,6 +202,8 @@ creates and removes; `teardown` first stops what the worktree started.
 
 Each test fails `make check` when its rule breaks. The first four are the
 ones CON-179 names; the last three came with CON-184, CON-206 and CON-207.
+They add local rules to the repo-wide layer rule, which
+`internal/archtest/layers_test.go` checks (section 1).
 
 | Test | Rule |
 | -- | -- |
