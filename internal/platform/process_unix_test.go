@@ -33,7 +33,7 @@ func TestStartNewSessionLeadsASessionOfItsOwn(t *testing.T) {
 	if sid, err := unix.Getsid(pid); err != nil || sid != pid {
 		t.Fatalf("Getsid(%d) = %d, %v; want the command's own pid", pid, sid, err)
 	}
-	if pgid, err := syscall.Getpgid(pid); err != nil || pgid != pid {
+	if pgid, err := unix.Getpgid(pid); err != nil || pgid != pid {
 		t.Fatalf("Getpgid(%d) = %d, %v; want the command's own pid", pid, pgid, err)
 	}
 }
@@ -75,11 +75,11 @@ func TestSignalGroupReachesWhatTheLeaderStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, pid := range []int{leader, sleeper} {
-		if pgid, err := syscall.Getpgid(pid); err != nil || pgid != leader {
+		if pgid, err := unix.Getpgid(pid); err != nil || pgid != leader {
 			t.Fatalf("Getpgid(%d) = %d, %v; want the leader's pid %d", pid, pgid, err, leader)
 		}
 	}
-	if pgid, _ := syscall.Getpgid(os.Getpid()); pgid == leader {
+	if pgid, _ := unix.Getpgid(os.Getpid()); pgid == leader {
 		t.Fatal("the test runs in the new group; want the group to be the command's alone")
 	}
 
@@ -110,11 +110,11 @@ func TestSignalZeroTellsWhetherAProcessExists(t *testing.T) {
 	if err := platform.Signal(os.Getpid(), 0); err != nil {
 		t.Fatalf("Signal(self, 0) = %v; want nil", err)
 	}
-	gone := exec.Command("true")
-	if err := gone.Run(); err != nil {
+	reaped := exec.Command("true")
+	if err := reaped.Run(); err != nil {
 		t.Fatal(err)
 	}
-	if err := platform.Signal(gone.Process.Pid, 0); !errors.Is(err, syscall.ESRCH) {
+	if err := platform.Signal(reaped.Process.Pid, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("Signal(reaped child, 0) = %v; want ESRCH", err)
 	}
 }
