@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +17,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // cmdState implements `mate state <project> <crew>` (docs/mvp.md task 13,
@@ -85,19 +85,13 @@ func tokensSuffix(w *store.Workspace, project, crew string) string {
 	}
 	defer handle.Close()
 
-	var total int64
-	var contextPct sql.NullFloat64
-	err = handle.SQL().QueryRow(`
-		SELECT COALESCE(input_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_write_tokens,0)+COALESCE(output_tokens,0),
-		       context_pct
-		  FROM v_task_ledger WHERE crew_actor_id = ?`, timeline.CrewActorID(project, crew)).
-		Scan(&total, &contextPct)
+	tokens, err := read.TaskTokensOf(context.Background(), handle.SQL(), timeline.CrewActorID(project, crew))
 	if err != nil {
 		return ""
 	}
-	out := " · tokens: " + query.HumanizeTokens(total)
-	if contextPct.Valid {
-		out += fmt.Sprintf(" · ctx: %.0f%%", contextPct.Float64)
+	out := " · tokens: " + query.HumanizeTokens(tokens.Total)
+	if tokens.ContextPct.Valid {
+		out += fmt.Sprintf(" · ctx: %.0f%%", tokens.ContextPct.Float64)
 	}
 	return out
 }

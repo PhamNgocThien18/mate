@@ -13,6 +13,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // routes is the whole API surface. Every pattern names its method: a POST
@@ -503,21 +504,7 @@ func (s *Server) eventsSince(ctx context.Context, project string, since int64, e
 }
 
 func (s *Server) movedActors(ctx context.Context, project string, since int64) ([]string, error) {
-	rows, err := s.db.SQL().QueryContext(ctx,
-		`SELECT DISTINCT actor_id FROM transition WHERE project = ? AND event_id > ?`, project, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return read.MovedActors(ctx, s.db.SQL(), project, since)
 }
 
 // project reads the {project} path value and checks it is registered. An
