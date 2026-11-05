@@ -36,6 +36,8 @@ type consoleColumns struct {
 	dir   string
 	stage string
 	herdr string
+	// mate is this binary, which the stage runs as a headless Mate's REPL.
+	mate string
 	// findTool is a tool binary's absolute path, "" when it is not
 	// installed.
 	findTool func(string) string
@@ -65,7 +67,7 @@ func newConsoleColumns(h host.Host, getenv func(string) string) (*consoleColumns
 		return nil, err
 	}
 	c := &consoleColumns{
-		h: h, dir: dir, stage: filepath.Join(dir, roleStage+".sock"), herdr: findTool(getenv, "herdr"),
+		h: h, dir: dir, stage: filepath.Join(dir, roleStage+".sock"), herdr: findTool(getenv, "herdr"), mate: exe,
 		tabs: map[string]commandTab{},
 		findTool: func(name string) string {
 			if p := findTool(getenv, name); filepath.IsAbs(p) {
@@ -186,14 +188,24 @@ func (c *consoleColumns) close() {
 	}
 }
 
-// consoleStage is the Console's Enter seam: the stage attaches the row's
+// consoleStage is the Console's Enter seam: the stage shows the row's
 // agent and stays there. Configured commands have their own keys. A nil columns
 // yields a nil StageFunc, which the Console reads as "no next pane".
+//
+// A headless Mate is shown by its REPL, run in the stage as a client of
+// the Mate's host (CON-224): it has no TUI to attach to, and its host
+// leaves Herdr (CON-216), so neither its pane nor the Herdr session is
+// asked. Its news and work requests (openNewsAction, openWorkAction)
+// reach that REPL through the host. A Mate with a TUI - Codex, pi,
+// `mate.mode: pane` - and a crew are attached as before.
 func consoleStage(ws *store.Workspace, deps spawn.Deps, c *consoleColumns) console.StageFunc {
 	if c == nil {
 		return nil
 	}
 	return func(ctx context.Context, target console.StageTarget) error {
+		if target.Kind == console.StageMate && target.ProjectID != "" && ws.MateHeadless(target.ProjectID) {
+			return c.show(ctx, c.cols, c.stage, panerun.Command{Argv: host.REPLArgv(c.mate, ws.Root(), target.ProjectID), Env: c.env})
+		}
 		ref, _, err := stageRef(ws, target)
 		if err != nil {
 			return err

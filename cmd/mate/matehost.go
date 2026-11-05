@@ -135,8 +135,9 @@ func runREPLProcess(ctx context.Context, bin, project, root string) error {
 
 // cmdMateREPL implements `mate mate repl <project>` (CON-223): the Mate's
 // REPL as a client of its host's socket, in this terminal. The host runs
-// one in its own pane (--in-pane); another terminal can open one beside
-// it, and both show the same chat and the same draft.
+// one in its own pane, and the console's stage one in its column (both
+// --in-pane, CON-224); another terminal can open one beside them, and
+// all show the same chat and the same draft.
 func cmdMateREPL(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("mate repl", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -144,7 +145,7 @@ func cmdMateREPL(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "usage: mate mate repl <project> [--workspace <dir>]")
 	}
 	workspaceFlag := fs.String("workspace", "", "workspace directory")
-	inPane := fs.Bool("in-pane", false, "run as the host's own REPL, which ^C never closes (mate mate host passes it)")
+	inPane := fs.Bool("in-pane", false, "run in a pane mate keeps open, which ^C never closes (mate mate host and the console's stage pass it)")
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return &usageError{err}
 	}

@@ -68,6 +68,7 @@ func (h *Host) serveSubscriber(conn net.Conn) {
 	}
 	h.mu.Lock()
 	first := h.eventLocked(h.cur)
+	h.freshFocusLocked(&first)
 	h.mu.Unlock()
 	line, err := eventLine(first)
 	if err != nil {
@@ -96,6 +97,30 @@ func (h *Host) serveSubscriber(conn net.Conn) {
 	h.subMu.Lock()
 	delete(h.subs, s)
 	h.subMu.Unlock()
+}
+
+// focusFresh is how long an open request the console made stays the
+// captain's now for a REPL that subscribes after the host read it. The
+// console's stage starts a REPL of its own beside the request (CON-224):
+// Enter on a news stages the Mate and asks for the news at once, and `w`
+// stages it once the board is asked for, so the request can be read and
+// emitted before that REPL has subscribed. Its first event carries it
+// instead.
+const focusFresh = 5 * time.Second
+
+// freshFocusLocked puts in a subscriber's first event the open request
+// read less than focusFresh ago, the later of the two when both were.
+// h.mu is held.
+func (h *Host) freshFocusLocked(ev *Event) {
+	now := h.now()
+	news := h.focusNews > 0 && now.Sub(h.focusNewsAt) < focusFresh
+	work := !h.focusWorkAt.IsZero() && now.Sub(h.focusWorkAt) < focusFresh
+	switch {
+	case work && (!news || h.focusWorkAt.After(h.focusNewsAt)):
+		ev.FocusWork = true
+	case news:
+		ev.Focus = h.focusNews
+	}
 }
 
 // closeSubscribers ends every subscriber after what is queued for it, and
