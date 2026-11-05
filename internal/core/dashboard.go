@@ -38,8 +38,9 @@ type dashboardPart struct {
 	o    DashboardOptions
 	deps func() dashboard.Deps
 
-	// cancel, done and handle are set by Start and read by Stop, which the
-	// engine calls one after the other under its own lock.
+	// cancel, done and handle are set by Start and read by Stop: the
+	// engine calls each once, Stop on a goroutine it starts after Start
+	// has returned.
 	cancel context.CancelFunc
 	done   chan struct{}
 	handle *db.DB

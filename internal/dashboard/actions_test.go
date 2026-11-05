@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -230,6 +231,34 @@ func TestAPressIsCheckedAgainstAFreshSnapshot(t *testing.T) {
 	}
 }
 
+// A press whose fresh read finds the core stopping (CON-210) is refused in
+// the core's words as a 409, not a 500 for a workspace that could not be
+// read, and nothing runs.
+func TestAPressWhileTheCoreStopsIsAConflict(t *testing.T) {
+	f := newFixture(t)
+	rec := &actRecorder{}
+	server, err := New(Options{Workspace: f.ws, DB: f.read, Deps: Deps{
+		Now:      func() time.Time { return fixtureNow },
+		Snapshot: func(context.Context) (query.Snapshot, error) { return actionSnapshot(), nil },
+		FreshSnapshot: func(context.Context) (query.Snapshot, error) {
+			return query.Snapshot{}, fmt.Errorf("core: the engine has been stopped: %w", coreapi.ErrStopping)
+		},
+		Act: rec.act,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(server.Handler())
+	defer ts.Close()
+	status, e, _ := post(t, ts, `{"action":"stop","project":"`+fixtureProject+`"}`, nil)
+	if status != http.StatusConflict || e.Error != "mate core is stopping · nothing started" {
+		t.Fatalf("stop while the core stops = %d %+v, want 409 with the core's line", status, e)
+	}
+	if len(rec.got) != 0 {
+		t.Fatalf("acted %+v, want nothing run", rec.got)
+	}
+}
+
 func TestAPressIsRefusedBeforeAnythingRuns(t *testing.T) {
 	f := newFixture(t)
 	rec := &actRecorder{}
@@ -274,6 +303,11 @@ func TestABusyTargetIsAConflict(t *testing.T) {
 	want := "Action refused: restart_mate is still running on " + fixtureProject + " · nothing started"
 	if status != http.StatusConflict || e.Error != want {
 		t.Fatalf("the press = %d %+v, want 409 %q", status, e, want)
+	}
+	// A core that is stopping (CON-210) refuses the same way.
+	rec.fail(fmt.Errorf("wrapped: %w", coreapi.ErrStopping))
+	if status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil); status != http.StatusConflict || e.Error != "mate core is stopping · nothing started" {
+		t.Fatalf("a press while the core stops = %d %+v, want 409 with the core's line", status, e)
 	}
 	rec.fail(errors.New("the composer could not be read"))
 	if status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil); status != http.StatusUnprocessableEntity || e.Error != "the composer could not be read" {

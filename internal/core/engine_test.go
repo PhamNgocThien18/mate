@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,20 +41,28 @@ type ctxKey struct{}
 
 // fakeLoop is a loop that records its Start and Stop. A startErr makes its
 // Start fail; ctxValue is what the context it was started with carries.
+// cancelledAtStop is whether that context had been cancelled by the time
+// Stop was called.
 type fakeLoop struct {
-	name     string
-	rec      *recorder
-	startErr error
-	ctxValue any
+	name            string
+	rec             *recorder
+	startErr        error
+	ctxValue        any
+	ctx             context.Context
+	cancelledAtStop bool
 }
 
 func (l *fakeLoop) Start(ctx context.Context) error {
+	l.ctx = ctx
 	l.ctxValue = ctx.Value(ctxKey{})
 	l.rec.add("start " + l.name)
 	return l.startErr
 }
 
-func (l *fakeLoop) Stop() { l.rec.add("stop " + l.name) }
+func (l *fakeLoop) Stop() {
+	l.cancelledAtStop = l.ctx != nil && l.ctx.Err() != nil
+	l.rec.add("stop " + l.name)
+}
 
 type fakeWatcher struct {
 	fakeLoop
@@ -112,11 +121,30 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// logIs checks a recorder's log: first, in this order, then every one of
+// anyOrder, in whichever order the parts stopping together wrote them, then
+// last, in this order.
+func logIs(t *testing.T, got, first, anyOrder, last []string) {
+	t.Helper()
+	ok := len(got) == len(first)+len(anyOrder)+len(last)
+	if ok {
+		middle := slices.Clone(got[len(first) : len(first)+len(anyOrder)])
+		want := slices.Clone(anyOrder)
+		slices.Sort(middle)
+		slices.Sort(want)
+		ok = slices.Equal(got[:len(first)], first) && slices.Equal(middle, want) &&
+			slices.Equal(got[len(first)+len(anyOrder):], last)
+	}
+	if !ok {
+		t.Fatalf("log %q, want %q, then %q in any order, then %q", got, first, anyOrder, last)
+	}
+}
+
 // The order runConsole had before CON-207: the observer, then the outbox
-// sender and the auto daemon, then recovery; stopped in the reverse order,
-// recovery first, and the timeline database closed last, once nothing that
-// writes it runs.
-func TestEngineStartsInOrderAndStopsInReverse(t *testing.T) {
+// sender and the auto daemon, then recovery. Stop cancels them all before
+// it waits for any (CON-210), stops them together, and closes the timeline
+// database last, once nothing that writes it runs.
+func TestEngineStartsInOrderAndStopsEverythingAtOnce(t *testing.T) {
 	rec := &recorder{}
 	opts, w, s, p := fakeParts(rec)
 	e := New(opts)
@@ -136,27 +164,29 @@ func TestEngineStartsInOrderAndStopsInReverse(t *testing.T) {
 	}
 
 	e.Stop()
-	want := []string{
-		"start watcher", "start sender", "start pilot", "recover",
-		"recover cancelled", "stop pilot", "stop sender", "stop watcher", "close timeline",
-	}
-	if got := rec.entries(); !slices.Equal(got, want) {
-		t.Fatalf("after Stop: %q, want %q", got, want)
+	logIs(t, rec.entries(),
+		[]string{"start watcher", "start sender", "start pilot", "recover"},
+		[]string{"recover cancelled", "stop pilot", "stop sender", "stop watcher"},
+		[]string{"close timeline"})
+	for _, l := range []*fakeLoop{&w.fakeLoop, s, &p.fakeLoop} {
+		if !l.cancelledAtStop {
+			t.Errorf("%s was asked to stop before its context was cancelled", l.name)
+		}
 	}
 }
 
 // Nothing fails to start today; core.lock will (CON-211). A part that does
-// not start is not stopped, every part before it is, in the reverse order,
-// and the timeline is closed: the engine holds nothing once Start has failed.
+// not start is not stopped, every part before it is, together, and the
+// timeline is closed: the engine holds nothing once Start has failed.
 func TestEngineStartFailureStopsWhatStartedAndReturnsTheError(t *testing.T) {
 	errBoom := errors.New("boom")
 	for _, tc := range []struct {
-		failing string
-		want    []string
+		failing          string
+		started, stopped []string
 	}{
-		{"watcher", []string{"start watcher", "close timeline"}},
-		{"sender", []string{"start watcher", "start sender", "stop watcher", "close timeline"}},
-		{"pilot", []string{"start watcher", "start sender", "start pilot", "stop sender", "stop watcher", "close timeline"}},
+		{"watcher", []string{"start watcher"}, nil},
+		{"sender", []string{"start watcher", "start sender"}, []string{"stop watcher"}},
+		{"pilot", []string{"start watcher", "start sender", "start pilot"}, []string{"stop sender", "stop watcher"}},
 	} {
 		t.Run(tc.failing, func(t *testing.T) {
 			rec := &recorder{}
@@ -173,13 +203,9 @@ func TestEngineStartFailureStopsWhatStartedAndReturnsTheError(t *testing.T) {
 			if err := e.Start(context.Background()); err != errBoom {
 				t.Fatalf("Start = %v, want the part's own error", err)
 			}
-			if got := rec.entries(); !slices.Equal(got, tc.want) {
-				t.Fatalf("log %q, want %q", got, tc.want)
-			}
+			logIs(t, rec.entries(), tc.started, tc.stopped, []string{"close timeline"})
 			e.Stop()
-			if got := rec.entries(); !slices.Equal(got, tc.want) {
-				t.Fatalf("Stop after a failed Start stopped again: %q", got)
-			}
+			logIs(t, rec.entries(), tc.started, tc.stopped, []string{"close timeline"})
 			if ran.Load() {
 				t.Fatal("recovery ran although Start failed")
 			}
@@ -187,9 +213,10 @@ func TestEngineStartFailureStopsWhatStartedAndReturnsTheError(t *testing.T) {
 	}
 }
 
-// A cancelled recovery gets 45 seconds to undo an agent it had half started,
-// longer than spawn's own 30s cleanup; the console used to wait as long.
-// Past that, the rest stops anyway and the timeline is closed.
+// A cancelled recovery gets the engine's 45 seconds to undo an agent it had
+// half started, longer than spawn's own 30s cleanup. Past that, Stop names
+// it and returns, the rest stopped, and leaves the timeline to the process
+// exit: a recovery still running may yet write it.
 func TestEngineStopWaitsForRecoveryAtMostItsBound(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rec := &recorder{}
@@ -200,6 +227,8 @@ func TestEngineStopWaitsForRecoveryAtMostItsBound(t *testing.T) {
 			rec.add("recover returned")
 			return recovery.Result{}
 		}
+		var stderr strings.Builder
+		opts.Stderr = &stderr
 		e := New(opts)
 		if err := e.Start(context.Background()); err != nil {
 			t.Fatalf("Start: %v", err)
@@ -210,9 +239,11 @@ func TestEngineStopWaitsForRecoveryAtMostItsBound(t *testing.T) {
 		if waited := time.Since(start); waited != 45*time.Second {
 			t.Errorf("Stop waited %s for recovery, want 45s", waited)
 		}
-		want := []string{"start watcher", "start sender", "start pilot", "stop pilot", "stop sender", "stop watcher", "close timeline"}
-		if got := rec.entries(); !slices.Equal(got, want) {
-			t.Fatalf("log %q, want %q", got, want)
+		logIs(t, rec.entries(),
+			[]string{"start watcher", "start sender", "start pilot"},
+			[]string{"stop pilot", "stop sender", "stop watcher"}, nil)
+		if want := "mate core: recovery had not stopped 45s after the stop began; mate.db is left open for the process exit to release\n"; stderr.String() != want {
+			t.Errorf("stderr %q, want %q", stderr.String(), want)
 		}
 		close(release)
 		synctest.Wait()
@@ -329,10 +360,10 @@ func TestEngineStartsOnceAndStopsOnce(t *testing.T) {
 	}
 	e.Stop()
 	e.Stop()
-	want := []string{"start watcher", "start sender", "start pilot", "stop pilot", "stop sender", "stop watcher", "close timeline"}
-	if got := rec.entries(); !slices.Equal(got, want) {
-		t.Fatalf("log %q, want %q", got, want)
-	}
+	logIs(t, rec.entries(),
+		[]string{"start watcher", "start sender", "start pilot"},
+		[]string{"stop pilot", "stop sender", "stop watcher"},
+		[]string{"close timeline"})
 	if err := e.Start(context.Background()); err == nil {
 		t.Error("Start after Stop succeeded")
 	}
