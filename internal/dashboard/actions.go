@@ -343,6 +343,12 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	node, err := s.freshProjectNode(ctx, req.Project)
 	if err != nil {
 		var missing errNotFound
+		if errors.Is(err, coreapi.ErrStopping) {
+			// The core stopped between the press and its check: nothing
+			// started, as run says for a refusal by Act.
+			s.writeError(w, r, http.StatusConflict, coreapi.ErrStopping.Error(), "")
+			return
+		}
 		if errors.As(err, &missing) {
 			s.writeError(w, r, http.StatusNotFound, missing.reason, "")
 			return
@@ -395,11 +401,16 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 
 // run hands a checked request to the core, as the core's request, and
 // answers with its one line. A refusal because another action holds the
-// target (coreapi.ErrBusy) is a 409, as a press the snapshot does not
-// offer is: nothing started. Any other error is the service's, verbatim,
-// as a 422: it ran and failed.
+// target (coreapi.ErrBusy) or because the core is stopping
+// (coreapi.ErrStopping) is a 409, as a press the snapshot does not offer
+// is: nothing started. Any other error is the service's, verbatim, as a
+// 422: it ran and failed.
 func (s *Server) run(w http.ResponseWriter, r *http.Request, ctx context.Context, req ActionRequest) {
 	line, err := s.deps.Act(ctx, coreRequest(req))
+	if errors.Is(err, coreapi.ErrStopping) {
+		s.writeError(w, r, http.StatusConflict, coreapi.ErrStopping.Error(), "")
+		return
+	}
 	if errors.Is(err, coreapi.ErrBusy) {
 		line := err.Error()
 		var busy *coreapi.BusyError

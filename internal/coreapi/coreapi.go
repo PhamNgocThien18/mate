@@ -215,6 +215,10 @@ var ErrNoMateREPL = errors.New("the Mate runs without the REPL")
 // the whole line a UI shows, verbatim.
 var ErrBusy = errors.New("another action is still running on the target")
 
+// ErrStopping is an action the core refused because it is stopping
+// (CON-210): nothing of it started. Its text is the whole line a UI shows.
+var ErrStopping = errors.New("mate core is stopping · nothing started")
+
 // BusyError is ErrBusy with what is running and where: Running is the
 // action that holds the target, Target the target as a UI names it (a
 // Project, `project/crew`, or "the workspace").

@@ -205,15 +205,21 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 
 // The console runs its background loops through internal/core (CON-207):
 // it builds their parts with engineOptions, which `mate core` can share
-// (CON-211), and the engine starts them in order, stops them in reverse and
-// closes the timeline last. A Start or Stop of runConsole's own, or a loop
-// or timeline database it opened itself, would be outside that order again.
+// (CON-211), and the engine starts them in order, stops them all at once
+// within one bound and closes the timeline last. A Start or Stop of
+// runConsole's own, or a loop or timeline database it opened itself, would
+// be outside that order again. A quit in the middle of an action waits for
+// it beside the engine's Stop (quitAbandoned, CON-210), never on its own
+// before it.
 func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
 	calls := callersOf(t)["runConsole"]
-	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop"} {
+	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop", "quitAbandoned"} {
 		if !calls[want] {
 			t.Errorf("runConsole does not call %s", want)
 		}
+	}
+	if calls["waitAbandoned"] {
+		t.Error("runConsole waits for an abandoned action itself; quitAbandoned waits beside the engine's Stop")
 	}
 	for call := range calls {
 		if (strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop")) && !strings.HasPrefix(call, "engine.") {

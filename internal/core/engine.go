@@ -3,7 +3,10 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,7 +112,20 @@ type Options struct {
 	// is its only caller, under the lock on the action's target. Nil runs
 	// no such action, and the dashboard is then read-only.
 	Act coreapi.ActionFunc
+	// Stderr is where Stop names the parts that had not stopped within its
+	// bound; os.Stderr when nil.
+	Stderr io.Writer
 }
+
+// StopWait is how long Stop waits for everything it has cancelled: the
+// loops, recovery, the Office/City server, the notifications, a snapshot
+// being computed, and every action in flight from any UI, all at once under
+// this one bound (CON-210). It is longer than the spawn package's own 30s
+// cleanup bound, so an action or a recovery cancelled halfway through
+// starting an agent gets the chance to undo it. Stop returns within it and
+// the closing of mate.db, well inside 50 seconds; `mate core stop`
+// (CON-213) waits longer than that before it kills.
+const StopWait = 45 * time.Second
 
 // Engine runs a workspace's background loops for as long as it is open,
 // computes the snapshot every UI reads (Snapshot), and runs every action a
@@ -118,9 +134,10 @@ type Options struct {
 // Start starts the reading of workspace.yaml, the watcher, then the sender,
 // then the pilot - so the daemon never queues a digest no sender would type
 // - then recovery, and last what serves the captain: the dashboard, then
-// the notifications, which link to it. Stop stops them in the reverse order
-// and closes the timeline once nothing that writes it runs. The order is
-// the one runConsole kept in its own body before CON-207 and CON-208.
+// the notifications, which link to it. The order is the one runConsole kept
+// in its own body before CON-207 and CON-208. Stop cancels them all at
+// once, waits for them together within StopWait, and closes the timeline
+// once they have all stopped.
 type Engine struct {
 	o         Options
 	recovery  *recoveryRun
@@ -129,7 +146,10 @@ type Engine struct {
 	notify    *notifyLoop
 	snaps     *snapshotCache
 	locks     actionLocks
+	acts      actionRuns
 	now       func() time.Time
+	// stopWait is StopWait; a test shortens it.
+	stopWait time.Duration
 
 	// ctx is the engine's own: the shared snapshot computations run under
 	// it. cancel ends it when the engine stops, and so does the end of the
@@ -137,12 +157,23 @@ type Engine struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	unhook func() bool
+	// cancelRun ends the context every part was started under, the
+	// caller's with this cancel added. Stop calls it before it waits for
+	// any part, so none starts new work while another is still stopping.
+	cancelRun context.CancelFunc
 
 	// mu serializes Start and Stop; a Stop that comes while another runs
 	// waits for it and then finds the engine stopped.
 	mu      sync.Mutex
 	state   engineState
-	running []Loop
+	running []part
+}
+
+// part is one of the engine's loops, with the name Stop gives it when it
+// has not stopped in time.
+type part struct {
+	name string
+	Loop
 }
 
 type engineState int
@@ -155,17 +186,20 @@ const (
 
 var (
 	errStarted = errors.New("core: the engine is already running")
-	errStopped = errors.New("core: the engine has been stopped")
+	// errStopped is also what a snapshot read gets once Stop has begun, so
+	// it is coreapi.ErrStopping too: a page's press, checked against a
+	// fresh snapshot before it reaches Act, is refused in the same words.
+	errStopped = fmt.Errorf("core: the engine has been stopped: %w", coreapi.ErrStopping)
 )
 
 // New builds an engine over its parts. It starts nothing until Start, and
 // from here on it owns the parts: Stop, or a failed Start, releases them.
 func New(o Options) *Engine {
-	e := &Engine{o: o, now: time.Now}
+	e := &Engine{o: o, now: time.Now, stopWait: StopWait}
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.snaps = &snapshotCache{compute: e.assemble, ctx: e.ctx, maxAge: snapshotMaxAge, limit: snapshotLimit, now: time.Now}
 	if o.Recover != nil {
-		e.recovery = &recoveryRun{run: o.Recover, ws: o.Workspace, wait: recoveryWait, now: time.Now}
+		e.recovery = &recoveryRun{run: o.Recover, ws: o.Workspace, now: time.Now}
 	}
 	if o.Workspace != nil {
 		e.reload = configReload(o.Workspace)
@@ -181,8 +215,9 @@ func New(o Options) *Engine {
 
 // Start starts the loops in order under ctx, the caller's: cancelling it
 // ends them too, though Stop needs nothing of it. When a part fails to
-// start, Start stops the ones it had started, closes the timeline and
-// returns that part's error unchanged; the engine is then stopped. The
+// start, Start stops the ones it had started as Stop does - within
+// StopWait, closing the timeline once they have all stopped - and returns
+// that part's error unchanged; the engine is then stopped. The
 // dashboard and the notifications never fail it: what keeps either from
 // starting is said by Dashboard and Notifications.
 func (e *Engine) Start(ctx context.Context) error {
@@ -195,48 +230,63 @@ func (e *Engine) Start(ctx context.Context) error {
 		return errStopped
 	}
 	e.unhook = context.AfterFunc(ctx, e.cancel)
-	for _, part := range e.parts() {
-		if err := part.Start(ctx); err != nil {
+	runCtx, cancelRun := context.WithCancel(ctx)
+	e.cancelRun = cancelRun
+	for _, p := range e.parts() {
+		if err := p.Start(runCtx); err != nil {
 			e.stop()
 			return err
 		}
-		e.running = append(e.running, part)
+		e.running = append(e.running, p)
 	}
 	e.state = started
 	return nil
 }
 
 // parts is every part that runs, in the order Start starts them.
-func (e *Engine) parts() []Loop {
-	var out []Loop
+func (e *Engine) parts() []part {
+	var out []part
 	if e.reload != nil {
-		out = append(out, e.reload)
+		out = append(out, part{"workspace.yaml reload", e.reload})
 	}
-	for _, part := range []Loop{e.o.Watcher, e.o.Sender, e.o.Pilot} {
-		if part != nil {
-			out = append(out, part)
-		}
+	if e.o.Watcher != nil {
+		out = append(out, part{"observer", e.o.Watcher})
+	}
+	if e.o.Sender != nil {
+		out = append(out, part{"outbox", e.o.Sender})
+	}
+	if e.o.Pilot != nil {
+		out = append(out, part{"autopilot", e.o.Pilot})
 	}
 	if e.recovery != nil {
-		out = append(out, e.recovery)
+		out = append(out, part{"recovery", e.recovery})
 	}
 	if e.dashboard != nil {
-		out = append(out, e.dashboard)
+		out = append(out, part{"Office/City server", e.dashboard})
 	}
 	if e.notify != nil {
-		out = append(out, e.notify)
+		out = append(out, part{"notifications", e.notify})
 	}
 	return out
 }
 
-// Stop stops the loops in the reverse of the order they started in - the
-// dashboard waits at most 5 seconds for its requests, a recovery that will
-// not stop gets 45 - and then closes the timeline. A shared snapshot being
-// computed is cancelled and waited for, and after Stop no snapshot is
-// handed out or computed (a FreshSnapshot already running is its reader's
-// to wait for). It is
-// safe to call more than once, and on an engine that never started: that
-// one only closes the timeline it was given.
+// Stop stops the engine within StopWait (CON-210). From its first moment
+// every new action is refused (coreapi.ErrStopping). Then it cancels, all
+// at once, every part - the loops, recovery, the Office/City server, the
+// notifications -, a shared snapshot being computed and every action in
+// flight, the console's and the pages' alike, so nothing starts new work
+// while something else is still stopping. It waits for all of them
+// together, StopWait at most; the server gives its requests 5 seconds of
+// that (dashboard.Server.Serve). Once they have all stopped it closes the
+// timeline. Past the bound it names on Stderr what has not stopped and
+// returns, leaving mate.db open: what still runs may write it, and the
+// process exit releases its lock. A restart cancelled halfway is put right
+// by the next recovery, as when the console was killed halfway before.
+//
+// After Stop no snapshot is handed out or computed (a FreshSnapshot already
+// running is its reader's to wait for). It is safe to call more than once:
+// a second Stop waits for the first and stops nothing again. On an engine
+// that never started it only closes the timeline it was given.
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -248,20 +298,83 @@ func (e *Engine) stop() {
 		return
 	}
 	e.state = stopped
+	// Refuse, then cancel everything, and only then wait.
+	actions := e.acts.close()
+	if e.cancelRun != nil {
+		e.cancelRun()
+	}
 	e.cancel()
 	if e.unhook != nil {
 		e.unhook()
 	}
-	for i := len(e.running) - 1; i >= 0; i-- {
-		e.running[i].Stop()
+	var waits []stopping
+	for _, p := range e.running {
+		waits = append(waits, stopping{p.name, inBackground(p.Stop)})
 	}
 	e.running = nil
-	e.snaps.close()
+	waits = append(waits, stopping{"snapshot", inBackground(e.snaps.close)})
+	for _, a := range actions {
+		waits = append(waits, stopping{a.name, a.done})
+	}
+	if late := awaitAll(waits, e.stopWait); len(late) > 0 {
+		w := e.o.Stderr
+		if w == nil {
+			w = os.Stderr
+		}
+		line := fmt.Sprintf("mate core: %s had not stopped %s after the stop began", strings.Join(late, ", "), e.stopWait)
+		if e.o.Timeline != nil {
+			line += "; mate.db is left open for the process exit to release"
+		}
+		fmt.Fprintln(w, line)
+		return
+	}
 	if e.o.Timeline != nil {
 		// As the console's deferred Close always has: nothing is left to
 		// tell about a database that would not close at exit.
 		_ = e.o.Timeline.Close()
 	}
+}
+
+// stopping is something Stop waits for: done closes once it has stopped.
+type stopping struct {
+	name string
+	done <-chan struct{}
+}
+
+// inBackground runs stop on a goroutine of its own and returns the channel
+// that closes once it has returned.
+func inBackground(stop func()) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stop()
+	}()
+	return done
+}
+
+// awaitAll waits for every one of waits, all of them within one bound, and
+// returns the names of those that had not stopped by then, in their order.
+func awaitAll(waits []stopping, bound time.Duration) []string {
+	timer := time.NewTimer(bound)
+	defer timer.Stop()
+	expired := false
+	var late []string
+	for _, w := range waits {
+		if !expired {
+			select {
+			case <-w.done:
+				continue
+			case <-timer.C:
+				expired = true
+			}
+		}
+		select {
+		case <-w.done:
+		default:
+			late = append(late, w.name)
+		}
+	}
+	return late
 }
 
 // CrewHealth is the observer's readings: each crew's health, and its word

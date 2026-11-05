@@ -161,7 +161,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// The observer with the timeline it records, the delivery into the Mates,
 	// recovery, the dashboard and the notifications run in this process for
 	// as long as the workspace is open: the engine starts them in their order
-	// and, when the console quits, stops them in the reverse (internal/core).
+	// and, when the console quits, stops them all at once within one bound
+	// (internal/core, CON-210).
 	// engineOptions says what each one is for. The dashboard comes up after
 	// the observer has made sure the database exists; like the notifications
 	// it is a convenience, and a failure is said on the status line and never
@@ -176,6 +177,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	opts.Act = engineActions(ws, deps, noticeClient)
 	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
 	opts.Notifier = core.NativeNotifier()
+	// What Stop could not stop in time is said after the terminal is back.
+	opts.Stderr = stderr
 	engine := core.New(opts)
 	if err := engine.Start(ctx); err != nil {
 		return err
@@ -280,11 +283,28 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	}
 	if cm, ok := final.(console.Model); ok {
 		if desc, abandoned := cm.AbandonedAction(); abandoned {
-			fmt.Fprintf(stderr, "\nmate console: quit while %s was still running; waiting for it to undo what it started...\n", desc)
-			waitAbandoned(stderr, desc, cm.AbandonedActionDone(), abandonedWait)
+			quitAbandoned(stderr, engine.Stop, desc, cm.AbandonedActionDone(), core.StopWait)
 		}
 	}
 	return nil
+}
+
+// quitAbandoned is the console's quit in the middle of an action, once the
+// terminal is restored: the action's context is cancelled already
+// (console's abandon). It says so, stops the engine, which waits for that
+// action with everything else it stops, and says whether the action
+// stopped within the engine's bound. The two waits run side by side, so
+// the console is gone within the engine's one bound (CON-210) rather than
+// after one wait of its own and then the engine's.
+func quitAbandoned(stderr io.Writer, stop func(), desc string, done <-chan struct{}, bound time.Duration) {
+	fmt.Fprintf(stderr, "\nmate console: quit while %s was still running; waiting for it to undo what it started...\n", desc)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		stop()
+	}()
+	waitAbandoned(stderr, desc, done, bound)
+	<-stopped
 }
 
 // consoleLoad is the console's LoadFunc over the engine's snapshot (core's
@@ -336,15 +356,11 @@ var errNotATerminal = newUsageError(
 // the wrong command.
 func consoleTerminalRefusal(error) error { return errNotATerminal }
 
-// abandonedWait bounds how long the Console waits, after the terminal is
-// restored, for an action it quit in the middle of. It is longer than the
-// spawn package's own 30s cleanup bound, so the action's compensation gets
-// the chance to finish.
-const abandonedWait = 45 * time.Second
-
 // waitAbandoned blocks until the abandoned action has returned, or the
-// bound passes. Exiting earlier would kill the goroutine mid-cleanup and
-// leave a half-started agent behind (a Mate running with no mate.meta).
+// bound passes: core.StopWait, the engine's, which is longer than the spawn
+// package's own 30s cleanup bound, so the action's compensation gets the
+// chance to finish. Exiting earlier would kill the goroutine mid-cleanup
+// and leave a half-started agent behind (a Mate running with no mate.meta).
 func waitAbandoned(stderr io.Writer, desc string, done <-chan struct{}, bound time.Duration) {
 	if done == nil {
 		return
