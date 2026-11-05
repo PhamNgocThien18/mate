@@ -197,8 +197,6 @@ func TestMergeCrewLandsEachCrewInItsOwnRepo(t *testing.T) {
 	}
 }
 
-// assertSpawnLeftNothing is the other half of every spawn refusal: no
-// worktree, no crew record, no Herdr call, no branch in any repo.
 // TestCrewDiffReadsEachCrewsOwnRepo: crew k3 works in api and k4 in web,
 // each with one commit on its branch, and each diff shows that commit and
 // nothing of the other repo.
@@ -235,6 +233,8 @@ func TestCrewDiffReadsEachCrewsOwnRepo(t *testing.T) {
 	}
 }
 
+// assertSpawnLeftNothing is the other half of every spawn refusal: no
+// worktree, no crew record, no Herdr call, no branch in any repo.
 func assertSpawnLeftNothing(t *testing.T, w *store.Workspace, rt *runtime.Fake, repos ...string) {
 	t.Helper()
 	if _, err := os.Stat(w.WorktreeDir("shop", "k3")); !os.IsNotExist(err) {
