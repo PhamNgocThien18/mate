@@ -36,6 +36,7 @@ func screenPipe(t *testing.T) (*os.File, *capture) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = w.Close() })
 	screen := &capture{}
 	go func() {
 		chunk := make([]byte, 4096)
@@ -71,7 +72,6 @@ func startServer(t *testing.T) (string, *capture, *atomic.Int32) {
 		if err := <-served; err != nil {
 			t.Errorf("Serve: %v", err)
 		}
-		_ = w.Close()
 		_ = os.RemoveAll(dir)
 	})
 	return socket, screen, &restores
@@ -202,9 +202,9 @@ func TestAChildThatExitsLeavesTheIdleLine(t *testing.T) {
 // were descheduled there, and sends meanwhile. The Console's sends reach
 // Run one at a time, as Serve's accept loop takes them.
 func TestAnExitNeverCleansUpOverTheNextProgram(t *testing.T) {
-	// The clean-up is held this long when the sends wait for it, as they
+	// How long the clean-up is held when the sends wait for it, as they
 	// should; had they not waited, they would have gone through by then.
-	const hold = 300 * time.Millisecond
+	const holdFor = 300 * time.Millisecond
 	// The screen shows where Term.Restore put the modes back.
 	const restored = "<modes restored>"
 	for _, tc := range []struct {
@@ -217,30 +217,29 @@ func TestAnExitNeverCleansUpOverTheNextProgram(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w, screen := screenPipe(t)
-			var restores atomic.Int32
-			held, release := make(chan struct{}), make(chan struct{})
-			var releaseOnce sync.Once
-			letGo := func() { releaseOnce.Do(func() { close(release) }) }
+			ended := filepath.Join(t.TempDir(), "ended")
+			cleanUpHeld, released := make(chan struct{}), make(chan struct{})
+			release := sync.OnceFunc(func() { close(released) })
+			var holding atomic.Bool
 			s := &Server{Idle: "idle-line", Term: Terminal{Out: w, Err: w, Restore: func() {
-				// The first restore is Run's reset before the program
-				// that exits; the second is that program's clean-up,
-				// which puts the modes back only once let go.
-				if restores.Add(1) == 2 {
-					close(held)
-					<-release
+				// The program touches ended as it ends, so the first
+				// restore after that is its clean-up, which puts the
+				// modes back only once released.
+				if _, err := os.Stat(ended); err == nil && holding.CompareAndSwap(false, true) {
+					close(cleanUpHeld)
+					<-released
 				}
 				_, _ = io.WriteString(w, restored)
 			}}}
 			t.Cleanup(func() {
-				letGo()
+				release()
 				s.stop()
-				_ = w.Close()
 			})
-			if err := s.Run(Command{Argv: []string{"sh", "-c", "exit 0"}}); err != nil {
+			if err := s.Run(Command{Argv: []string{"sh", "-c", "touch " + ended}}); err != nil {
 				t.Fatal(err)
 			}
 			select {
-			case <-held:
+			case <-cleanUpHeld:
 			case <-time.After(5 * time.Second):
 				t.Fatal("the program that exited was never cleaned up after")
 			}
@@ -254,28 +253,29 @@ func TestAnExitNeverCleansUpOverTheNextProgram(t *testing.T) {
 					}
 				}
 			}()
-			lastStarted := func() bool { return strings.Contains(screen.String(), tc.last) }
-			select {
-			case <-sent:
-				// The sends went through while the clean-up was held: let
-				// the last program draw its first line before the clean-up
-				// goes on.
+			// waitForLast waits, once the sends are done, for the last
+			// program to draw its first line.
+			waitForLast := func() {
+				t.Helper()
 				if sendErr != nil {
 					t.Fatal(sendErr)
 				}
-				waitFor(t, lastStarted)
-			case <-time.After(hold):
+				waitFor(t, func() bool { return strings.Contains(screen.String(), tc.last) })
 			}
-			letGo()
+			select {
+			case <-sent:
+				// The sends went through while the clean-up was held: it
+				// goes on once the last program is on the screen.
+				waitForLast()
+			case <-time.After(holdFor):
+			}
+			release()
 			select {
 			case <-sent:
 			case <-time.After(10 * time.Second):
 				t.Fatal("the sends never went through")
 			}
-			if sendErr != nil {
-				t.Fatal(sendErr)
-			}
-			waitFor(t, lastStarted)
+			waitForLast()
 			// The clean-up ends with the idle line when it draws one: let a
 			// late one land before the screen is read.
 			eventually(time.Second, func() bool { return strings.Contains(screen.String(), "idle-line") })

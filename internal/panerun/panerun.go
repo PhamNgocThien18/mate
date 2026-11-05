@@ -67,7 +67,8 @@ const StopGrace = 2 * time.Second
 type Terminal struct {
 	In, Out, Err *os.File
 	// Restore puts the tty back into the modes the runner started with; nil
-	// when the runner is not on a tty.
+	// when the runner is not on a tty. The clean-up after an exit calls it
+	// under the runner's lock, so it must not call back into the Server.
 	Restore func()
 }
 
