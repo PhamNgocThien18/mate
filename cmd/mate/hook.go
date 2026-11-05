@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/hook"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -156,13 +156,13 @@ func runSessionHook(stdin io.Reader, stdout, stderr io.Writer, kind harness.Kind
 		fallback(fmt.Errorf("the %s harness declares no verified Hooks capability", kind))
 		return
 	}
-	opts := recallOptions{
+	opts := recall.Options{
 		LiveOnly: start.LiveOnly(),
 		MaxBytes: hooks.Impl.DigestMaxBytes(),
 		Occasion: "session start: " + source,
 		Binary:   bin,
 	}
-	text, err := recall(context.Background(), w, gitx.New(), project, now, opts)
+	text, err := recall.Render(context.Background(), w, recallDeps(), project, now, opts)
 	if err != nil {
 		fallback(err)
 		return

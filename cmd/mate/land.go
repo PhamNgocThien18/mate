@@ -17,6 +17,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/plugin"
 	"github.com/nguyenngocanh94/mate/internal/process"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/wake"
@@ -374,13 +375,27 @@ func landTracker(ctx context.Context, w *store.Workspace, project, crew, tracker
 		if line == "" {
 			line = firstLine(string(res.Stdout))
 		}
-		return fmt.Sprintf("tracker: %s not updated (%s exit %d: %s); update it yourself", trackerID, argv[0], res.ExitCode, recallClip(line, 160))
+		return fmt.Sprintf("tracker: %s not updated (%s exit %d: %s); update it yourself", trackerID, argv[0], res.ExitCode, recall.Clip(line, 160))
 	}
 	line := firstLine(string(res.Stdout))
 	if line == "" {
 		line = "done"
 	}
-	return fmt.Sprintf("tracker: %s %s (%s)", trackerID, recallClip(line, 200), in.ID)
+	return fmt.Sprintf("tracker: %s %s (%s)", trackerID, recall.Clip(line, 200), in.ID)
+}
+
+// trackerRunner runs the tracker's land command; a test may replace it.
+// `mate recall` reads the tracker through recall.Deps instead.
+var trackerRunner process.Runner = process.ExecRunner{}
+
+// firstLine is the first non-blank line of s, trimmed.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 // shotPath is an absolute path to an image a hand-back mentions, as
