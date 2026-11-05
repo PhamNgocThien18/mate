@@ -175,8 +175,8 @@ type Task struct {
 	// `failed` like any crew; this is what it concluded.
 	Review string `json:"review,omitempty"`
 	// Role is what the task was for: "review" for a reviewer crew (it has
-	// review.meta, so Review is set), "scout" for a scout (spawn.CrewIsScout)
-	// and "ship" for a change to a repo, the default.
+	// review.meta, so Review is set), "scout" for a scout
+	// (store.Workspace.CrewIsScout) and "ship" for a change to a repo, the default.
 	Role string `json:"role"`
 	// Reviews are the reviewers `mate review` started for this task (crew
 	// meta reviews=, or the reviewer's review.meta naming this crew), and
