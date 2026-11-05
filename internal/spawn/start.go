@@ -24,7 +24,8 @@ var ErrMateRunning = errors.New("mate is already running")
 
 func errUsage(msg string) error { return observability.NewError(observability.CodeUsage, msg) }
 
-// StartRequest is one `mate mate start`.
+// StartRequest is one start of a Mate: `mate mate start`, a press in a UI,
+// or a restart mate makes on its own.
 type StartRequest struct {
 	// Project is the registered project whose Mate is started.
 	Project string
@@ -44,6 +45,14 @@ type StartRequest struct {
 	// keeps the mode the last run recorded, else project.yaml's
 	// `mate.headless` (headlessMode).
 	Mode string
+	// HeadlessOnly is the asking UI's word that it cannot show a pane
+	// Mate: a console in a terminal it cannot split (neither WezTerm nor
+	// Ghostty), or a dashboard page (CON-150, CON-205). A start with no
+	// Mode then runs headless when the harness can, whatever the last run
+	// or project.yaml chose, and in the pane without an error when it
+	// cannot. Mode still wins. The CLI and the restarts mate makes on its
+	// own (context refresh, recovery) leave it false.
+	HeadlessOnly bool
 }
 
 // StartResult is what a successful start recorded. Every field is also a
@@ -160,7 +169,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	decision := decideResume(priorMeta, kind, req)
 	decision = checkResume(profile, decision)
 	_, canHeadless := profile.(harness.HeadlessTurns)
-	headless, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, deps.HeadlessOnly, canHeadless)
+	headless, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, canHeadless)
 	if err != nil {
 		return StartResult{}, err
 	}

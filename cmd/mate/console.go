@@ -147,11 +147,6 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 		}
 		return cols
 	}})
-	// A terminal the console cannot split (neither WezTerm nor Ghostty) has
-	// no column to show a pane Mate in, so every Mate this console starts,
-	// restarts, refreshes or recovers runs headless and is talked to in the
-	// box or on the dashboard.
-	deps.HeadlessOnly = h == nil
 	// One observer for the whole run too, so the observer chain's one
 	// minute memory of what Jev said is shared by the health column, the
 	// sends and the settles of this console. Nil is the fixture observer.
@@ -235,11 +230,8 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// The action function is built before the dashboard so its buttons run
 	// exactly what the action sheet runs (CON-141).
 	noticeClient, noticeErr := consoleNoticeClient(ws)
-	action := consoleAction(ws, deps)
-	if noticeClient != nil {
-		action = consoleNoticeAction(ws, deps, noticeClient, action)
-	}
-	if url, stopDashboard, err := startConsoleDashboard(ctx, ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, ingest, dashboardLoad, action, noticeClient != nil); err != nil {
+	tuiAction, webAction := tuiAndWebActions(ws, deps, noticeClient, h)
+	if url, stopDashboard, err := startConsoleDashboard(ctx, ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, ingest, dashboardLoad, webAction, noticeClient != nil); err != nil {
 		notice = err.Error()
 	} else {
 		defer stopDashboard()
@@ -312,7 +304,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if observerErr != nil && (noticeErr == nil || observerErr.Error() != noticeErr.Error()) {
 		addNotice(observerErr.Error())
 	}
-	model := console.New(load, action).
+	model := console.New(load, tuiAction).
 		WithNoticeClassifier(noticeClient != nil).
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).
