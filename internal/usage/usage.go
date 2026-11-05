@@ -1,7 +1,9 @@
 // Package usage builds the pages `mate usage` prints (mvp.md M5 task 27):
 // the token ledger of a project, one task's model calls, its sessions, and
 // `--why`, what a task's calls were spent on. cmd/mate's cmdUsage reads the
-// flags, opens the database and prints what Write writes (CON-168).
+// flags, opens the database and prints what Write writes (CON-168). It also
+// writes the head of `--why` into a crew's learning record when the crew
+// closes (RecordAtClose, CON-130, moved here by CON-230).
 //
 // Every read of the timeline goes through internal/timeline/read; this
 // package holds no SQL. `--why` reads through dashboard.Server, so the page
@@ -13,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
@@ -63,8 +66,9 @@ func Write(ctx context.Context, out io.Writer, w *store.Workspace, handle *db.DB
 }
 
 // The helpers below are private copies of cmd/mate's, kept here so the
-// usage pages do not depend on cmd/mate; they are part of those pages, so
-// a change to one is a change to `mate usage`'s output.
+// usage pages do not depend on cmd/mate; they are part of those pages and
+// of the learning record's usage section, so a change to one is a change
+// to `mate usage`'s output or to that section.
 
 // dashIfEmpty keeps a table cell from reading as a missing column.
 func dashIfEmpty(s string) string {
@@ -86,4 +90,10 @@ func formatAge(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// oneLineMsg is an error's first line.
+func oneLineMsg(err error) string {
+	msg, _, _ := strings.Cut(err.Error(), "\n")
+	return strings.TrimSpace(msg)
 }

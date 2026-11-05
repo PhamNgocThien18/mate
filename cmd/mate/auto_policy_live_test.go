@@ -140,7 +140,7 @@ func TestLiveAutoPolicyMateAnswersADigest(t *testing.T) {
 	}
 
 	// 3. One tick of the daemon, wired exactly as cmdConsole wires it
-	// (consolePilot / consoleMateHandle in console_auto.go).
+	// (consoleAutoPilot in console_auto.go, over spawn.MateOutbox).
 	pilot := consoleAutoPilot(w, deps)
 	digest := tickUntilDigest(t, ctx, pilot, w, "shop", 2*time.Minute)
 	t.Logf("digest: %s", digest)

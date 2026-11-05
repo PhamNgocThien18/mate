@@ -2,16 +2,13 @@ package main
 
 import (
 	"context"
-	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
 	"github.com/nguyenngocanh94/mate/internal/core"
-	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/prwatch"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/refresh"
-	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -31,7 +28,7 @@ import (
 // it is open, adding the dashboard and the notifications; `mate core` is to
 // run the same ones (CON-211). The builders stay in this package, beside
 // the commands that build the same parts for one shot of their own
-// (consoleOutbox, consoleSessionRef, mateRefresher).
+// (spawn.MateOutbox, consoleSessionRef, mateRefresher).
 //
 // Each loop opens its own *store.Workspace over ws's directory, for the
 // reason consoleWatcher gives; recovery repairs ws itself, and the snapshot
@@ -137,40 +134,10 @@ func consolePilot(dir string, deps spawn.Deps) (*consoleDelivery, error) {
 		return nil, err
 	}
 	return &consoleDelivery{
-		sender: consoleOutbox(senderWS, deps),
+		sender: spawn.MateOutbox(senderWS, deps),
 		pilot:  consoleAutoPilot(pilotWS, deps),
 	}, nil
 }
-
-// consoleOutbox is an outbox sender over the live Herdr adapter. Its state is
-// all on disk, so any number of them agree: the console's loop, the one an
-// `[assign]` uses for its immediate attempt, and the daemon's.
-//
-// A test's spawn.Deps clock and sleep carry over, so a stow before a restart
-// runs at memory speed under the fake adapter; the live deps set neither.
-func consoleOutbox(ws *store.Workspace, deps spawn.Deps) *outbox.Sender {
-	od := outbox.Deps{
-		Runtime:   deps.Runtime,
-		Handle:    consoleMateHandle(ws, deps),
-		Harnesses: deps.Harnesses,
-		Observer:  deps.Observer,
-	}
-	if deps.Now != nil {
-		od.Clock = clockFunc(deps.Now)
-	}
-	if deps.Sleep != nil {
-		od.Sleeper = sleepFunc(deps.Sleep)
-	}
-	return outbox.New(ws, od)
-}
-
-type clockFunc func() time.Time
-
-func (f clockFunc) Now() time.Time { return f() }
-
-type sleepFunc func(context.Context, time.Duration) error
-
-func (f sleepFunc) Sleep(ctx context.Context, d time.Duration) error { return f(ctx, d) }
 
 // consoleAutoPilot is the auto daemon over ws, queueing into ws's outbox and
 // making its one immediate attempt through a sender over the same handle.
@@ -183,7 +150,7 @@ func consoleAutoPilot(ws *store.Workspace, deps spawn.Deps) *autopilot.Pilot {
 		gc = consoleGC(ws, liveGCDeps())
 	}
 	return autopilot.New(ws, autopilot.Deps{
-		Outbox: consoleOutbox(ws, deps),
+		Outbox: spawn.MateOutbox(ws, deps),
 		Maintain: func(ctx context.Context, project string) (bool, error) {
 			return mateRefresher(ws, deps).Run(ctx, project, true)
 		},
@@ -202,7 +169,7 @@ func consoleAutoPilot(ws *store.Workspace, deps spawn.Deps) *autopilot.Pilot {
 func mateRefresher(ws *store.Workspace, deps spawn.Deps) *refresh.Refresher {
 	return refresh.New(ws, refresh.Deps{
 		Spawn:  deps,
-		Outbox: consoleOutbox(ws, deps),
+		Outbox: spawn.MateOutbox(ws, deps),
 		RequestPath: func(project string) (string, error) {
 			return refreshMeta(ws, project, "refresh-request")
 		},
@@ -210,14 +177,4 @@ func mateRefresher(ws *store.Workspace, deps spawn.Deps) *refresh.Refresher {
 			return verifyCheckpoint(ws, project, nonce, session)
 		},
 	})
-}
-
-// consoleMateHandle is outbox.HandleFunc over spawn.MateHandle: the recorded
-// `mate/mate.meta` resolved against the session Herdr currently answers for.
-// The sender takes it as a function so it imports nothing that could start
-// or stop an agent.
-func consoleMateHandle(ws *store.Workspace, deps spawn.Deps) outbox.HandleFunc {
-	return func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error) {
-		return spawn.MateHandle(ctx, ws, deps, project)
-	}
 }

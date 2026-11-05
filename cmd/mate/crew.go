@@ -357,41 +357,6 @@ func relaunchProfileNote(res spawn.RelaunchResult) string {
 	return out
 }
 
-// crewStopReport is the one line `mate crew stop` prints describing
-// exactly what happened, what was kept, and the state the crew ends in.
-func crewStopReport(project, crew string, res spawn.StopResult) string {
-	if res.AlreadyClosed {
-		return fmt.Sprintf("%s/%s: already closed, state %s; nothing changed", project, crew, res.State)
-	}
-	agent := res.Agent
-	if agent == "" {
-		agent = "(none recorded)"
-	}
-	stopped := "stopped"
-	if res.AlreadyGone {
-		stopped = "already gone"
-	}
-	tab := "closed"
-	if !res.TabClosed {
-		tab = "not confirmed closed"
-	}
-	orphan := ""
-	if res.OrphanedWorktree && res.WorktreeRemoved {
-		orphan = " (git no longer knew the worktree, so its directory was deleted)"
-	}
-	switch res.Teardown {
-	case spawn.TeardownClean:
-		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree%s and branch removed (%s was already landed in default); state %s%s",
-			project, crew, agent, stopped, tab, orphan, res.Branch, res.State, res.Cleanup.Note())
-	case spawn.TeardownDiscarded:
-		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree%s and branch removed with --discard (%d commit(s) ahead, %d dirty file(s) discarded); state %s%s",
-			project, crew, agent, stopped, tab, orphan, res.Ahead, res.DirtyFiles, res.State, res.Cleanup.Note())
-	default:
-		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree and branch kept; state %s",
-			project, crew, agent, stopped, tab, res.State)
-	}
-}
-
 // profileNote is ", model m, effort e" for the axes a spawn set.
 // deliveryNote names a pull request delivery in the spawn line; the local
 // one is the default and goes unsaid.

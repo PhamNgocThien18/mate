@@ -15,7 +15,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/catalog"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
-	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -188,36 +187,8 @@ func gitInit(t *testing.T, dir string) {
 // receipt played by c. Deps holds a copy of deps, so build it after the
 // test has set deps' Sleep, NewSessionID and Harnesses.
 func refresher(w *store.Workspace, deps spawn.Deps, c *receipt) *Refresher {
-	return New(w, Deps{Spawn: deps, Outbox: testOutbox(w, deps), RequestPath: c.requestPath, VerifyCheckpoint: c.verify})
+	return New(w, Deps{Spawn: deps, Outbox: spawn.MateOutbox(w, deps), RequestPath: c.requestPath, VerifyCheckpoint: c.verify})
 }
-
-// testOutbox is the sender cmd/mate's consoleOutbox builds: over deps'
-// runtime, harnesses and observer, with its clock and sleep when set.
-func testOutbox(w *store.Workspace, deps spawn.Deps) *outbox.Sender {
-	od := outbox.Deps{
-		Runtime: deps.Runtime,
-		Handle: func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error) {
-			return spawn.MateHandle(ctx, w, deps, project)
-		},
-		Harnesses: deps.Harnesses,
-		Observer:  deps.Observer,
-	}
-	if deps.Now != nil {
-		od.Clock = clockFunc(deps.Now)
-	}
-	if deps.Sleep != nil {
-		od.Sleeper = sleepFunc(deps.Sleep)
-	}
-	return outbox.New(w, od)
-}
-
-type clockFunc func() time.Time
-
-func (f clockFunc) Now() time.Time { return f() }
-
-type sleepFunc func(context.Context, time.Duration) error
-
-func (f sleepFunc) Sleep(ctx context.Context, d time.Duration) error { return f(ctx, d) }
 
 // onStow is a deps.Sleep that plays the Mate's turn on the stow line: the
 // first pause that finds the line typed runs turn.

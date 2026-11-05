@@ -134,7 +134,7 @@ type part struct {
 
 // Render builds the digest of project at now.
 func Render(ctx context.Context, w *store.Workspace, deps Deps, project string, now time.Time, opts Options) (string, error) {
-	if err := requireProject(w, project); err != nil {
+	if err := w.RequireProject(project); err != nil {
 		return "", err
 	}
 	cfg, err := w.LoadProject(project)
@@ -920,16 +920,6 @@ func relToProject(w *store.Workspace, project, path string) string {
 
 // The helpers below are private copies of cmd/mate's, kept here so the
 // digest does not depend on cmd/mate.
-
-func requireProject(w *store.Workspace, project string) error {
-	if err := store.ValidateProjectName(project); err != nil {
-		return err
-	}
-	if _, ok := w.Project(project); !ok {
-		return fmt.Errorf("%w: %s", store.ErrNoProject, project)
-	}
-	return nil
-}
 
 // readOptional reads path, and an absent file as empty.
 func readOptional(path string) (string, error) {

@@ -218,7 +218,7 @@ func spoilAutomatic(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runti
 		}
 		deps.Harnesses = reg
 	case "queued":
-		if _, err := testOutbox(w, deps).Enqueue("shop", outbox.Request{Source: store.OutboxSourceAssign, Key: "new-work", Text: "resolve: new work"}); err != nil {
+		if _, err := spawn.MateOutbox(w, deps).Enqueue("shop", outbox.Request{Source: store.OutboxSourceAssign, Key: "new-work", Text: "resolve: new work"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -404,7 +404,7 @@ func TestContextRefreshLeavesQueuedWorkInTheOutbox(t *testing.T) {
 			}
 			var queued int64
 			enqueue := func() error {
-				q, err := testOutbox(w, deps).Enqueue("shop", outbox.Request{Source: store.OutboxSourceAssign, Key: "new-work", Text: "resolve: new work"})
+				q, err := spawn.MateOutbox(w, deps).Enqueue("shop", outbox.Request{Source: store.OutboxSourceAssign, Key: "new-work", Text: "resolve: new work"})
 				queued = q.Item.ID
 				return err
 			}

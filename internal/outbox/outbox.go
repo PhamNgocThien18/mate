@@ -91,9 +91,9 @@ type Runtime interface {
 var _ Runtime = runtime.Adapter(nil)
 
 // HandleFunc resolves the Herdr handle and harness of one project's Mate.
-// cmd/mate wires spawn.MateHandle into it, so this package imports nothing
-// that can start or stop an agent. An error means the line has nowhere to
-// go yet: the Mate is not running, or Herdr is not answering.
+// spawn.MateOutbox wires spawn.MateHandle into it, so this package imports
+// nothing that can start or stop an agent. An error means the line has
+// nowhere to go yet: the Mate is not running, or Herdr is not answering.
 type HandleFunc func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error)
 
 // Clock is where the sender reads the time; tests pass a fake one.

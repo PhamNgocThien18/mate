@@ -224,7 +224,7 @@ func cmdProjectRemove(args []string, stdout, stderr io.Writer) error {
 
 // projectRemove is cmdProjectRemove's core, over any deps, for tests.
 func projectRemove(ctx context.Context, w *store.Workspace, deps spawn.Deps, name, caller string, stdout, stderr io.Writer) error {
-	res, err := spawn.RemoveProject(ctx, w, deps, name, removeProjectOptions(w, deps, caller, stderr, nil))
+	res, err := spawn.RemoveProject(ctx, w, deps, name, spawn.RemoveProjectStow(w, deps, caller, stderr, nil))
 	for _, s := range res.Stopped {
 		fmt.Fprintln(stdout, stoppedAgentLine(name, s))
 	}
@@ -235,25 +235,13 @@ func projectRemove(ctx context.Context, w *store.Workspace, deps spawn.Deps, nam
 	return nil
 }
 
-// removeProjectOptions is how the CLI and the Console stop a project's Mate
-// for a removal: with the stow `mate mate stop` runs.
-func removeProjectOptions(w *store.Workspace, deps spawn.Deps, caller string, stderr io.Writer, progress func(string)) spawn.RemoveProjectOptions {
-	return spawn.RemoveProjectOptions{
-		Progress: progress,
-		Stow: func(ctx context.Context, project string) error {
-			_, err := stowBeforeStop(ctx, w, deps, project, caller, false, stderr)
-			return err
-		},
-	}
-}
-
 // stoppedAgentLine is the one line a removal prints per agent it stopped.
 func stoppedAgentLine(project string, s spawn.StoppedAgent) string {
 	switch {
 	case s.Cleared && s.Crew != "":
 		return fmt.Sprintf("%s/%s: not listed by Herdr; run meta cleared", project, s.Crew)
 	case s.Crew != "":
-		return crewStopReport(project, s.Crew, s.Stop)
+		return s.Stop.CrewLine(project, s.Crew)
 	case s.Stop.AlreadyGone:
 		return fmt.Sprintf("%s: Mate already gone (agent %s)", project, s.Stop.Agent)
 	}

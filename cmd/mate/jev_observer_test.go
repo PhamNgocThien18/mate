@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/screen"
 	"github.com/nguyenngocanh94/mate/internal/screen/chain"
 	"github.com/nguyenngocanh94/mate/internal/send"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -180,7 +181,7 @@ func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
 		observer := &seesBusy{}
 		f.deps.Observer = observer
 		typedBefore := len(f.rt.SentText)
-		s := consoleOutbox(f.ws, f.deps)
+		s := spawn.MateOutbox(f.ws, f.deps)
 		if _, err := s.Enqueue("shop", outbox.Request{Source: store.OutboxSourceAssign, Key: "crews/k3.status@0", Text: "resolve: A"}); err != nil {
 			t.Fatal(err)
 		}

@@ -148,7 +148,7 @@ func consoleNoticeAction(ws *store.Workspace, deps spawn.Deps, classifier notice
 		if err != nil {
 			return "", err
 		}
-		screens, err := screenOf(deps, kind)
+		screens, err := deps.Harnesses.Screen(kind)
 		if err != nil {
 			return "", err
 		}

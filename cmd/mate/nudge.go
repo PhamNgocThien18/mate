@@ -31,7 +31,7 @@ const sendCorrectionNudge = "if this correction applies to future crews, route i
 // closed the task, the record nudge. A stop that changed nothing (the crew
 // was already closed) has nothing new to record.
 func writeCrewStopReport(stdout io.Writer, project, crew string, res spawn.StopResult, caller string) {
-	fmt.Fprintln(stdout, crewStopReport(project, crew, res))
+	fmt.Fprintln(stdout, res.CrewLine(project, crew))
 	if caller == spawn.CallerMate && !res.AlreadyClosed {
 		fmt.Fprintln(stdout, crewStopNudge)
 	}

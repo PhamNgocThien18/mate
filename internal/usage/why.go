@@ -43,7 +43,7 @@ func writeWhy(ctx context.Context, out io.Writer, w *store.Workspace, handle *db
 	}
 
 	fmt.Fprintf(out, "usage why %s %s\n", project, crew)
-	WriteWhyHead(out, ledger, turns, perf)
+	writeWhyHead(out, ledger, turns, perf)
 	t := ledger.Tokens
 	if len(turns) == 0 {
 		fmt.Fprintf(out, "\nno model calls recorded for %s; there is nothing to explain yet\n", crew)
@@ -64,12 +64,11 @@ func writeWhy(ctx context.Context, out io.Writer, w *store.Workspace, handle *db
 	return nil
 }
 
-// WriteWhyHead is the `--why` page's head - the task, its run, the token
+// writeWhyHead is the `--why` page's head - the task, its run, the token
 // buckets, the call shape and the timing lanes - shared with the usage
 // section the app writes into a crew's learning record at its close
-// (CON-130, cmd/mate's usageBlock), so the two never say a number
-// differently.
-func WriteWhyHead(out io.Writer, ledger dashboard.Task, turns []dashboard.Turn, perf diagnostics.Performance) {
+// (CON-130, usageBlock), so the two never say a number differently.
+func writeWhyHead(out io.Writer, ledger dashboard.Task, turns []dashboard.Turn, perf diagnostics.Performance) {
 	if ledger.Text != "" {
 		fmt.Fprintf(out, "task: %s\n", oneLine(ledger.Text, whyTextWidth))
 	}

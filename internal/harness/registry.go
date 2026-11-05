@@ -56,6 +56,17 @@ func (r Registry) Lookup(k Kind) (Profile, error) {
 		fmt.Sprintf("no harness registered for kind %q (registered: %s)", k, r.list()))
 }
 
+// Screen is the screen profile of a registered kind: every read of an
+// agent's pane goes through its source, and every verdict on it through its
+// layout.
+func (r Registry) Screen(k Kind) (ScreenProfile, error) {
+	p, err := r.Lookup(k)
+	if err != nil {
+		return nil, err
+	}
+	return p.Screen(), nil
+}
+
 // Parse reads a kind as a person or a file spells it: case and surrounding
 // space do not matter. Empty and unregistered kinds are refused.
 func (r Registry) Parse(s string) (Kind, error) {
