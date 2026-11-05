@@ -186,12 +186,6 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request, req ActionRe
 		s.writeError(w, r, http.StatusConflict, "Action refused: project "+req.Project+" is already in the workspace · nothing started", "")
 		return
 	}
-	target := "workspace"
-	if busy, ok := s.acting.take(target, req.Action); !ok {
-		s.writeError(w, r, http.StatusConflict, "Action refused: "+busy+" is still running on the workspace · nothing started", "")
-		return
-	}
-	defer s.acting.release(target)
 	s.run(w, r, context.WithoutCancel(r.Context()), req)
 }
 

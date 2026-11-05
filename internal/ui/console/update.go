@@ -31,7 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workOpenedMsg:
 		return m.onWorkOpened(msg)
 	case newsOpenedMsg:
-		if msg.err != nil {
+		if busy, ok := refusedBusy(msg.err); ok {
+			m.msg = busy
+		} else if msg.err != nil {
 			m.msg = errMsg("Open news refused: " + msg.err.Error())
 		}
 		return m, nil

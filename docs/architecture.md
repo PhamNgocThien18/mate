@@ -9,7 +9,8 @@ to be; this file is the current map. Installing and building:
 
 mate is splitting its core into a process of its own (CON-203). Done so far:
 `internal/coreapi` (CON-206); the engine in `internal/core` (CON-207) with the
-shared snapshot, Office/City and notifications (CON-208); `internal/refresh`
+shared snapshot, Office/City and notifications (CON-208), and the one entry
+for every UI's actions (CON-209); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169). Every
 part marked **Target** below is planned, not built; the issue named beside it
@@ -113,8 +114,22 @@ every UI reads: `query.LoadLive` plus what the loops know, kept for up to
 cache (the button check of `POST /api/actions`); `Engine.Invalidate` drops
 it after an action. The console TUI (`internal/ui/console`) reads it every
 2 s through `coreapi.LoadFunc` (`consoleLoad` adds the console's own keys)
-and acts through `coreapi.ActionFunc` (`tuiAndWebActions`,
-`cmd/mate/console_actions.go`, wrapped by `invalidateAfter`).
+and acts through `coreapi.ActionFunc`: `Engine.Act` (`internal/core/act.go`).
+
+`Engine.Act` is the one entry for an action from any UI: the console's
+keys (`tuiAction`, `cmd/mate/console_actions.go`) and every
+`POST /api/actions` of Office and City. It runs the chat (`say`,
+`interrupt`, `answer`, `fork`, `fork_close`) itself on the headless Mate's
+host, and every other action through `Options.Act`, cmd/mate's
+`engineActions` (**Target**: CON-215 plans moving them in). It holds one
+lock per target while an action runs: the Project, `project/crew` when the
+request names a crew, the workspace for adding a Project; the chat,
+`peek`, `explain_notice`, `okay_work`, `open_news` and `open_work` take
+`<target>#<action>` instead, so they run beside a stop or a merge. A
+second action on a held target, from any UI, is refused with
+`coreapi.ErrBusy` ("Action refused: … is still running on … · nothing
+started"; a page gets it as a 409). Each console still runs one action at
+a time of its own. After every action `Act` calls `Invalidate`.
 
 How processes exchange state:
 
@@ -149,7 +164,7 @@ How processes exchange state:
   default `127.0.0.1:7777`, LAN only with `allow_remote`).
 
 **Target** (CON-203): one `mate core` process per workspace runs the engine
-with no UI open (CON-209 one entry for actions; CON-210 bounded stop;
+with no UI open (CON-210 bounded stop;
 CON-211 `mate core run` and `core.lock`; CON-213 `start|stop|restart|status`).
 UIs reach it over `.mate/core.sock` (CON-212) through `internal/coreclient`
 (CON-214). The console becomes a client. CLI commands keep writing files
