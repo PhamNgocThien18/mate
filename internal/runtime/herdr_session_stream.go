@@ -81,11 +81,11 @@ func (h *Herdr) Open(ctx context.Context, ref AgentSessionRef, size TerminalSize
 		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach stderr pipe", err)
 	}
 	cmd.Stderr = stderrWriter
-	master, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(size.Cols), Rows: uint16(size.Rows)})
+	master, err := startRawPTY(cmd, &pty.Winsize{Cols: uint16(size.Cols), Rows: uint16(size.Rows)})
 	if err != nil {
 		_ = stderrReader.Close()
 		_ = stderrWriter.Close()
-		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach failed to start", err)
+		return nil, err
 	}
 	_ = stderrWriter.Close()
 
@@ -101,15 +101,37 @@ func (h *Herdr) Open(ctx context.Context, ref AgentSessionRef, size TerminalSize
 	}
 	go channel.wait()
 	go channel.captureStderr()
-	if _, err := term.MakeRaw(master.Fd()); err != nil {
-		_ = channel.reap(master, cmd.Process)
-		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach PTY raw mode", err)
-	}
 	if err := unix.SetNonblock(channel.fd, true); err != nil {
 		_ = channel.reap(master, cmd.Process)
 		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach PTY nonblocking mode", err)
 	}
 	return channel, nil
+}
+
+// startRawPTY is pty.StartWithSize with the terminal made raw before the
+// child starts. Raw mode set after the start races the child's first write:
+// a fast child's "\n" reaches the master as "\r\n" (CON-182 caught it on Linux).
+func startRawPTY(cmd *exec.Cmd, size *pty.Winsize) (*os.File, error) {
+	master, tty, err := pty.Open()
+	if err != nil {
+		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach failed to start", err)
+	}
+	defer func() { _ = tty.Close() }()
+	if err := pty.Setsize(master, size); err != nil {
+		_ = master.Close()
+		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach failed to start", err)
+	}
+	if _, err := term.MakeRaw(tty.Fd()); err != nil {
+		_ = master.Close()
+		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach PTY raw mode", err)
+	}
+	cmd.Stdin, cmd.Stdout = tty, tty
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	if err := cmd.Start(); err != nil {
+		_ = master.Close()
+		return nil, observability.WrapError(observability.CodeRuntimeUnavailable, "herdr agent attach failed to start", err)
+	}
+	return master, nil
 }
 
 var _ SessionStream = (*Herdr)(nil)
