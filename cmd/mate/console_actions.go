@@ -144,7 +144,7 @@ func stopCrewAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, r
 	if err != nil {
 		return "", err
 	}
-	line := crewStopReport(req.Target, req.Crew, res)
+	line := res.CrewLine(req.Target, req.Crew)
 	if !res.AlreadyClosed {
 		line += "\n" + recordUsageAtClose(ctx, ws, req.Target, req.Crew, "console stop")
 	}
@@ -167,7 +167,7 @@ func removeProjectAction(ctx context.Context, ws *store.Workspace, deps spawn.De
 		return "", err
 	}
 	var stderr strings.Builder
-	res, err := spawn.RemoveProject(ctx, fresh, deps, req.Target, removeProjectOptions(fresh, deps, spawn.CallerUser, &stderr, nil))
+	res, err := spawn.RemoveProject(ctx, fresh, deps, req.Target, spawn.RemoveProjectStow(fresh, deps, spawn.CallerUser, &stderr, nil))
 	if err != nil {
 		return "", err
 	}
@@ -290,11 +290,8 @@ func toggleModeAction(ws *store.Workspace, project string) (string, error) {
 	if project == "" {
 		return "", observability.NewError(observability.CodeUsage, "no Project was named for mode")
 	}
-	if err := store.ValidateProjectName(project); err != nil {
+	if err := ws.RequireProject(project); err != nil {
 		return "", err
-	}
-	if _, ok := ws.Project(project); !ok {
-		return "", fmt.Errorf("%w: %s", store.ErrNoProject, project)
 	}
 	next := !ws.Auto(project)
 	if err := ws.SetMode(project, next); err != nil {

@@ -217,7 +217,7 @@ func TestCrewStopReportLineDescribesEachOutcome(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			line := crewStopReport("shop", "k3", tc.res)
+			line := tc.res.CrewLine("shop", "k3")
 			for _, want := range tc.want {
 				if !strings.Contains(line, want) {
 					t.Errorf("line = %q, want it to carry %q", line, want)

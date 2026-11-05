@@ -3,6 +3,7 @@ package spawn
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/crewstate"
@@ -13,14 +14,28 @@ import (
 // RemoveProjectOptions are what RemoveProject takes beyond the project.
 type RemoveProjectOptions struct {
 	// Stow asks a running Mate to record what exists only in its
-	// conversation, just before the Mate is stopped. cmd/mate passes the
-	// same stow `mate mate stop` runs; nil stops the Mate at once. It is
+	// conversation, just before the Mate is stopped. RemoveProjectStow
+	// passes the same stow `mate mate stop` runs; nil stops the Mate at
+	// once. It is
 	// called only for a Mate Herdr lists (or whose liveness could not be
 	// asked), and an error from it fails the Mate's stop.
 	Stow func(ctx context.Context, project string) error
 	// Progress, when set, is told each step as it begins, in words fit for
 	// a status line.
 	Progress func(step string)
+}
+
+// RemoveProjectStow is how the CLI and the Console stop a project's Mate for
+// a removal: with the stow `mate mate stop` runs (StowBeforeStop), announced
+// on stderr.
+func RemoveProjectStow(w *store.Workspace, deps Deps, caller string, stderr io.Writer, progress func(string)) RemoveProjectOptions {
+	return RemoveProjectOptions{
+		Progress: progress,
+		Stow: func(ctx context.Context, project string) error {
+			_, err := StowBeforeStop(ctx, w, deps, project, caller, false, stderr)
+			return err
+		},
+	}
 }
 
 // StoppedAgent is one agent RemoveProject stopped.
@@ -72,11 +87,8 @@ func RemoveProject(ctx context.Context, w *store.Workspace, deps Deps, project s
 	if deps.Runtime == nil {
 		return out, errUsage("spawn: a runtime adapter is required")
 	}
-	if err := store.ValidateProjectName(project); err != nil {
+	if err := w.RequireProject(project); err != nil {
 		return out, err
-	}
-	if _, ok := w.Project(project); !ok {
-		return out, fmt.Errorf("%w: %s", store.ErrNoProject, project)
 	}
 	progress := opts.Progress
 	if progress == nil {

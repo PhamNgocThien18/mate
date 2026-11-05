@@ -215,7 +215,7 @@ func resolveCrewHandle(ctx context.Context, w *store.Workspace, deps spawn.Deps,
 	if err != nil {
 		return resolvedCrew{}, err
 	}
-	screens, err := screenOf(deps, kind)
+	screens, err := deps.Harnesses.Screen(kind)
 	if err != nil {
 		return resolvedCrew{}, err
 	}
@@ -239,17 +239,6 @@ func resolveCrewHandle(ctx context.Context, w *store.Workspace, deps spawn.Deps,
 	}
 	handle := runtime.AgentHandle{Session: session, Name: agent, RawID: crew, Kind: kind, Tab: tab}
 	return resolvedCrew{AgentRecorded: true, SessionRunning: true, Handle: handle, Kind: kind, Screen: screens}, nil
-}
-
-// screenOf is the screen profile of a registered harness: every read of an
-// agent's pane goes through its source, and every verdict on it through its
-// layout.
-func screenOf(deps spawn.Deps, kind harness.Kind) (harness.ScreenProfile, error) {
-	profile, err := deps.Harnesses.Lookup(kind)
-	if err != nil {
-		return nil, err
-	}
-	return profile.Screen(), nil
 }
 
 // printSendRefusalDetails prints whatever pending text or screen tail a

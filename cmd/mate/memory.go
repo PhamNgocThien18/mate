@@ -101,14 +101,10 @@ func remember(w *store.Workspace, project, section, text, source, expiry string,
 	return rememberResult{Line: e.Line(), Budget: budget}, err
 }
 
+// requireProject is store.Workspace.RequireProject, kept under its old name
+// for the commands that call it.
 func requireProject(w *store.Workspace, project string) error {
-	if err := store.ValidateProjectName(project); err != nil {
-		return err
-	}
-	if _, ok := w.Project(project); !ok {
-		return fmt.Errorf("%w: %s", store.ErrNoProject, project)
-	}
-	return nil
+	return w.RequireProject(project)
 }
 
 // readOptional reads path, and an absent file as empty.

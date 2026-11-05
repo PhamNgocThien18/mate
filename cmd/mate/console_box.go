@@ -67,11 +67,8 @@ func boxResolveAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps,
 	if resolve == "" {
 		return "", observability.NewError(observability.CodeUsage, "no resolve line was built for this entry")
 	}
-	if err := store.ValidateProjectName(req.Target); err != nil {
+	if err := ws.RequireProject(req.Target); err != nil {
 		return "", err
-	}
-	if _, ok := ws.Project(req.Target); !ok {
-		return "", fmt.Errorf("%w: %s", store.ErrNoProject, req.Target)
 	}
 	key := req.Key
 	if key == "" {
@@ -79,7 +76,7 @@ func boxResolveAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps,
 		// still gets dedup, on the words themselves.
 		key = "line:" + resolve
 	}
-	sender := consoleOutbox(ws, deps)
+	sender := spawn.MateOutbox(ws, deps)
 	queued, err := sender.Enqueue(req.Target, outbox.Request{
 		Source: store.OutboxSourceAssign, Key: key, Text: resolve,
 	})
@@ -179,7 +176,7 @@ func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, re
 	if err != nil {
 		return "", err
 	}
-	screens, err := screenOf(deps, kind)
+	screens, err := deps.Harnesses.Screen(kind)
 	if err != nil {
 		return "", err
 	}
@@ -218,7 +215,7 @@ func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps
 		return "", err
 	}
 	confirmed := holds.take(req.Target, time.Now())
-	stow, err := consoleOutbox(ws, deps).Stow(ctx, req.Target, outbox.StowOptions{})
+	stow, err := spawn.MateOutbox(ws, deps).Stow(ctx, req.Target, outbox.StowOptions{})
 	if err != nil {
 		return "", err
 	}

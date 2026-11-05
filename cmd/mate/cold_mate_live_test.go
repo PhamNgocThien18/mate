@@ -168,7 +168,7 @@ func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MateHandle: %v", err)
 	}
-	screens, err := screenOf(deps, kind)
+	screens, err := deps.Harnesses.Screen(kind)
 	if err != nil {
 		t.Fatal(err)
 	}

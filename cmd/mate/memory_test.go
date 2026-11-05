@@ -407,7 +407,7 @@ func TestMemoryUsage(t *testing.T) {
 
 func TestCrewStopNudgeOnlyForTheMate(t *testing.T) {
 	res := spawn.StopResult{Agent: "crew-k3", TabClosed: true, Branch: "mate/k3", Teardown: spawn.TeardownClean, State: "finished"}
-	outcome := crewStopReport("shop", "k3", res) + "\n"
+	outcome := res.CrewLine("shop", "k3") + "\n"
 
 	var mate bytes.Buffer
 	writeCrewStopReport(&mate, "shop", "k3", res, spawn.CallerMate)

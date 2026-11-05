@@ -91,6 +91,42 @@ type StopResult struct {
 	AlreadyClosed bool
 }
 
+// CrewLine is the one line a crew's stop prints, in the console and in the
+// CLI alike (`mate crew stop`, `mate project remove`): exactly what
+// happened, what was kept, and the state the crew ends in.
+func (res StopResult) CrewLine(project, crew string) string {
+	if res.AlreadyClosed {
+		return fmt.Sprintf("%s/%s: already closed, state %s; nothing changed", project, crew, res.State)
+	}
+	agent := res.Agent
+	if agent == "" {
+		agent = "(none recorded)"
+	}
+	stopped := "stopped"
+	if res.AlreadyGone {
+		stopped = "already gone"
+	}
+	tab := "closed"
+	if !res.TabClosed {
+		tab = "not confirmed closed"
+	}
+	orphan := ""
+	if res.OrphanedWorktree && res.WorktreeRemoved {
+		orphan = " (git no longer knew the worktree, so its directory was deleted)"
+	}
+	switch res.Teardown {
+	case TeardownClean:
+		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree%s and branch removed (%s was already landed in default); state %s%s",
+			project, crew, agent, stopped, tab, orphan, res.Branch, res.State, res.Cleanup.Note())
+	case TeardownDiscarded:
+		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree%s and branch removed with --discard (%d commit(s) ahead, %d dirty file(s) discarded); state %s%s",
+			project, crew, agent, stopped, tab, orphan, res.Ahead, res.DirtyFiles, res.State, res.Cleanup.Note())
+	default:
+		return fmt.Sprintf("%s/%s: agent %s (%s), tab %s; worktree and branch kept; state %s",
+			project, crew, agent, stopped, tab, res.State)
+	}
+}
+
 // StopMate stops the Mate of one project and proves it is gone.
 //
 // `herdr agent stop` reporting success is not the proof: the agent must be
