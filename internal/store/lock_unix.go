@@ -1,4 +1,4 @@
-//go:build darwin || linux
+//go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd
 
 package store
 

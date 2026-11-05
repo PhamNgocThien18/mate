@@ -58,7 +58,7 @@ func TestEmptyWorkspaceRendersEmptyStateNotBlank(t *testing.T) {
 		t.Fatalf("the list rule must count zero projects, got %q", first)
 	}
 	m, _ = send(t, m, key("n"))
-	if !m.actionInputMode {
+	if !m.actions.inputMode {
 		t.Fatal("n on the empty workspace must open the new-project sheet")
 	}
 }

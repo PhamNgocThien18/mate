@@ -59,8 +59,10 @@ func jevThreshold(value string) (float64, error) {
 	return t, nil
 }
 
-// baseDeps supplies the runtime and harness registry for this binary.
-func baseDeps() spawn.Deps { return spawn.LiveDeps(harnesses) }
+// baseDeps supplies the runtime and harness registry for this binary. opts
+// go to spawn.LiveDeps; only the console passes one, naming the `herdr` its
+// runtime runs.
+func baseDeps(opts ...spawn.LiveOption) spawn.Deps { return spawn.LiveDeps(harnesses, opts...) }
 
 // liveDeps is baseDeps plus the observer `.mate/.env` asks for, for a command
 // that reads a pane (send, state, a start's settle). A Jev configuration

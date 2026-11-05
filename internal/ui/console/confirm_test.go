@@ -32,15 +32,14 @@ func actHostileStopConfirm(t *testing.T, w, h int) Model {
 	}
 	m, _ = send(t, m, key("a"))
 	m, cmd := send(t, m, key("x"))
-	if cmd != nil || m.confirm == nil || m.confirm.choice.action != ActionStop {
-		t.Fatalf("stop on an active crew must open its confirmation without running: cmd=%v confirm=%+v", cmd != nil, m.confirm)
+	if cmd != nil || m.actions.confirm == nil || m.actions.confirm.choice.action != ActionStop {
+		t.Fatalf("stop on an active crew must open its confirmation without running: cmd=%v confirm=%+v", cmd != nil, m.actions.confirm)
 	}
 	return m
 }
 
 func TestConfirmSheetWrapsItsProseInsteadOfCuttingIt(t *testing.T) {
-	var probe Model
-	_, scope, effect := probe.actionObjectDescription(actionChoice{req: ActionRequest{Action: ActionStop, TargetKind: "crew"}})
+	_, scope, effect := actionObjectDescription(actionChoice{req: ActionRequest{Action: ActionStop, TargetKind: "crew"}})
 	for _, w := range []int{32, 40, 48} {
 		m := actHostileStopConfirm(t, w, 40)
 		frame := renderFrame(t, m)

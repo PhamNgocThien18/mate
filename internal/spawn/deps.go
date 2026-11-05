@@ -117,12 +117,6 @@ type Deps struct {
 	// nor project.yaml names one. LiveDeps sets ModeHeadless (2026-10-15);
 	// empty is ModePane.
 	DefaultMode string
-	// HeadlessOnly starts headless every Mate whose start names no mode,
-	// whatever its last run or project.yaml chose, when its harness can
-	// run one. The console sets it in a terminal it cannot split (neither
-	// WezTerm nor Ghostty): there is no column to show a pane Mate in,
-	// and the console's box talks only to a headless one.
-	HeadlessOnly bool
 	// HostStopWait bounds how long a stop lets a headless Mate finish its
 	// turn; zero means HostStopWait.
 	HostStopWait time.Duration
@@ -175,13 +169,32 @@ type Deps struct {
 	Observer screen.Observer
 }
 
+// LiveOption changes what LiveDeps builds.
+type LiveOption func(*liveOptions)
+
+type liveOptions struct {
+	herdrBinary string
+}
+
+// WithHerdrBinary makes the adapter run the herdr executable at path instead
+// of the "herdr" on PATH. The console passes the one its stage column runs,
+// which can be where the console's PATH does not reach (CON-189).
+func WithHerdrBinary(path string) LiveOption {
+	return func(o *liveOptions) { o.herdrBinary = path }
+}
+
 // LiveDeps is what the CLI uses: the real Herdr adapter over os/exec, and
 // the harnesses the binary was built with. The name registry is shared with
 // the adapter, which re-reserves the name at start; without one StartAgent
-// refuses outright.
-func LiveDeps(harnesses harness.Registry) Deps {
+// refuses outright. Given no option, the adapter runs the "herdr" on PATH.
+func LiveDeps(harnesses harness.Registry, opts ...LiveOption) Deps {
+	var o liveOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	names := runtime.NewMemoryNameRegistry()
 	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt.Binary = o.herdrBinary
 	rt.Names = names
 	return Deps{Runtime: rt, Harnesses: harnesses, Names: names, DefaultMode: ModeHeadless, Cleaner: teardown.Live()}
 }

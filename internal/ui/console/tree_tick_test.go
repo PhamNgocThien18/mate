@@ -310,15 +310,15 @@ func TestBackgroundTickPreservesOpenConfirmPrompt(t *testing.T) {
 	m, _ = send(t, m, key("enter")) // the Mate row
 	m, _ = send(t, m, key("a"))
 	m, _ = send(t, m, key("x")) // Stop mate… asks first
-	if m.confirm == nil {
+	if m.actions.confirm == nil {
 		t.Fatal("precondition: want the stop confirmation open")
 	}
-	choice := m.confirm.choice
+	choice := m.actions.confirm.choice
 
 	m, _ = driveOneTick(t, m, tick, tree)
 
-	if m.confirm == nil || m.confirm.choice.action != choice.action || m.confirm.key != "x" {
-		t.Fatalf("confirm prompt after a background tick = %+v, want it unchanged", m.confirm)
+	if m.actions.confirm == nil || m.actions.confirm.choice.action != choice.action || m.actions.confirm.key != "x" {
+		t.Fatalf("confirm prompt after a background tick = %+v, want it unchanged", m.actions.confirm)
 	}
 }
 

@@ -1,18 +1,22 @@
-//go:build !darwin && !linux
+//go:build !darwin && !dragonfly && !freebsd && !illumos && !linux && !netbsd && !openbsd
 
 package store
 
 import (
 	"fmt"
 	"os"
+	"runtime"
 )
 
-// mate targets darwin and linux, where flock is available. Elsewhere the
-// package still builds and the appends rely on O_APPEND alone.
-func lockFile(f *os.File, exclusive bool) error { return nil }
+// errNoFlock is every lock's answer on a platform whose syscall package has
+// no Flock (the constraint above is lock_unix.go's, negated). A lock that
+// took nothing would let a log append, a backlog edit or an outbox update
+// lose its exclusion without a word, and mate does not run without its
+// locks (CON-177).
+var errNoFlock = fmt.Errorf("store: file locks need syscall.Flock, which Go lacks on %s", runtime.GOOS)
 
-func unlockFile(f *os.File) error { return nil }
+func lockFile(f *os.File, exclusive bool) error { return errNoFlock }
 
-func tryLockFile(f *os.File, exclusive bool) (bool, error) {
-	return false, fmt.Errorf("maintenance locks require darwin or linux")
-}
+func unlockFile(f *os.File) error { return errNoFlock }
+
+func tryLockFile(f *os.File, exclusive bool) (bool, error) { return false, errNoFlock }

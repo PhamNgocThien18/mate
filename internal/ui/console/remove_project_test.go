@@ -17,8 +17,8 @@ func TestRemoveProjectEntryAsksThenRunsOnY(t *testing.T) {
 		t.Fatalf("project row menu has no Remove project entry:\n%s", view)
 	}
 	m, cmd := send(t, m, key("x"))
-	if cmd != nil || m.confirm == nil || m.confirm.choice.action != ActionRemoveProject || len(*got) != 0 {
-		t.Fatalf("x must open the confirmation without running: cmd=%v confirm=%+v calls=%d", cmd != nil, m.confirm, len(*got))
+	if cmd != nil || m.actions.confirm == nil || m.actions.confirm.choice.action != ActionRemoveProject || len(*got) != 0 {
+		t.Fatalf("x must open the confirmation without running: cmd=%v confirm=%+v calls=%d", cmd != nil, m.actions.confirm, len(*got))
 	}
 	flat := actFlat(renderFrame(t, m))
 	for _, want := range []string{"Remove project payments-api?", "stops its Mate and", "stay on disk", "cancel"} {
@@ -28,8 +28,8 @@ func TestRemoveProjectEntryAsksThenRunsOnY(t *testing.T) {
 	}
 	// Esc goes back to the menu; nothing ran. The asking key does not confirm.
 	m, _ = send(t, m, key("x"))
-	if len(*got) != 0 || m.confirm == nil {
-		t.Fatalf("the menu key confirmed: confirm=%+v calls=%d", m.confirm, len(*got))
+	if len(*got) != 0 || m.actions.confirm == nil {
+		t.Fatalf("the menu key confirmed: confirm=%+v calls=%d", m.actions.confirm, len(*got))
 	}
 	m, cmd = send(t, m, key("y"))
 	if cmd == nil {

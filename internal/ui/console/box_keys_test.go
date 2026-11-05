@@ -168,8 +168,8 @@ func TestBoxSelectionMovesTheListToTheCrew(t *testing.T) {
 func TestBoxKeysNeedBoxFocus(t *testing.T) {
 	m, act, spy := bxPayments(t, 40, 36)
 	m, _ = send(t, m, key("a"))
-	if !m.actions || len(act.reqs) != 0 {
-		t.Fatalf("a on the list: actions=%v reqs=%+v, want the actions sheet and no assign", m.actions, act.reqs)
+	if !m.actions.open || len(act.reqs) != 0 {
+		t.Fatalf("a on the list: actions=%v reqs=%+v, want the actions sheet and no assign", m.actions.open, act.reqs)
 	}
 	m, _ = send(t, m, key("esc"))
 	_, cmd := send(t, m, key("enter"))

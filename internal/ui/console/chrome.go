@@ -242,16 +242,10 @@ func (m Model) keyLine(p framePlan) gline {
 }
 
 func (m Model) keyHints() []keyHint {
+	if m.menuOnScreen() {
+		return m.actions.keyHints(m.g)
+	}
 	switch m.sheetOpen() {
-	case sheetActions:
-		return []keyHint{{m.g.UpDown, "move"}, {"enter", "run"}, {"or its key", ""}, {"esc", ""}}
-	case sheetConfirm:
-		verb := strings.Fields(confirmVerb(m.confirm.choice, m.confirm.label))
-		return []keyHint{{"enter", "cancel"}, {m.confirm.key, verb[0]}, {"esc", "back"}}
-	case sheetNewProject:
-		return []keyHint{{"enter", "create"}, {"tab", "field"}, {"esc", "cancel"}}
-	case sheetHarness:
-		return []keyHint{{m.g.UpDown, "move"}, {"enter", "use"}, {"esc", "cancel"}}
 	case sheetDiff:
 		return []keyHint{{m.g.UpDown, "scroll"}, {"esc", "close"}}
 	case sheetKeys, sheetMessage:
