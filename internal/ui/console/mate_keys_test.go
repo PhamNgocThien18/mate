@@ -88,8 +88,8 @@ func TestCreatingAMateAsksWhichHarnessToUse(t *testing.T) {
 	m, got := actRunner(t, actMateTree(absentMate("this Project has no Mate"), actMateCaps(true, false, false)), "Mate created", nil)
 	m, _ = send(t, m, key("enter"))
 	m, cmd := send(t, m, key("s"))
-	if cmd != nil || !m.harnessPick {
-		t.Fatalf("s dispatched before the harness was chosen: cmd=%v pick=%v", cmd != nil, m.harnessPick)
+	if cmd != nil || !m.actions.harnessPick {
+		t.Fatalf("s dispatched before the harness was chosen: cmd=%v pick=%v", cmd != nil, m.actions.harnessPick)
 	}
 	view := renderFrame(t, m)
 	for _, want := range []string{"harness", "claude", "codex", "esc"} {
@@ -126,8 +126,8 @@ func TestStartAndResumeDoNotAskForAHarness(t *testing.T) {
 			m, got := actRunner(t, actMateTree(tc.mate, tc.caps), "ok", nil)
 			m, _ = send(t, m, key("enter"))
 			m, cmd := send(t, m, key("s"))
-			if cmd == nil || m.harnessPick {
-				t.Fatalf("s did not dispatch straight for a %s Mate: cmd=%v pick=%v", tc.name, cmd != nil, m.harnessPick)
+			if cmd == nil || m.actions.harnessPick {
+				t.Fatalf("s did not dispatch straight for a %s Mate: cmd=%v pick=%v", tc.name, cmd != nil, m.actions.harnessPick)
 			}
 			_, _ = send(t, m, cmd())
 			if len(*got) != 1 || (*got)[0].Action != tc.action || (*got)[0].Harness != "" {
@@ -145,8 +145,8 @@ func TestEscapeLeavesTheHarnessPickerWithoutRunningAnything(t *testing.T) {
 	if cmd != nil || len(*got) != 0 {
 		t.Fatalf("esc ran something: cmd=%v calls=%d", cmd != nil, len(*got))
 	}
-	if m.harnessPick || m.actions || m.confirm != nil {
-		t.Fatalf("esc left a sheet open: pick=%v sheet=%v confirm=%v", m.harnessPick, m.actions, m.confirm != nil)
+	if m.actions.harnessPick || m.actions.open || m.actions.confirm != nil {
+		t.Fatalf("esc left a sheet open: pick=%v sheet=%v confirm=%v", m.actions.harnessPick, m.actions.open, m.actions.confirm != nil)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestTheHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 			m, got := actRunner(t, tree, "Mate created", nil)
 			m, _ = send(t, m, key("enter"))
 			m, _ = send(t, m, key("s"))
-			if !m.harnessPick {
+			if !m.actions.harnessPick {
 				t.Fatal("setup: s did not open the harness picker")
 			}
 			if order := m.harnessOrder(); !slices.Equal(order, tc.want) {

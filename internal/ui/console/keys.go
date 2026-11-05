@@ -12,9 +12,10 @@ import tea "github.com/charmbracelet/bubbletea"
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	m.notice = ""
-	if key == "ctrl+c" || (key == "q" && !m.actionInputMode && !m.diff.open) {
-		if m.actionBusy {
-			return m.onBusyQuit(), tea.Quit
+	if key == "ctrl+c" || (key == "q" && !m.actions.inputMode && !m.diff.open) {
+		if m.actions.busy {
+			// The one signal left to the running action (actionMenu.abandon).
+			m.actions = m.actions.abandon()
 		}
 		m.quitting = true
 		return m, tea.Quit
@@ -38,16 +39,10 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.diff.open:
 		return m.onDiffKey(key).relayout(), nil
-	case m.actionBusy:
+	case m.actions.busy:
 		return m, nil
-	case m.actionInputMode:
-		return m.onActionInputKey(msg)
-	case m.harnessPick:
-		return m.onHarnessKey(msg)
-	case m.confirm != nil:
-		return m.onConfirmKey(key)
-	case m.actions:
-		return m.onMenuKey(key)
+	case m.actions.sheet() != sheetNone:
+		return m.onMenuKey(msg)
 	case m.work.open:
 		return m.onWorkKey(key)
 	}

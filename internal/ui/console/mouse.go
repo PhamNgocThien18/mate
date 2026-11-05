@@ -198,23 +198,25 @@ func (m Model) onBoxMouse(p framePlan, h, line, x int, wheel bool, delta int) (t
 	return m.showBoxItem(items[hit.item])
 }
 
-// onSheetMouse: a click on an actions row runs it; the wheel moves the
-// sheet's cursor, or scrolls a diff.
+// onSheetMouse is the mouse over the sheet on screen. The action menu takes
+// it over its own sheets (actionMenu.onWheel, onClick): the wheel moves the
+// cursor, and a click on an entry or a harness runs it. The wheel scrolls a
+// diff; the Work sheet's rows take the wheel and clicks as well.
 func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) (tea.Model, tea.Cmd) {
+	if m.menuOnScreen() {
+		top, _ := sl.body()
+		var msg tea.Msg = menuClick{line: y - top}
+		if wheel {
+			msg = menuWheel{delta: delta}
+		}
+		var do menuIntent
+		m.actions, do = m.actions.update(msg, m.menuFacts())
+		return m.carryOut(do)
+	}
 	switch m.sheetOpen() {
 	case sheetDiff:
 		if wheel {
 			return m.scrollDiff(delta), nil
-		}
-	case sheetActions:
-		if wheel {
-			m.actionIndex = clampInt(m.actionIndex+delta, 0, max0(len(m.menu)-1))
-			return m, nil
-		}
-		top, _ := sl.body()
-		if i := y - top; i >= 0 && i < len(m.menu) {
-			m.actionIndex = i
-			return m.runEntry(i)
 		}
 	case sheetWork:
 		rows := m.workVisible()
@@ -232,17 +234,6 @@ func (m Model) onSheetMouse(p framePlan, sl slot, y int, wheel bool, delta int) 
 			}
 			m.work.sel = rowAt[i]
 			return m, nil
-		}
-	case sheetHarness:
-		if wheel {
-			m.harnessIndex = clampInt(m.harnessIndex+delta, 0, len(m.harnessOrder())-1)
-			return m, nil
-		}
-		// A click on a harness row is Enter on it, like every other row.
-		top, _ := sl.body()
-		if i := y - top; i >= 0 && i < len(m.harnessOrder()) {
-			m.harnessIndex = i
-			return m.onHarnessKey(tea.KeyMsg{Type: tea.KeyEnter})
 		}
 	}
 	return m, nil

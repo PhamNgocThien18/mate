@@ -84,8 +84,8 @@ func TestSpaceTicksADoneRow(t *testing.T) {
 	m, act := bxWork(t)
 	m = bxOpenSheet(t, m, act)
 	m, cmd := send(t, m, key(" "))
-	if cmd == nil || !m.actionBusy {
-		t.Fatalf("Space on the done row ran nothing: busy %v, note %q", m.actionBusy, m.work.note)
+	if cmd == nil || !m.actions.busy {
+		t.Fatalf("Space on the done row ran nothing: busy %v, note %q", m.actions.busy, m.work.note)
 	}
 	done := cmd()
 	m, _ = send(t, m, done)

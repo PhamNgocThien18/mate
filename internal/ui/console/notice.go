@@ -25,5 +25,5 @@ func (m Model) withNoticeEntry(r row, entries []menuEntry) []menuEntry {
 	if !c.enabled {
 		c.desc = "unavailable · no active agent to read"
 	}
-	return append(entries, m.choiceEntry("e", "Explain notice (Jev)", c))
+	return append(entries, m.choiceEntry(r, "e", "Explain notice (Jev)", c))
 }

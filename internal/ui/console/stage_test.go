@@ -100,7 +100,7 @@ func TestAStaleBindingIsRefusedBeforeTheHostIsAsked(t *testing.T) {
 	spy := &stageSpy{}
 	m := toFailedAttempt(t, loaded(t, sampleTree(), nil)).WithStage(spy.fn)
 	sheet, _ := send(t, m, key("a"))
-	if e := sheet.menu[0]; e.kind != entryShow || e.enabled || !strings.Contains(e.reason, "stale") {
+	if e := sheet.actions.entries[0]; e.kind != entryShow || e.enabled || !strings.Contains(e.reason, "stale") {
 		t.Fatalf("the actions sheet does not mark the show unavailable up front: %+v", e)
 	}
 	m, cmd := send(t, m, key("enter"))
@@ -340,7 +340,7 @@ func TestTKeepsInputPriority(t *testing.T) {
 	view := &toolSpy{}
 	m := loaded(t, sampleTree(), nil).WithCommandView(view.fn).beginNewProject()
 	m, _ = send(t, m, key("t"))
-	if !m.actionInputMode || len(view.calls) != 0 {
+	if !m.actions.inputMode || len(view.calls) != 0 {
 		t.Fatal("t left the text form")
 	}
 }

@@ -44,7 +44,11 @@
 //	             harness icons cmd/mate settles on before the TUI starts
 //	words.go     status words, their one-line forms and tints, !N
 //	pane_*.go    the list, detail and box panes
-//	sheets.go    actions (menu.go), confirm, new project, harness, diff, keys
+//	sheets.go    which bottom sheet is open; the diff, keys and message sheets
+//	action_menu.go
+//	             the action menu: the actions sheet (menu.go builds its
+//	             entries from actions.go's choices), confirm, new project,
+//	             harness, and the one action that may be running
 //	chrome.go    pane rules, the status line, the key line
 //	states.go    too small, loading, a failed read, an empty workspace
 //

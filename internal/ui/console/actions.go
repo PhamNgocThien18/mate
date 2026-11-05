@@ -1,11 +1,8 @@
 package console
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -29,13 +26,6 @@ type actionChoice struct {
 	// confirmKey is the key that confirms, when it is not the entry's own.
 	confirmKey string
 	req        ActionRequest
-}
-
-type actionConfirmation struct {
-	choice actionChoice
-	// key is the key that asked, and the only one that confirms; label is
-	// the entry's own words ("Stop mate…"), which the sheet asks back.
-	key, label string
 }
 
 type actionDoneMsg struct {
@@ -389,29 +379,19 @@ func (m Model) bindingForRow(r row) query.Field[query.BindingValue] {
 	return query.Field[query.BindingValue]{State: query.Unknown, Reason: "row is not a bindable entity"}
 }
 
-// beginNewProject is the 'n' key: it opens the name input for a new
-// Project directly, without the action menu in between. Creating a Project
-// is the one thing a reader can do on a workspace that has none (ADR 0023
-// dropped the default Project), so it is the one action that gets its own
-// key rather than five keystrokes through a menu of entries that all refuse.
-//
-// The menu is deliberately NOT opened behind it: Esc from here closes the
-// overlay and returns the reader to the list they were on, rather than
-// stranding them in a menu they never asked for.
+// beginNewProject is the 'n' key: it opens the new-project form directly,
+// without the actions sheet in between, and leaves the sheet closed behind
+// it (actionMenu.openForm). Creating a Project is the one thing a reader can
+// do on a workspace that has none (ADR 0023 dropped the default Project), so
+// it is the one action that gets its own key rather than five keystrokes
+// through a menu of entries that all refuse.
 func (m Model) beginNewProject() Model {
 	choice, ok := m.newProjectChoice()
 	if !ok {
 		m.msg = errMsg("Action refused: " + strings.TrimPrefix(choice.desc, "unavailable · ") + " · nothing started")
 		return m
 	}
-	m.actions = false
-	m.confirm = nil
-	m.menu = nil
-	m.actionIndex = 0
-	m.pendingChoice = choice
-	m.actionInputMode = true
-	m.actionInput = ""
-	m.actionRepo, m.actionField = "", fieldName
+	m.actions = m.actions.openForm(choice)
 	m.msg = footerMsg{}
 	return m
 }
@@ -436,164 +416,13 @@ func (m Model) newProjectChoice() (actionChoice, bool) {
 	return c, c.enabled
 }
 
-func (m Model) closeActions() Model {
-	m.actions = false
-	m.confirm = nil
-	m.actionInputMode = false
-	m.actionInput = ""
-	m.actionRepo, m.actionField = "", fieldName
-	m.pendingChoice = actionChoice{}
-	m.harnessPick = false
-	m.harnessIndex = 0
-	m.menu = nil
-	m.actionIndex = 0
-	return m
-}
-
-// onboardField is one field of the new-project form: the Project's name,
-// and optionally the git repository it starts with (`mate project add
-// <name> [<repo>]`). A Project may be created with no repo and given repos
-// later with `mate project repo add` (docs/mvp.md M9).
-type onboardField int
-
-const (
-	fieldName onboardField = iota
-	fieldRepo
-)
-
-// Input limits: a name longer than this is no name anyone types, and a path
-// longer than PATH_MAX-ish is not a path this filesystem holds.
-const (
-	onboardNameLimit = 120
-	onboardRepoLimit = 1024
-)
-
-func (m Model) onActionInputKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "tab", "shift+tab", "up", "down":
-		m.actionField = 1 - m.actionField
-		return m, nil
-	case "esc", "backspace":
-		if msg.String() == "backspace" {
-			if field := m.onboardValue(); *field != "" {
-				r := []rune(*field)
-				*field = string(r[:len(r)-1])
-				return m, nil
-			}
-			// Backspace on an empty Repo steps back into Name, the way
-			// it would in any two-field form, rather than throwing the
-			// typed name away.
-			if m.actionField == fieldRepo {
-				m.actionField = fieldName
-				return m, nil
-			}
-		}
-		// Esc unwinds exactly one step: back to the menu when the menu is
-		// what opened this input, and out of the overlay entirely when the
-		// 'n' key did (beginNewProject leaves m.actions false).
-		if m.actions {
-			m.actionInputMode = false
-			m.actionInput = ""
-			m.actionRepo, m.actionField = "", fieldName
-			m.pendingChoice = actionChoice{}
-			return m, nil
-		}
-		return m.closeActions(), nil
-	case "enter":
-		if strings.TrimSpace(m.actionInput) == "" {
-			m.actionField = fieldName
-			m.msg = errMsg("Action refused: project name is required · nothing started")
-			return m, nil
-		}
-		// A name the store would refuse is not sent: the rule line under
-		// the field already says why, in amber (design K).
-		if why := m.newProjectNameProblem(strings.TrimSpace(m.actionInput)); why != "" {
-			m.actionField = fieldName
-			return m, nil
-		}
-		// Enter on the name moves on to the repo, so the common case is
-		// name, Enter, path, Enter - never a submit with the path unasked.
-		// Enter on an empty repo is the answer "no repo yet": the Project
-		// is created without one.
-		if m.actionField == fieldName && strings.TrimSpace(m.actionRepo) == "" {
-			m.actionField = fieldRepo
-			m.msg = footerMsg{}
-			return m, nil
-		}
-		// The pending choice is the input's own, not whatever the menu
-		// cursor happens to sit on: the 'n' key never opened a menu.
-		choice := m.pendingChoice
-		if choice.action == "" {
-			return m.closeActions(), nil
-		}
-		choice.req.Input = strings.TrimSpace(m.actionInput)
-		choice.req.Repo = strings.TrimSpace(m.actionRepo)
-		return m.runAction(choice)
-	}
-	field, limit, label := &m.actionInput, onboardNameLimit, "Project name"
-	if m.actionField == fieldRepo {
-		field, limit, label = &m.actionRepo, onboardRepoLimit, "Repo path"
-	}
-	for _, r := range msg.Runes {
-		if unicode.IsPrint(r) && !unicode.IsSpace(r) || r == ' ' {
-			if len([]rune(*field)) < limit {
-				*field += string(r)
-				m.msg = footerMsg{}
-			} else {
-				m.msg = infoMsg(fmt.Sprintf("%s limit reached (%d characters); further input is ignored", label, limit))
-			}
-		}
-	}
-	return m, nil
-}
-
-// onboardValue is the field the keyboard is typing into.
-func (m *Model) onboardValue() *string {
-	if m.actionField == fieldRepo {
-		return &m.actionRepo
-	}
-	return &m.actionInput
-}
-
+// runAction starts choice through ActionFunc, under the program's own
+// context (actionMenu.start), and puts the running line on the message line.
 func (m Model) runAction(choice actionChoice) (Model, tea.Cmd) {
-	m.actions = false
-	m.actionInputMode = false
-	m.harnessPick = false
-	m.pendingChoice = actionChoice{}
-	m.actionBusy = true
-	m.actionRunningDesc = string(choice.action) + " " + actionObject(choice)
-	m.actionStartedAt = time.Now()
-	m.msg = m.runningLine(0)
-	// The context is a child of the program's own (baseCtx), not
-	// context.Background(): cancel is stored so quitting mid-action (see
-	// onKey's actionBusy branch) has a real signal to send the goroutine
-	// Bubble Tea otherwise leaks until it returns on its own.
-	ctx, cancel := context.WithCancel(m.baseCtx())
-	m.actionCancel = cancel
-	done := make(chan struct{})
-	m.actionDone = done
-	action, req := m.action, choice.req
-	return m, func() tea.Msg {
-		defer close(done)
-		if action == nil {
-			return actionDoneMsg{choice: choice, err: fmt.Errorf("Console actions are not wired")}
-		}
-		text, err := action(ctx, req)
-		return actionDoneMsg{choice: choice, text: text, err: err}
-	}
-}
-
-// runningLine is the footer while an action runs. Past the first second it
-// carries the time spent, so a slow start reads as progress rather than a
-// hang.
-func (m Model) runningLine(elapsed time.Duration) footerMsg {
-	// The elapsed time leads: on a 40-column status line the object's name
-	// is what gets cut, never how long it has been running.
-	text := "Running " + m.actionRunningDesc + " " + m.g.Ellipsis
-	if elapsed >= time.Second {
-		text = elapsed.Truncate(time.Second).String() + " " + m.g.Dot + " " + text
-	}
-	return infoMsg(text)
+	var run tea.Cmd
+	m.actions, run = m.actions.start(choice, m.action, m.baseCtx())
+	m.msg = m.actions.runningLine(0, m.g)
+	return m, run
 }
 
 // actionObject is what the running line and the confirmation name as the
@@ -612,12 +441,7 @@ func actionObject(c actionChoice) string {
 }
 
 func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
-	m.actionBusy = false
-	m.actionCancel = nil
-	m.actionRunningDesc = ""
-	m.confirm = nil
-	m.actions = false
-	m.menu = nil
+	m.actions = m.actions.finish()
 	if msg.choice.action == ActionOkayWork && m.work.open {
 		// The board stays open with the outcome under its rows; the
 		// re-read below moves the ticked row to the okayed group.
@@ -661,7 +485,7 @@ func (m Model) onActionDone(msg actionDoneMsg) (Model, tea.Cmd) {
 		// back is whether that line reached the Mate and why not.
 		result = boxOutcome(msg, m.g)
 	}
-	m.actionAfterRead = &result
+	m.actions = m.actions.setAfterRead(result)
 	m.msg = result
 	if msg.err == nil && msg.choice.action == ActionOnboard && msg.choice.req.TargetKind == "workspace" && m.cur().kind != frameProject {
 		// The new Project lands in order and becomes the selection (design
@@ -726,7 +550,9 @@ func (m Model) beginMateStart() (Model, tea.Cmd) {
 	if choice.action == ActionOnboard {
 		return m.beginHarnessPick(choice), nil
 	}
-	return m.runPending(choice)
+	var do menuIntent
+	m.actions, do = m.actions.runPending(choice)
+	return m.carryOut(do)
 }
 
 // beginModeToggle is the 'm' key: flip one Project's communication mode
@@ -794,18 +620,11 @@ func (m Model) mateStartChoice(r row, mate query.MateNode) actionChoice {
 	return c
 }
 
-// beginHarnessPick opens the agent chooser for an already-built choice. Like
-// beginNewProject it leaves the menu closed, so Esc returns to the list
-// rather than a menu the reader never opened.
+// beginHarnessPick opens the harness picker for an already-built choice,
+// its cursor on the harness the Mate records. Like the form, it leaves the
+// actions sheet closed behind it (actionMenu.openPicker).
 func (m Model) beginHarnessPick(choice actionChoice) Model {
-	m.actions = false
-	m.confirm = nil
-	m.actionInputMode = false
-	m.menu = nil
-	m.actionIndex = 0
-	m.pendingChoice = choice
-	m.harnessPick = true
-	m.harnessIndex = m.recordedHarnessIndex()
+	m.actions = m.actions.openPicker(choice, m.recordedHarnessIndex())
 	m.msg = footerMsg{}
 	return m
 }
@@ -824,56 +643,6 @@ func (m Model) recordedHarnessIndex() int {
 		}
 	}
 	return 0
-}
-
-func (m Model) closeHarnessPick() Model {
-	m.harnessPick = false
-	m.harnessIndex = 0
-	m.pendingChoice = actionChoice{}
-	return m
-}
-
-// onHarnessKey drives the picker. Enter completes the pending choice with the
-// selected kind and then takes the same branch handleActionEnter would: a
-// dangerous action opens the confirmation, everything else runs.
-func (m Model) onHarnessKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "backspace":
-		return m.closeHarnessPick(), nil
-	case "up", "k":
-		if m.harnessIndex > 0 {
-			m.harnessIndex--
-		}
-		return m, nil
-	case "down", "j":
-		if m.harnessIndex+1 < len(m.harnessOrder()) {
-			m.harnessIndex++
-		}
-		return m, nil
-	case "enter":
-		order := m.harnessOrder()
-		if m.harnessIndex >= len(order) {
-			// A snapshot that carries no harness catalog offers nothing
-			// to pick; Enter is not a choice of a harness nobody listed.
-			return m.closeHarnessPick(), nil
-		}
-		choice := m.pendingChoice
-		choice.req.Harness = order[m.harnessIndex]
-		m = m.closeHarnessPick()
-		return m.runPending(choice)
-	default:
-		return m, nil
-	}
-}
-
-// runPending is handleActionEnter's tail: confirm first when the action is
-// destructive, otherwise run it.
-func (m Model) runPending(choice actionChoice) (Model, tea.Cmd) {
-	if choice.dangerous {
-		m.confirm = &actionConfirmation{choice: choice}
-		return m, nil
-	}
-	return m.runAction(choice)
 }
 
 // boxAction reports whether an action's outcome belongs on the rail's own
