@@ -79,7 +79,9 @@ Packages that mix layers, until their issue splits them:
 - `matehost` is the headless Mate host, the Mate's REPL (`repl*.go`, UI
   code) and the owner of `news.jsonl` and `work.jsonl`. The REPL is a
   client of the host's socket (CON-223): it reaches the host only through
-  `matehost.Conn` (`REPLConn` over `host.sock`), never a `*Host`.
+  `matehost.Conn` (`REPLConn` over `host.sock`), never a `*Host`. The host
+  runs outside Herdr and tells Herdr nothing (CON-225): `matehost` has no
+  Herdr code.
 
 `dashboard` is in service, not UI: it is the Office/City HTTP server the
 engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
@@ -104,10 +106,10 @@ reusing the ledger needs `--why` split out of `usage` first.
 | -- | -- | -- | -- |
 | Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications |
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone. The stage runs `herdr agent attach --takeover` for a crew or a pane Mate, and the Mate REPL for a headless Mate (CON-224) |
-| Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane, Mate and Crew. Outlives the console |
-| Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`) |
-| Mate, headless | `spawn` (`internal/spawn/headless.go`) | `mate mate host <project>`, `internal/matehost` (`Host.Live`) | One per headless Mate, in its Herdr pane; each turn is one `claude -p`. Runs until the `stop` op, SIGTERM or SIGHUP. In a terminal it runs the REPL as a child process, `mate mate repl <project> --in-pane`, and starts it again when it ends; the turn goes on |
-| Mate REPL | `mate mate host` (its pane); the console's stage; the captain, in any terminal | `mate mate repl <project>`, `matehost.RunREPL` | A client of `host.sock` (CON-223): `subscribe` for events, `history` on each connection, one op per action; connects again on its own when the host restarts. Any number per Mate; they share the chat and the draft |
+| Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane: a pane Mate and every Crew. Outlives the console |
+| Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`). Codex and pi Mates, and `mate.mode: pane` |
+| Mate, headless | `spawn` (`startHost`, `internal/spawn/headless.go`; `ExecHosts`, `hostproc.go`) | `mate mate host <project> --no-repl`, `internal/matehost` (`Host.Live`) | One per headless Mate, a background process of its own outside Herdr (CON-225): its own session (`platform.StartNewSession`), no terminal, no tab or pane, stdout and stderr in `host.log`. Each turn is one `claude -p`. `mate.meta` records its `pid` and `socket`; whether it is alive is what `host.sock` answers. Runs until the `stop` op, SIGTERM or SIGHUP; a stop the op does not end sends SIGTERM, then SIGKILL, to the pid while the process still holds the host lock. Nothing starts it again when it dies (**Target**: CON-226, mate core watches it); recovery at the next engine start does. Run by hand in a terminal it runs the REPL as a child process, `mate mate repl <project> --in-pane`. A host an older binary started in its Herdr pane keeps that pane, and Herdr answers for it, until its next restart |
+| Mate REPL | the console's stage; the captain, in any terminal | `mate mate repl <project>`, `matehost.RunREPL` | A client of `host.sock` (CON-223): `subscribe` for events, `history` on each connection, one op per action; connects again on its own when the host restarts. Any number per Mate; they share the chat and the draft |
 | Crew | `mate crew spawn` (`internal/spawn`) | harness TUI in a Herdr pane, in `.worktrees/<project>-<crew>` | Appends status lines to its `.status` file; stops in `wait-mate` to hand back |
 | PR watcher | `mate pr watch` (`cmd/mate/pr.go`); `prwatch.Sweep` from recovery and the auto daemon | `internal/prwatch`, detached by `prwatch.ExecStarter` | One per crew pull request; on merge or close, queues a line in the outbox and delivers it itself |
 | Read-only dashboard | `mate dashboard` | `cmdDashboard`, `cmd/mate/dashboard.go` | Office/City over `db.OpenRead`; the port is busy while a console serves it |
@@ -176,6 +178,10 @@ How processes exchange state:
   one JSON line (CON-221); the outbox delivers to a headless Mate through
   it (`OpDeliver`), spawn, Office chat and City ask it for state,
   history and answers, and every Mate REPL is a client of it (CON-223).
+  Its `ping` is the headless Mate's liveness (CON-225): the snapshot
+  (`spawn.HostLiveness` into `query.Liveness.Hosts`), recovery, `mate
+  project remove`, `mate migrate` and `mate mate status` ask it, never
+  Herdr.
   What the captain sends through it from any UI (`submit`, `answer`,
   `work-okay`) the host holds `matehost.UndoDelay` before it runs, and
   `undo` takes it back (`internal/matehost/hold.go`, CON-222); the state
@@ -191,6 +197,10 @@ How processes exchange state:
   configured.
 - **HTTP.** Office and City call the engine's server (`internal/dashboard`,
   default `127.0.0.1:7777`, LAN only with `allow_remote`).
+
+Names (2026-11-05, CON-216): **mate core** is the process that runs the
+engine; **headless** is only how a Mate runs, one `claude -p` per message
+in its host. Neither word stands for the other.
 
 **Target** (CON-203): one `mate core` process per workspace runs the engine
 with no UI open (CON-210 bounded stop;
@@ -224,14 +234,15 @@ true yet.
 | `projects/<p>/crews/<c>.status` | `store` | the Crew (`echo >> $MATE_STATUS`), prwatch, merge | box, watch, timeline, `mate wake` |
 | `projects/<p>/crews/<c>/brief.md`, `report.md`, `handback.md` | `store` | spawn (brief); the Crew | the Mate, spawn, the console stage, dashboard |
 | `projects/<p>/crews/<c>.prwatch` | `prwatch` | `prwatch.Ensure` (the watcher's pid, in whoever starts it); the watcher removes it | `prwatch.Ensure` and `prwatch.Sweep` |
-| `projects/<p>/mate/mate.meta` | `store` | spawn, hook (session id) | query, watch, timeline, refresh |
+| `projects/<p>/mate/mate.meta` | `store` | spawn, hook (session id) | query, watch, timeline, refresh. A headless Mate's records its host's `pid` and `socket` and no pane (`store.MateHostDetached`, CON-225) |
 | `projects/<p>/mate/.manual`, `.auto` | `store` | the console's `m` key (`store.Workspace.SetMode`); autopilot releases `.manual` | autopilot, timeline; Auto means no `.manual` |
 | `projects/<p>/mate/.outbox`, `.outbox.lock` | `store` | `assign` from the console, autopilot (digests), stow, prwatch | outbox sender, query |
 | `projects/<p>/mate/.auto-cursor`, `.wake-cursor` | `store` | outbox (on a digest), `mate wake` (`internal/wake`) | autopilot, `mate wake` |
 | `projects/<p>/mate/memory.md`, `backlog.md` | `memory` format, `store` I/O | the Mate (`mate remember`, `mate backlog`) | `mate recall` |
 | `projects/<p>/mate/news.jsonl` | `matehost` | `mate news`; the friction check of `mate wake`, `land` and `merge`; the host (answers) | query, dashboard, REPL, notifications |
 | `projects/<p>/mate/work.jsonl` | `matehost` | `mate work`, `mate land`, the console (the captain's tick) | query, dashboard, REPL |
-| `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City, notifications |
+| `projects/<p>/mate/host.sock`, `host.jsonl`, `host.launch.json`, `topics/` | `matehost` | the headless host; spawn (`host.launch.json`) | outbox, spawn, `mate mate …`, Office chat, City, notifications, the snapshot's liveness |
+| `projects/<p>/mate/host.log`, `host.log.1` | `matehost` (path), `spawn` (rotation) | the headless host's stdout and stderr (CON-225); a start moves a log of `spawn.HostLogMax` (1 MiB) or more to `host.log.1` | the captain; a failed start quotes its last lines |
 | `projects/<p>/mate/learnings/<c>.md` | `learnings` | the Mate; the app (`## Usage (app)` through `usage`, predictions) | `mate wake`, `mate learnings` |
 
 Crews work in `.worktrees/<project>-<crew>`, git worktrees that `spawn`

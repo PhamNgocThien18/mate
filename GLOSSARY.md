@@ -17,6 +17,11 @@ _Trong code_: `brief.Deciders`; `store.SourceUser` là dòng của captain trong
 Agent điều phối của một Project: nhận việc từ captain, giao cho Crew và xét kết quả Crew bàn giao. Mỗi Project có đúng một Mate.
 _Trong code_: `harness.RoleMate`; `internal/spawn` khởi động và dừng Mate
 
+**Headless**:
+Kiểu chạy của agent Mate: không có TUI của harness, mỗi tin nhắn là một lần `claude -p`. Các lượt chạy trong host của Mate (`mate mate host`), một process nền riêng nằm ngoài Herdr, không có tab hay pane. Socket `host.sock` của host cho biết Mate còn sống hay không. REPL chỉ là một client của host. Kiểu còn lại là pane: TUI của harness chạy trong pane Herdr (Codex, pi, `mate.mode: pane`).
+_Avoid_: dùng "headless" cho mate core hay cho bất kỳ process nào khác
+_Trong code_: `spawn.ModeHeadless`; `internal/matehost`; `store.MateHostDetached`
+
 **Crew**:
 Agent thực thi một phần việc do Mate giao. Vòng đời Crew tách khỏi trạng thái việc mà công cụ theo dõi task của project ghi.
 
@@ -82,6 +87,13 @@ _Trong code_: `memory.StowLine`; `outbox.Sender.Stow`
 Bước ngay sau khi một agent khởi động: trả lời các hộp thoại khởi động của harness cho tới khi pane sẵn sàng nhận lệnh.
 _Avoid_: dùng "settle" cho việc outbox đánh dấu một dòng đã giao
 _Trong code_: `spawn.Settlement`; `settleStartupPrompt` (`internal/spawn/settle.go`)
+
+### Process
+
+**Mate core**:
+Process lõi của một workspace: chạy engine (observer, outbox, auto, recovery, Office/City, notification) mà không cần UI nào mở. Console, Office và City là vỏ của nó. Hôm nay engine còn chạy trong console; `mate core` thành process riêng ở CON-211 và CON-213.
+_Avoid_: headless (chữ đó chỉ kiểu chạy của Mate)
+_Trong code_: `core.Engine` (`internal/core`)
 
 ### Công cụ
 
