@@ -103,24 +103,31 @@ func consoleAction(ws *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
 	}
 }
 
-// tuiAndWebActions is the console's one action function as its TUI and its
-// dashboard pages press it (CON-141, CON-205). consoleAction is called
-// once, so the two share one restartHolds: a restart held in one is
-// confirmed in the other. A terminal the console cannot split (h is nil:
-// neither WezTerm nor Ghostty) has no column to show a pane Mate in, so
-// there every TUI request is HeadlessOnly; a page's request says so itself
-// (internal/dashboard's coreRequest).
-func tuiAndWebActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client, h host.Host) (tui, web coreapi.ActionFunc) {
-	web = consoleAction(ws, deps)
+// engineActions is the engine's Options.Act (internal/core): every action
+// but the chat, which the engine runs itself, with Jev's explain_notice in
+// front when there is a Jev. Engine.Act is its one caller, for the
+// console's TUI and its dashboard pages alike (CON-141, CON-209), so the
+// two share one restartHolds: a restart held in one is confirmed in the
+// other.
+func engineActions(ws *store.Workspace, deps spawn.Deps, noticeClient *notice.Client) coreapi.ActionFunc {
+	act := consoleAction(ws, deps)
 	if noticeClient != nil {
-		web = consoleNoticeAction(ws, deps, noticeClient, web)
+		act = consoleNoticeAction(ws, deps, noticeClient, act)
 	}
+	return act
+}
+
+// tuiAction is what the console's TUI presses: act, the engine's Act, with
+// every request HeadlessOnly in a terminal the console cannot split (h is
+// nil: neither WezTerm nor Ghostty), which has no column to show a pane
+// Mate in (CON-205). A page's request says so itself (internal/dashboard's
+// coreRequest).
+func tuiAction(act coreapi.ActionFunc, h host.Host) coreapi.ActionFunc {
 	headlessOnly := h == nil
-	tui = func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 		req.HeadlessOnly = headlessOnly
-		return web(ctx, req)
+		return act(ctx, req)
 	}
-	return tui, web
 }
 
 // stopCrewAction is the Crew row's `Stop crew…` entry (mvp.md task 16). It
@@ -224,6 +231,10 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 		return "", err
 	}
 	line := fmt.Sprintf("Mate %s is running on %s in pane %s", res.Agent, res.Harness, res.Pane)
+	if res.ModeNote != "" {
+		// First: the console's status line is one row (CON-220).
+		line = res.ModeNote + "; " + line
+	}
 	if res.Resumed {
 		line += "; resumed session " + res.ResumedFrom
 	}

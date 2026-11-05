@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
@@ -296,33 +295,6 @@ func lookup(acts []query.ActionAvailability, name string) query.ActionAvailabili
 	return query.ActionAvailability{Action: name}
 }
 
-// actionLocks is which targets have an action running, so a second press -
-// a double click, or a phone and a laptop at once - is refused rather than
-// run twice.
-type actionLocks struct {
-	mu      sync.Mutex
-	running map[string]string
-}
-
-func (l *actionLocks) take(target, action string) (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.running == nil {
-		l.running = map[string]string{}
-	}
-	if busy, ok := l.running[target]; ok {
-		return busy, false
-	}
-	l.running[target] = action
-	return "", true
-}
-
-func (l *actionLocks) release(target string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.running, target)
-}
-
 // handleAct is POST /api/actions. It is the one handler that changes
 // anything, so it asks more of a request than any GET does:
 //
@@ -331,6 +303,10 @@ func (l *actionLocks) release(target string) {
 //   - an Origin, when the browser sends one, is this server's own;
 //   - the action is re-checked against a fresh snapshot, so a button drawn
 //     a minute ago cannot run what is no longer allowed.
+//
+// A second press on a target an action is still running on - a double
+// click, a phone and a laptop at once, or the console - is refused by the
+// core (Deps.Act, core's Engine.Act, CON-209) and answered 409.
 //
 // It is not authentication: anyone who can open the page can press it
 // (CON-141 leaves that to the LAN). The action runs to the end even when
@@ -375,9 +351,8 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	buttons := append(mateButtons(node), s.mateMore(node)...)
-	target := req.Project
 	if req.Crew != "" {
-		buttons, target = nil, req.Project+"/"+req.Crew
+		buttons = nil
 		for _, c := range node.Crews {
 			if c.CrewID == req.Crew {
 				buttons = append(crewButtons(node.ProjectID, c), s.crewMore(node, c)...)
@@ -411,29 +386,29 @@ func (s *Server) handleAct(w http.ResponseWriter, r *http.Request) {
 	if pressed.Action == actAssign {
 		req.Line = s.resolveLine(node, req.Crew, req.Key)
 	}
-	if talk[req.Action] || req.Action == actPeek || req.Action == actOkay {
-		// Talking, reading a screen and ticking the board do not wait
-		// for, or hold up, a stop or a merge on the same Mate or crew.
-		target += "#" + req.Action
-	}
 	if req.Action == actOkay && req.Work <= 0 {
 		s.writeError(w, r, http.StatusBadRequest, "okay wants the work row it ticks", "")
 		return
 	}
-	if busy, ok := s.acting.take(target, req.Action); !ok {
-		s.writeError(w, r, http.StatusConflict, "Action refused: "+busy+" is still running on "+target+" · nothing started", "")
-		return
-	}
-	defer s.acting.release(target)
 	s.run(w, r, ctx, req)
 }
 
-// run hands a checked request to the console, as the core's request, and
-// answers with its one line, or with the service's error verbatim as a
-// 422: it ran and failed, which a page tells apart from a 409, refused and
-// nothing changed.
+// run hands a checked request to the core, as the core's request, and
+// answers with its one line. A refusal because another action holds the
+// target (coreapi.ErrBusy) is a 409, as a press the snapshot does not
+// offer is: nothing started. Any other error is the service's, verbatim,
+// as a 422: it ran and failed.
 func (s *Server) run(w http.ResponseWriter, r *http.Request, ctx context.Context, req ActionRequest) {
 	line, err := s.deps.Act(ctx, coreRequest(req))
+	if errors.Is(err, coreapi.ErrBusy) {
+		line := err.Error()
+		var busy *coreapi.BusyError
+		if errors.As(err, &busy) {
+			line = busy.Error()
+		}
+		s.writeError(w, r, http.StatusConflict, line, "")
+		return
+	}
 	if err != nil {
 		s.writeError(w, r, http.StatusUnprocessableEntity, err.Error(), "")
 		return

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/host"
@@ -21,13 +22,24 @@ import (
 // Whether a Mate runs headless is asked by the UI a start comes from
 // (CON-205): a console that cannot split its terminal and a dashboard page
 // cannot show a pane Mate, and a console that can split leaves the mode to
-// the last run. These tests press the action functions the console hands
-// its TUI and its dashboard (tuiAndWebActions), over the fake Herdr
+// project.yaml and the last run. These tests press actions the way the
+// console's TUI and its dashboard do (consoleUIs), over the fake Herdr
 // adapter, and read the mode StartMate recorded in mate.meta.
 
 // splitTerminal is a terminal the console can split. Any host will do:
-// tuiAndWebActions only asks whether there is one.
+// tuiAction only asks whether there is one.
 var splitTerminal host.Host = layoutFunc(func() {})
+
+// consoleUIs is how the console's TUI and its pages press an action: both
+// through one engine's Act, over the console's engineActions (CON-209),
+// the TUI's HeadlessOnly where it cannot split (h nil). The engine is not
+// started: Act needs none of its loops.
+func consoleUIs(t *testing.T, w *store.Workspace, deps spawn.Deps, h host.Host) (tui, web coreapi.ActionFunc) {
+	t.Helper()
+	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: engineActions(w, deps, nil)})
+	t.Cleanup(engine.Stop)
+	return tuiAction(engine.Act, h), engine.Act
+}
 
 // headlessFixture is consoleFixture's shop in a workspace under /tmp, with
 // the fake runtime playing `mate mate host`: a start that runs headless
@@ -139,7 +151,7 @@ func mateAgent(t *testing.T, w *store.Workspace) runtime.AgentHandle {
 func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fake, running bool) {
 	t.Helper()
 	ctx := context.Background()
-	tui, _ := tuiAndWebActions(w, deps, nil, splitTerminal)
+	tui, _ := consoleUIs(t, w, deps, splitTerminal)
 	if _, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start shop's Mate in its pane: %v", err)
 	}
@@ -160,8 +172,9 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 // no column to show a pane Mate in, so what its TUI starts, resumes,
 // onboards or restarts runs headless, though the last run was in a pane
 // (CON-150). A console that can split asks nothing, and the last run keeps
-// its pane. Mate Office and Agent City cannot show a pane Mate either, so
-// a page's press runs headless even where its console can split (CON-205).
+// its pane (project.yaml names no mode here). Mate Office and Agent City
+// cannot show a pane Mate either, so a page's press runs headless even
+// where its console can split (CON-205).
 func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 	for _, ui := range []struct {
 		name     string
@@ -184,7 +197,7 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 			t.Run(ui.name+"/"+string(req.Action), func(t *testing.T) {
 				w, deps, rt := headlessFixture(t)
 				paneMate(t, w, deps, rt, req.Action == coreapi.ActionRestartMate)
-				tui, web := tuiAndWebActions(w, deps, nil, ui.terminal)
+				tui, web := consoleUIs(t, w, deps, ui.terminal)
 
 				var out string
 				var err error
@@ -209,11 +222,62 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 	}
 }
 
+// project.yaml's `mate.mode: pane` asks for the pane, but a console that
+// cannot split and a page have nowhere to show one: the Mate runs
+// headless, and the line the console's status line and the page show says
+// why (CON-220).
+func TestAHeadlessOnlyStartOverConfigPaneSaysSo(t *testing.T) {
+	for _, ui := range []struct {
+		name     string
+		terminal host.Host
+		page     bool
+	}{
+		{name: "console that cannot split", terminal: nil},
+		{name: "page", terminal: splitTerminal, page: true},
+	} {
+		for _, req := range []coreapi.ActionRequest{
+			{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"},
+		} {
+			t.Run(ui.name+"/"+string(req.Action), func(t *testing.T) {
+				w, deps, rt := headlessFixture(t)
+				paneMate(t, w, deps, rt, req.Action == coreapi.ActionRestartMate)
+				cfg, err := w.LoadProject("shop")
+				if err != nil {
+					t.Fatal(err)
+				}
+				cfg.Mate.Mode = spawn.ModePane
+				if err := w.SaveProject("shop", cfg); err != nil {
+					t.Fatal(err)
+				}
+				tui, web := consoleUIs(t, w, deps, ui.terminal)
+				var out string
+				if ui.page {
+					page := req
+					page.HeadlessOnly = true
+					out, err = web(context.Background(), page)
+				} else {
+					out, err = tui(context.Background(), req)
+				}
+				if err != nil {
+					t.Fatalf("%s: %v", req.Action, err)
+				}
+				if got := mateMode(t, w); got != spawn.ModeHeadless {
+					t.Fatalf("the Mate runs %s, want headless (%s)", got, out)
+				}
+				if !strings.Contains(out, "project.yaml's mate.mode is pane") {
+					t.Fatalf("result = %q, want it to say project.yaml's pane was overridden", out)
+				}
+			})
+		}
+	}
+}
+
 // A harness without headless turns still starts from a page: in its pane,
 // without an error.
 func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
-	_, web := tuiAndWebActions(w, deps, nil, splitTerminal)
+	_, web := consoleUIs(t, w, deps, splitTerminal)
 	out, err := web(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate", Harness: "codex", HeadlessOnly: true})
 	if err != nil {
 		t.Fatalf("onboard a Codex Mate from a page: %v", err)
@@ -236,7 +300,7 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	paneMate(t, w, deps, rt, true)
 	rt.SetReadOutput(mateAgent(t, w), claudePendingScreen)
-	tui, web := tuiAndWebActions(w, deps, nil, splitTerminal)
+	tui, web := consoleUIs(t, w, deps, splitTerminal)
 	ctx := context.Background()
 
 	out, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})

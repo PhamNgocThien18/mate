@@ -5,7 +5,7 @@ Task 28 owns the server and this document; task 29 builds the three-tier UI agai
 
 The dashboard reads, and the one served by `mate console` can also act.
 It opens `.mate/mate.db` with `db.OpenRead`, which takes no lock, so it runs beside an open console rather than instead of it.
-It writes nothing itself. Its one write, `POST /api/actions` (section 7b, CON-141), hands a button press to the console's own action function, so a page and the console's action sheet run one code path; `mate dashboard` on its own has no console behind it and stays read-only.
+It writes nothing itself. Its one write, `POST /api/actions` (section 7b, CON-141), hands a button press to the core's `Engine.Act`, the entry the console's action sheet takes too (CON-209), so a page and the sheet run one code path under one lock per target; `mate dashboard` on its own has no console behind it and stays read-only.
 
 ```
 mate dashboard [<workspace>] [--addr 127.0.0.1:7777] [--open] [--allow-remote]
@@ -643,7 +643,7 @@ The console's `Repair binding…` is not offered: repairing a crew is not wired 
 A dashboard with no console behind it answers `read_only` with the reason and no buttons.
 
 `POST /api/actions` with `{"action": "stop", "project": "shop", "crew": "buybtn"}` (`crew` only for a crew's action) presses one.
-The press is checked again against a fresh snapshot, then run by the console's `consoleAction`; the answer is `{"line": "…"}`, the console's own one line.
+The press is checked again against a fresh snapshot, then run by the core's `Engine.Act` (CON-209), the entry the console's keys take too; the answer is `{"line": "…"}`, the console's own one line.
 
 | Status | When |
 | --- | --- |
@@ -651,7 +651,7 @@ The press is checked again against a fresh snapshot, then run by the console's `
 | `400` | an action not offered for that row (`repair`, an `assign` whose `key` is no open question, …) or a body that is not one |
 | `403` | no console behind this dashboard, or an `Origin` that is not this server's |
 | `404` | an unknown project, or a crew that is not open |
-| `409` | the action cannot run now (its `reason`), or another action is still running on the same Mate or crew |
+| `409` | the action cannot run now (its `reason`), or another action - from a page or from the console - is still running on the same Mate or crew: `Action refused: <action> is still running on <target> · nothing started`, in the core's words (`resolve`, `okay_work`, `onboard` for a page's `assign`, `okay`, `add_project`) |
 | `415` | a body that is not `application/json` |
 | `422` | the service ran and refused or failed; `error` is its message verbatim |
 
@@ -674,8 +674,8 @@ Agent City (section 12) presses more than the console's sheet, still through the
 A press may carry `text` (`say`, `answer`, `fork`), `news` (`answer`, `fork`, `fork_close`, and `interrupt` of a session rather than the Mate's turn), `harness` (`onboard`), `repo` (`add_project`) and `key` (`assign`).
 `assign` hands the question's resolve line to the Mate, the console's `[assign]`; the line is the server's from its snapshot, never the page's.
 `add_project` names a project that is not there yet in `project` and is refused (`409`) for a name `[a-z][a-z0-9-]{0,31}` does not take or one already in the workspace; with an empty `repo` the project starts with none.
-The chat's actions go to the headless Mate's own host over its socket (`matehost`'s `submit`, `interrupt`, `answer`, `session-ask`, `session-close`): a message sent from a page is the same captain turn as one typed in the Mate's pane, queued behind the turn in flight, and an answer lands in its news.
-Talking and peeking take no lock on the Mate or crew, so they neither wait for nor hold up a stop or a merge; the body may be 64 KiB.
+The chat's actions go, through the core, to the headless Mate's own host over its socket (`matehost`'s `submit`, `interrupt`, `answer`, `session-ask`, `session-close`): a message sent from a page is the same captain turn as one typed in the Mate's pane, queued behind the turn in flight, and an answer lands in its news.
+Talking, peeking, asking Jev and ticking the board take a lock of their own on the Mate or crew (`<target>#<action>`), so they neither wait for nor hold up a stop or a merge, and only the same action pressed twice at once is refused; the body may be 64 KiB.
 
 `GET /api/projects/{project}/chat` is the headless Mate's conversation as its REPL keeps it (`mate/history.jsonl`, the last 80 items): `{"headless", "items": [{"at", "source", "label", "text", "reply", "silent", "interrupted", "error", "done", "tools": [names], "ms", "tokens", "news"}], "state": {"busy", "queued", "turn_source", …} | null, "state_error"?}`. `state` is the host's own answer; `null` with `state_error` when it did not give one, and `null` without one for a Mate that is not headless.
 `GET /api/projects/{project}/forks/{news}` is what was said in a news's private session (`mate/topics/<news>.jsonl`), with `open` (`null` when the host did not answer) and the question it is answering now as `running`.

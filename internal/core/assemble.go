@@ -13,6 +13,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	timelineread "github.com/nguyenngocanh94/mate/internal/timeline/read"
 	"github.com/nguyenngocanh94/mate/internal/watch"
 )
 
@@ -200,16 +201,11 @@ func withTokens(snap query.Snapshot, ws *store.Workspace) query.Snapshot {
 // zero that would render as "no tokens spent".
 func crewTokens(handle *db.DB, project, crew string) (query.TokenValue, bool) {
 	actorID := timeline.CrewActorID(project, crew)
-	var total int64
-	var cost, contextPct sql.NullFloat64
-	err := handle.SQL().QueryRow(`
-		SELECT COALESCE(input_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_write_tokens,0)+COALESCE(output_tokens,0),
-		       cost, context_pct
-		  FROM v_task_ledger WHERE crew_actor_id = ?`, actorID).Scan(&total, &cost, &contextPct)
+	t, err := timelineread.TaskTokensOf(context.Background(), handle.SQL(), actorID)
 	if err != nil {
 		return query.TokenValue{}, false
 	}
-	return tokenContext(handle, actorID, tokenValue(total, cost, contextPct)), true
+	return tokenContext(handle, actorID, tokenValue(t.Total, t.Cost, t.ContextPct)), true
 }
 
 // mateTokens reads the Mate's row of `v_now`: tokens_today and
@@ -220,15 +216,11 @@ func crewTokens(handle *db.DB, project, crew string) (query.TokenValue, bool) {
 // and a wrong-looking dollar figure is worse than none.
 func mateTokens(handle *db.DB, project string) (query.TokenValue, bool) {
 	actorID := timeline.MateActorID(project)
-	var total int64
-	var contextPct sql.NullFloat64
-	err := handle.SQL().QueryRow(`
-		SELECT COALESCE(tokens_today,0), context_pct FROM v_now WHERE actor_id = ?`,
-		actorID).Scan(&total, &contextPct)
+	t, err := timelineread.TodayOf(context.Background(), handle.SQL(), actorID)
 	if err != nil {
 		return query.TokenValue{}, false
 	}
-	return tokenContext(handle, actorID, tokenValue(total, sql.NullFloat64{}, contextPct)), true
+	return tokenContext(handle, actorID, tokenValue(t.Tokens, sql.NullFloat64{}, t.ContextPct)), true
 }
 
 func tokenValue(total int64, cost, contextPct sql.NullFloat64) query.TokenValue {

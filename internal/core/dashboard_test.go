@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -22,15 +23,16 @@ import (
 const freeAddr = "127.0.0.1:0"
 
 // dashboardEngine starts an engine over a shopWorkspace that serves the
-// dashboard on o, until the test ends. compute, when it is given, is the
+// dashboard on o, until the test ends; act is its Options.Act, and nil
+// keeps the dashboard read-only. compute, when it is given, is the
 // engine's snapshot computation, set before anything can read it, and the
 // cache's clock then stands still: a kept snapshot never ages out, so only
 // an Invalidate drops it, however slow the machine.
-func dashboardEngine(t *testing.T, o DashboardOptions, compute ...func(context.Context) (query.Snapshot, error)) *Engine {
+func dashboardEngine(t *testing.T, o DashboardOptions, act coreapi.ActionFunc, compute ...func(context.Context) (query.Snapshot, error)) *Engine {
 	t.Helper()
 	w := shopWorkspace(t)
 	withTimelineDB(t, w)
-	e := New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o})
+	e := New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o, Act: act})
 	for _, c := range compute {
 		e.snaps.compute = c
 		frozen := time.Now()
@@ -60,7 +62,7 @@ func get(t *testing.T, base, path string) (int, string) {
 
 // The engine serves the dashboard while it runs and stops with it.
 func TestEngineServesTheDashboardUntilStopped(t *testing.T) {
-	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr})
+	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr}, nil)
 	served, err := e.Dashboard()
 	if err != nil {
 		t.Fatalf("dashboard: %v", err)
@@ -80,7 +82,7 @@ func TestEngineServesTheDashboardUntilStopped(t *testing.T) {
 // A busy port is reported, not fatal: the engine runs on without a
 // dashboard and says why.
 func TestEngineDashboardOnABusyPort(t *testing.T) {
-	first := dashboardEngine(t, DashboardOptions{Addr: freeAddr})
+	first := dashboardEngine(t, DashboardOptions{Addr: freeAddr}, nil)
 	served, err := first.Dashboard()
 	if err != nil {
 		t.Fatalf("dashboard: %v", err)
@@ -89,7 +91,7 @@ func TestEngineDashboardOnABusyPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse %q: %v", served, err)
 	}
-	second := dashboardEngine(t, DashboardOptions{Addr: u.Host})
+	second := dashboardEngine(t, DashboardOptions{Addr: u.Host}, nil)
 	if url, err := second.Dashboard(); err == nil || url != "" {
 		t.Fatalf("second dashboard on the same port: %q, %v; want the reason it did not start", url, err)
 	}
@@ -99,11 +101,11 @@ func TestEngineDashboardOnABusyPort(t *testing.T) {
 // needs --allow-remote: without it the dashboard is not started and the
 // error says what to set. With it the status line also names the LAN URL.
 func TestEngineDashboardRemoteNeedsAllow(t *testing.T) {
-	refused := dashboardEngine(t, DashboardOptions{Addr: "0.0.0.0:0"})
+	refused := dashboardEngine(t, DashboardOptions{Addr: "0.0.0.0:0"}, nil)
 	if _, err := refused.Dashboard(); err == nil || !strings.Contains(err.Error(), "allow-remote") {
 		t.Fatalf("routable bind without allow_remote: %v", err)
 	}
-	e := dashboardEngine(t, DashboardOptions{Addr: "0.0.0.0:0", AllowRemote: true})
+	e := dashboardEngine(t, DashboardOptions{Addr: "0.0.0.0:0", AllowRemote: true}, nil)
 	served, err := e.Dashboard()
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -122,12 +124,13 @@ func TestEngineDashboardRemoteNeedsAllow(t *testing.T) {
 }
 
 // The dashboard's own answers are the engine's: the snapshot every UI reads,
-// the fresh one a press is checked against, and an Invalidate after every
-// action. Without an action function it reads no snapshot at all.
+// the fresh one a press is checked against, and the engine's Act, which
+// invalidates after every action. Without an action function it reads no
+// snapshot at all, and an Act the caller put in Deps is not run.
 func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	w := shopWorkspace(t)
 	act := func(context.Context, coreapi.ActionRequest) (string, error) { return "done", nil }
-	e := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Act: act, Notice: true}}})
+	e := New(Options{Workspace: w, Act: act, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}})
 	defer e.Stop()
 	computed := 0
 	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
@@ -154,7 +157,24 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 		t.Fatalf("a read after an action computed %d snapshots in all (%v), want 2", computed, err)
 	}
 
-	readOnly := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}})
+	// The page's Act is the engine's: it shares the engine's locks with
+	// the console's presses (CON-209).
+	h := newHeldActs()
+	held := New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}})
+	defer held.Stop()
+	done := hold(t, held, h, stopMate)
+	if _, err := held.dashboardDeps().Act(ctx, stopMate); !errors.Is(err, coreapi.ErrBusy) {
+		t.Fatalf("a page's stop while the console's runs = %v, want ErrBusy", err)
+	}
+	close(h.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := h.count(); got != 1 {
+		t.Fatalf("%d actions ran, want the console's only", got)
+	}
+
+	readOnly := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Act: act, Notice: true}}})
 	defer readOnly.Stop()
 	if deps := readOnly.dashboardDeps(); deps.Snapshot != nil || deps.FreshSnapshot != nil || deps.Act != nil || deps.Notice {
 		t.Fatalf("read-only deps %+v, want no snapshot, no action and no notice", deps)

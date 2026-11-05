@@ -42,16 +42,18 @@ type StartRequest struct {
 	// carries one to resume: `mate mate start --fresh`.
 	Fresh bool
 	// Mode is ModeHeadless or ModePane (`mate mate start --mode`). Empty
-	// keeps the mode the last run recorded, else project.yaml's
-	// `mate.headless` (headlessMode).
+	// takes project.yaml's `mate.mode`, else the mode the last run
+	// recorded, else Deps.DefaultMode (headlessMode).
 	Mode string
 	// HeadlessOnly is the asking UI's word that it cannot show a pane
 	// Mate: a console in a terminal it cannot split (neither WezTerm nor
 	// Ghostty), or a dashboard page (CON-150, CON-205). A start with no
-	// Mode then runs headless when the harness can, whatever the last run
-	// or project.yaml chose, and in the pane without an error when it
-	// cannot. Mode still wins. The CLI and the restarts mate makes on its
-	// own (context refresh, recovery) leave it false.
+	// Mode then runs headless when the harness can, whatever project.yaml
+	// or the last run chose, and in the pane without an error when it
+	// cannot. Mode still wins. Running headless over project.yaml's
+	// `mate.mode: pane` is said in StartResult.ModeNote. The CLI and the
+	// restarts mate makes on its own (context refresh, recovery) leave it
+	// false.
 	HeadlessOnly bool
 }
 
@@ -93,6 +95,10 @@ type StartResult struct {
 	Adopted bool
 	// Headless is true when the Mate runs as a headless host (CON-78).
 	Headless bool
+	// ModeNote explains a mode the captain did not choose: a HeadlessOnly
+	// start ran headless although project.yaml's `mate.mode` is pane
+	// (CON-220). Empty when nothing needed saying.
+	ModeNote string
 }
 
 // StartMate starts the Mate of one project: it refreshes the Mate's
@@ -169,7 +175,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	decision := decideResume(priorMeta, kind, req)
 	decision = checkResume(profile, decision)
 	_, canHeadless := profile.(harness.HeadlessTurns)
-	headless, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, canHeadless)
+	headless, modeNote, err := headlessMode(req, priorMeta, cfg.Mate, deps.DefaultMode, canHeadless)
 	if err != nil {
 		return StartResult{}, err
 	}
@@ -208,7 +214,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	if strings.TrimSpace(priorMeta[MetaAgent]) == "" && headless {
 		adopted, ok, err := adoptInterruptedHost(ctx, w, deps, project, kind, mateDir, session)
 		if err != nil || ok {
-			adopted.StaleMeta = staleMeta
+			adopted.StaleMeta, adopted.ModeNote = staleMeta, modeNote
 			return adopted, err
 		}
 	} else if strings.TrimSpace(priorMeta[MetaAgent]) == "" {
@@ -231,7 +237,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 			compensate(ctx, deps, w, project, session, tab)
 			return StartResult{}, err
 		}
-		result.StaleMeta = staleMeta
+		result.StaleMeta, result.ModeNote = staleMeta, modeNote
 		return result, nil
 	}
 	result, err := startInTab(ctx, w, deps, project, profile, mateDir, decision, prep, plugins.servers, session, tab)
@@ -411,7 +417,8 @@ func settleAndRecord(ctx context.Context, w *store.Workspace, deps Deps, project
 		MetaSessionID: sessionID,
 		MetaStartedAt: startedAt.Format(time.RFC3339),
 		// Recorded so the next start without --mode keeps the pane rather
-		// than taking the headless default.
+		// than taking the headless default, unless project.yaml's
+		// `mate.mode` names one.
 		MetaMode: ModePane,
 		// See MetaLaunchedAt: a Codex Mate's rollout is adopted from it.
 		MetaLaunchedAt: launchedAt.Format(time.RFC3339),

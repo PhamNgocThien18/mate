@@ -156,10 +156,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	var observerErr error
 	deps.Observer, observerErr = configuredObserver(ws)
 
-	// The action function is built before the engine so the dashboard's
-	// buttons run exactly what the action sheet runs (CON-141).
 	noticeClient, noticeErr := consoleNoticeClient(ws)
-	tuiAction, webAction := tuiAndWebActions(ws, deps, noticeClient, h)
 
 	// The observer with the timeline it records, the delivery into the Mates,
 	// recovery, the dashboard and the notifications run in this process for
@@ -173,7 +170,11 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if err != nil {
 		return err
 	}
-	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, webAction, noticeClient != nil)
+	// Every action, the console's and the pages', goes in through the
+	// engine's Act, which runs the chat itself and the rest through these
+	// (CON-209), one at a time on each target.
+	opts.Act = engineActions(ws, deps, noticeClient)
+	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
 	opts.Notifier = core.NativeNotifier()
 	engine := core.New(opts)
 	if err := engine.Start(ctx); err != nil {
@@ -182,15 +183,16 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	defer engine.Stop()
 
 	// The console reads the engine's snapshot, the one Mate Office and Agent
-	// City read, with its own keys and the notifications' word added. Every
-	// action it runs drops the cached snapshot, so the next read shows what
-	// the action changed.
+	// City read, with its own keys and the notifications' word added. It
+	// acts through the engine's Act, as they do: an action on a target
+	// another UI is acting on is refused (coreapi.ErrBusy), and every action
+	// drops the cached snapshot, so the next read shows what it changed.
 	bindings := append(consoleCommandBindings(commands), links.bindings()...)
 	load := consoleLoad(engine.Snapshot, bindings, func() string {
 		line, _ := engine.Notifications()
 		return line
 	})
-	tuiAction = invalidateAfter(tuiAction, engine.Invalidate)
+	act := tuiAction(engine.Act, h)
 
 	notice := ""
 	dashboardURL := ""
@@ -252,7 +254,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	if observerErr != nil && (noticeErr == nil || observerErr.Error() != noticeErr.Error()) {
 		addNotice(observerErr.Error())
 	}
-	model := console.New(load, tuiAction).
+	model := console.New(load, act).
 		WithNoticeClassifier(noticeClient != nil).
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).
@@ -307,15 +309,6 @@ func consoleLoad(snapshot coreapi.LoadFunc, bindings []query.CommandBinding, not
 			snap.Runtime.Notice += line
 		}
 		return snap, nil
-	}
-}
-
-// invalidateAfter runs invalidate once act has returned, whatever it
-// returned: an action that failed halfway can have changed something too.
-func invalidateAfter(act coreapi.ActionFunc, invalidate func()) coreapi.ActionFunc {
-	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
-		defer invalidate()
-		return act(ctx, req)
 	}
 }
 

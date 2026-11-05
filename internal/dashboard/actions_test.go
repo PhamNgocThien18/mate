@@ -44,18 +44,16 @@ type actRecorder struct {
 	mu  sync.Mutex
 	got []coreapi.ActionRequest
 	err error
-	// entered is told when an action starts; block holds it until closed.
-	entered chan struct{}
-	block   chan struct{}
+}
+
+// fail makes every later action return err.
+func (a *actRecorder) fail(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.err = err
 }
 
 func (a *actRecorder) act(_ context.Context, req coreapi.ActionRequest) (string, error) {
-	if a.entered != nil {
-		a.entered <- struct{}{}
-	}
-	if a.block != nil {
-		<-a.block
-	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.got = append(a.got, req)
@@ -263,24 +261,23 @@ func TestAPressIsRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 }
 
-func TestASecondPressOnTheSameTargetWaitsForTheFirst(t *testing.T) {
+// The lock on a target is the core's (CON-209): a press the core refuses
+// because another action holds the target is a 409 with the core's line
+// verbatim, as a press the snapshot does not offer is, and any other error
+// stays a 422. internal/core's tests hold the lock itself, and cmd/mate's
+// the console and a page racing for one target.
+func TestABusyTargetIsAConflict(t *testing.T) {
 	f := newFixture(t)
-	rec := &actRecorder{entered: make(chan struct{}, 1), block: make(chan struct{})}
+	rec := &actRecorder{err: &coreapi.BusyError{Running: coreapi.ActionRestartMate, Target: fixtureProject}}
 	ts := actingServer(t, f, rec)
-	body := `{"action":"restart_mate","project":"` + fixtureProject + `"}`
-	first := make(chan int)
-	go func() {
-		status, _, _ := post(t, ts, body, nil)
-		first <- status
-	}()
-	<-rec.entered
 	status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil)
-	if status != http.StatusConflict || !strings.Contains(e.Error, "restart_mate is still running") {
-		t.Fatalf("the second press = %d %+v, want refused while the first runs", status, e)
+	want := "Action refused: restart_mate is still running on " + fixtureProject + " · nothing started"
+	if status != http.StatusConflict || e.Error != want {
+		t.Fatalf("the press = %d %+v, want 409 %q", status, e, want)
 	}
-	close(rec.block)
-	if status := <-first; status != http.StatusOK {
-		t.Fatalf("the first press = %d", status)
+	rec.fail(errors.New("the composer could not be read"))
+	if status, e, _ := post(t, ts, `{"action":"clear_composer","project":"`+fixtureProject+`"}`, nil); status != http.StatusUnprocessableEntity || e.Error != "the composer could not be read" {
+		t.Fatalf("a failed action = %d %+v, want 422 with its error", status, e)
 	}
 }
 

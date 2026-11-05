@@ -14,7 +14,6 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
-	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
@@ -382,7 +381,7 @@ func TestTheConsoleAndBothGETRoutesShareOneSnapshot(t *testing.T) {
 		snap.Projects = []query.ProjectNode{{ProjectID: "shop", Name: "shop"}}
 		return snap, err
 	}
-	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr, Deps: dashboard.Deps{Act: act}}, shop)
+	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr}, act, shop)
 	served, err := e.Dashboard()
 	if err != nil {
 		t.Fatal(err)
@@ -565,7 +564,7 @@ func TestTheSharedWorkspaceFollowsWorkspaceYAMLWithNoReader(t *testing.T) {
 // (`/api/workspace` keeps its answer until the timeline's next event, the
 // dashboard's own cache.)
 func TestTheDashboardListsANewProjectWithNoConsole(t *testing.T) {
-	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr})
+	e := dashboardEngine(t, DashboardOptions{Addr: freeAddr}, nil)
 	served, err := e.Dashboard()
 	if err != nil {
 		t.Fatal(err)

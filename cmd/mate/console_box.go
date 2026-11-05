@@ -249,7 +249,12 @@ func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps
 	if gone || stopped.AlreadyGone {
 		was = "the previous Mate was already gone"
 	}
-	return fmt.Sprintf("%s; %s; Mate %s is running on %s in pane %s", stow.Outcome(), was, res.Agent, res.Harness, res.Pane), nil
+	line := fmt.Sprintf("%s; %s; Mate %s is running on %s in pane %s", stow.Outcome(), was, res.Agent, res.Harness, res.Pane)
+	if res.ModeNote != "" {
+		// First: the console's status line is one row (CON-220).
+		line = res.ModeNote + "; " + line
+	}
+	return line, nil
 }
 
 // restartHarness is the harness mate.meta records for the project's Mate,

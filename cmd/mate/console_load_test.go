@@ -53,16 +53,16 @@ func TestConsoleLoadAddsItsKeysToTheSharedSnapshot(t *testing.T) {
 }
 
 // The snapshot is handed out again for two seconds, but not after an action
-// the console ran: the action drops it, and the next read shows what the
-// action changed (CON-208). An action that is not followed by Invalidate
-// would be seen only once the two seconds are over.
+// the console ran: the engine's Act drops it, and the next read shows what
+// the action changed (CON-208, CON-209). An action that does not go
+// through Act would be seen only once the two seconds are over.
 func TestConsoleReadsAFreshSnapshotAfterAnAction(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses()})
+	raw := engineActions(w, deps, nil)
+	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: raw})
 	defer engine.Stop()
 	load := consoleLoad(engine.Snapshot, nil, func() string { return "" })
-	raw, _ := tuiAndWebActions(w, deps, nil, nil)
-	tui := invalidateAfter(raw, engine.Invalidate)
+	tui := tuiAction(engine.Act, nil)
 	ctx := context.Background()
 	mode := func() query.Mode {
 		t.Helper()

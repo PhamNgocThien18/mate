@@ -9,6 +9,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // Board day window: what `?days=` defaults to and the most it may ask for.
@@ -89,21 +90,13 @@ func (s *Server) handleBoard(ctx context.Context, r *http.Request, env envelope)
 		byName[out.Projects[i].Name] = &out.Projects[i]
 	}
 
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT a.project, a.kind, COALESCE(t.started_at, t.ended_at),
-		       t.input_tokens, t.cache_read_tokens, t.cache_write_tokens, t.output_tokens, t.thinking_tokens
-		  FROM turn t JOIN actor a ON a.id = t.actor_id
-		 WHERE COALESCE(t.started_at, t.ended_at) >= ?`, since)
+	turns, err := read.TurnTokensBetween(ctx, s.db.SQL(), since, "")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var project, kind, at string
-		var tk Tokens
-		if err := rows.Scan(&project, &kind, &at, &tk.Input, &tk.CacheRead, &tk.CacheWrite, &tk.Output, &tk.Thinking); err != nil {
-			return nil, err
-		}
+	for _, t := range turns {
+		project, kind, at := t.Project, t.Kind, t.At
+		tk := Tokens{Input: t.Input, CacheRead: t.CacheRead, CacheWrite: t.CacheWrite, Output: t.Output, Thinking: t.Thinking}
 		p, i := byName[project], dayOf(at)
 		if p == nil || i < 0 {
 			continue
@@ -118,27 +111,15 @@ func (s *Server) handleBoard(ctx context.Context, r *http.Request, env envelope)
 			day.CrewTokens += tk.Total
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 
-	incidents, err := s.db.SQL().QueryContext(ctx,
-		`SELECT project, kind, opened_at FROM incident WHERE opened_at >= ?`, since)
+	incidents, err := read.Incidents(ctx, s.db.SQL(), since, "")
 	if err != nil {
 		return nil, err
 	}
-	defer incidents.Close()
-	for incidents.Next() {
-		var project, kind, at string
-		if err := incidents.Scan(&project, &kind, &at); err != nil {
-			return nil, err
+	for _, in := range incidents {
+		if p, i := byName[in.Project], dayOf(in.OpenedAt); p != nil && i >= 0 {
+			p.Days[i].Incidents[in.Kind]++
 		}
-		if p, i := byName[project], dayOf(at); p != nil && i >= 0 {
-			p.Days[i].Incidents[kind]++
-		}
-	}
-	if err := incidents.Err(); err != nil {
-		return nil, err
 	}
 
 	out.Total = newBoardDays(out.Dates)

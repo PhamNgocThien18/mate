@@ -13,8 +13,9 @@
 //
 // It writes nothing itself. No column this package updates, no file it
 // opens for writing. The one POST, /api/actions (CON-141), hands a button
-// press to the console's own action function through Deps.Act, so the page
-// and the console's action sheet run one code path; without that seam -
+// press to the core's Engine.Act through Deps.Act, the entry the console's
+// action sheet takes too (CON-209), so the page and the sheet run one code
+// path under one lock per target; without that seam -
 // `mate dashboard` on its own - there is nothing that changes anything.
 //
 // The bind address must be loopback unless the caller passes AllowRemote. A

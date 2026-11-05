@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -22,11 +21,11 @@ type DashboardOptions struct {
 	// a routable Addr is refused the way `mate dashboard` refuses one.
 	AllowRemote bool
 	// Deps are the answers only the caller holds (cmd/mate's dashboardDeps:
-	// `mate diff`, the crew's branch, the harnesses' plugins), and Act and
-	// Notice, the page's buttons (CON-141). The engine fills in the rest:
+	// `mate diff`, the crew's branch, the harnesses' plugins), and Notice,
+	// whether the pages offer Jev (CON-141). The engine fills in the rest:
 	// Snapshot and FreshSnapshot are its own, TimelineStale is its ingest's,
-	// and every Act is followed by Invalidate. With Act nil the dashboard is
-	// read-only and reads no snapshot.
+	// and Act is Engine.Act whatever the caller put there (CON-209). With no
+	// Options.Act the dashboard is read-only and reads no snapshot.
 	Deps dashboard.Deps
 }
 
@@ -117,8 +116,9 @@ func (d *dashboardPart) read() (string, error) {
 
 // dashboardDeps is the caller's dashboard.Deps with the engine's own answers
 // in: the snapshot every UI reads, the fresh one a pressed button is checked
-// against, the ingest's stale timelines, and an Invalidate after every
-// action, so the next read sees what it changed.
+// against, the ingest's stale timelines, and Engine.Act, the one way in for
+// an action from any UI: under the engine's locks, and followed by
+// Invalidate so the next read sees what it changed.
 func (e *Engine) dashboardDeps() dashboard.Deps {
 	deps := e.o.Dashboard.Deps
 	if ingest := e.o.Ingest; ingest != nil {
@@ -126,15 +126,12 @@ func (e *Engine) dashboardDeps() dashboard.Deps {
 		// has none and the page says nothing about staleness.
 		deps.TimelineStale = ingest.Stale
 	}
-	if act := deps.Act; act != nil {
+	if e.o.Act != nil {
 		deps.Snapshot = e.Snapshot
 		deps.FreshSnapshot = e.FreshSnapshot
-		deps.Act = func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
-			defer e.Invalidate()
-			return act(ctx, req)
-		}
+		deps.Act = e.Act
 	} else {
-		deps.Snapshot, deps.FreshSnapshot, deps.Notice = nil, nil, false
+		deps.Snapshot, deps.FreshSnapshot, deps.Act, deps.Notice = nil, nil, nil, false
 	}
 	return deps
 }

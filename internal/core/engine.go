@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/notifications"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
@@ -103,10 +104,16 @@ type Options struct {
 	// Notifier sends the captain a native notification for news waiting on
 	// them, for as long as the engine runs (NativeNotifier); nil sends none.
 	Notifier notifications.Sender
+	// Act runs every action but the chat, which the engine runs itself:
+	// cmd/mate's action functions, until CON-215 moves them in. Engine.Act
+	// is its only caller, under the lock on the action's target. Nil runs
+	// no such action, and the dashboard is then read-only.
+	Act coreapi.ActionFunc
 }
 
-// Engine runs a workspace's background loops for as long as it is open, and
-// computes the snapshot every UI reads (Snapshot).
+// Engine runs a workspace's background loops for as long as it is open,
+// computes the snapshot every UI reads (Snapshot), and runs every action a
+// UI asks for (Act).
 //
 // Start starts the reading of workspace.yaml, the watcher, then the sender,
 // then the pilot - so the daemon never queues a digest no sender would type
@@ -121,6 +128,7 @@ type Engine struct {
 	dashboard *dashboardPart
 	notify    *notifyLoop
 	snaps     *snapshotCache
+	locks     actionLocks
 	now       func() time.Time
 
 	// ctx is the engine's own: the shared snapshot computations run under

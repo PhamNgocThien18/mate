@@ -57,6 +57,48 @@ func TestContextRefreshRequiresReceiptAndStartsFresh(t *testing.T) {
 	}
 }
 
+// A refresh that restarts the Mate keeps the mode it runs in: project.yaml's
+// `mate.mode` naming another one takes effect at the captain's next start,
+// not in the middle of a session (CON-220).
+func TestContextRefreshKeepsTheModeTheMateRunsIn(t *testing.T) {
+	w, deps := fixture(t, "shop")
+	writeProjectDoc(t, w)
+	before, rt, _ := startMate(t, w, deps)
+	cfg, err := w.LoadProject("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Mate.Mode = spawn.ModeHeadless
+	if err := w.SaveProject("shop", cfg); err != nil {
+		t.Fatal(err)
+	}
+	deps.NewSessionID = func() string { return "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }
+	cp := &receipt{ws: w}
+	stow := onStow(w, "shop", receiptTurn(w, cp, "success"))
+	// Ends its wait with the context, so a restart that tried headless
+	// fails within the readiness timeout instead of waiting for a host
+	// nobody plays.
+	deps.Sleep = func(ctx context.Context, d time.Duration) error {
+		if err := stow(ctx, d); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
+
+	changed, err := refresher(w, deps, cp).Run(context.Background(), "shop", false)
+	if err != nil || !changed {
+		t.Fatalf("refresh: %v %v", changed, err)
+	}
+	assertFresh(t, w, rt, before)
+	meta, err := w.ReadMateMeta("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta[spawn.MetaMode] != spawn.ModePane || len(rt.PaneRuns) != 0 {
+		t.Fatalf("mode = %q, pane runs %q; want the refreshed Mate still in its pane", meta[spawn.MetaMode], rt.PaneRuns)
+	}
+}
+
 // receiptTurn is the Mate's turn on the stow line in each scenario of
 // TestContextRefreshRequiresReceiptAndStartsFresh.
 func receiptTurn(w *store.Workspace, cp *receipt, scenario string) func() error {

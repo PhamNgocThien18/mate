@@ -61,9 +61,12 @@ type Deps struct {
 	// against before its action runs. Nil checks against Snapshot.
 	FreshSnapshot coreapi.LoadFunc
 	// Act runs one action exactly as the console's action sheet does, and
-	// returns its one line. A page's press reaches it as the core's request
-	// (coreRequest, CON-206). Act and Snapshot are wired only by the
-	// console; with either nil - `mate dashboard` on its own - the
+	// returns its one line: the core's Engine.Act, which the console's
+	// keys call too (CON-209). A page's press reaches it as the core's
+	// request (coreRequest, CON-206). It holds the press's target while it
+	// runs, and refuses a second action on it with coreapi.ErrBusy, which
+	// the page gets as a 409. Act and Snapshot are wired only by the
+	// engine; with either nil - `mate dashboard` on its own - the
 	// dashboard stays read-only and says so.
 	Act coreapi.ActionFunc
 	// Notice is whether the console has Jev to explain a crew's screen
@@ -101,7 +104,6 @@ type Server struct {
 	deps   Deps
 	cache  *cache
 	agents *agentIndex
-	acting *actionLocks
 	mux    *http.ServeMux
 	// mateMemo holds one project's Mate exchanges for one event id, so
 	// every task page's journey does not rebuild them (journey.go).
@@ -124,7 +126,7 @@ func New(opts Options) (*Server, error) {
 		// would also keep the console out of its own timeline.
 		return nil, errors.New("dashboard: the database handle must be read-only (db.OpenRead)")
 	}
-	s := &Server{ws: opts.Workspace, db: opts.DB, deps: opts.Deps, cache: newCache(), agents: &agentIndex{}, acting: &actionLocks{}, mux: http.NewServeMux()}
+	s := &Server{ws: opts.Workspace, db: opts.DB, deps: opts.Deps, cache: newCache(), agents: &agentIndex{}, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }

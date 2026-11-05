@@ -9,7 +9,8 @@ to be; this file is the current map. Installing and building:
 
 mate is splitting its core into a process of its own (CON-203). Done so far:
 `internal/coreapi` (CON-206); the engine in `internal/core` (CON-207) with the
-shared snapshot, Office/City and notifications (CON-208); `internal/refresh`
+shared snapshot, Office/City and notifications (CON-208), and the one entry
+for every UI's actions (CON-209); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169). Every
 part marked **Target** below is planned, not built; the issue named beside it
@@ -20,20 +21,23 @@ paragraph it changes.
 
 Seven layers, lowest first. Every package with a non-test `.go` file under
 `cmd/`, `internal/` and `assets/` belongs to exactly one, except the
-test-only packages of rule 3. The Packages column is authoritative: a
-package not listed has no layer yet, and a subpackage does not inherit its
-parent's layer (`harness` is read, `harness/claude` integration;
-`timeline/scene` is read, `timeline` service). The "What belongs" column
-describes the layer; it does not decide it.
+test-only packages of rule 3. The Packages column decides: a package not
+listed has no layer yet, and a subpackage does not inherit its parent's
+layer (`harness` is read, `harness/claude` integration; `timeline/scene` and
+`timeline/read` are read, `timeline` service). The "What belongs" column
+describes the layer; it does not decide it. The same table is data in code,
+`layers` in `internal/archtest/layers_test.go`, and the test keeps both
+equal: a new package goes into both in one change, and the test's message
+names the layers its imports and importers allow.
 
 | Layer | What belongs | Packages |
 | -- | -- | -- |
 | 1 leaf (lá) | Types, rules, formats and OS shims that import no other layer | `assets`, `brief`, `capability`, `config`, `consolecmd`, `crewstate`, `memory`, `names`, `observability`, `platform`, `process`, `telemetry` |
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
-| 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `diagnostics`, `dispatch`, `harness`, `runtime` |
+| 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `timeline/read`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
 | 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `core` |
-| 6 UI (giao diện) | What the captain looks at | `ui/console` (Go); Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` |
+| 6 UI (giao diện) | What the captain looks at; Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` (service) | `ui/console` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
 
 Package paths are under `internal/` except `assets` and `cmd/mate`. Some
@@ -59,12 +63,12 @@ packages below storage still read or write a file under `.mate/` (section
    it, and `make vet` vets it separately.
 4. The boundary tests of section 4 add stricter local rules on top.
 
-Violations on `main` today, both debt:
-
-- `memory` (leaf) imports `facts` (integration) for `facts.Anchor` and
-  `facts.NoHead`, and so links `gitx`.
-- `query` (read) imports `matehost` (integration) for the news and work log
-  formats (`matehost.LoadNews`, `matehost.LoadWork`).
+`internal/archtest/layers_test.go` checks rule 1 in `make check`: it fails
+on a package with no layer, on an import that breaks the rule, and on a
+line of `internal/archtest/violations.txt` that no longer happens. That
+file is the list of today's violations, one import pair per line, each
+either an exception (it stays; the design reason is on the line) or debt
+(it must go, and `debtCeiling` in the test only goes down).
 
 Packages that mix layers, until their issue splits them:
 
@@ -76,12 +80,10 @@ Packages that mix layers, until their issue splits them:
 
 `dashboard` is in service, not UI: it is the Office/City HTTP server the
 engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
-reads `store`, `db`, `timeline` and `matehost` itself. The UI is the web
+reads `store`, `db`, `timeline` and `matehost` itself; its SQL is in
+`timeline/read` (CON-166). The UI is the web
 pages it serves. Since CON-165 it no longer imports `spawn`
 (`store.Workspace.CrewIsScout`).
-
-**Target**: CON-188 turns this table and these rules into a test with a
-per-package table in code and a list of today's violations.
 
 ## 2. Processes and how they talk
 
@@ -113,8 +115,22 @@ every UI reads: `query.LoadLive` plus what the loops know, kept for up to
 cache (the button check of `POST /api/actions`); `Engine.Invalidate` drops
 it after an action. The console TUI (`internal/ui/console`) reads it every
 2 s through `coreapi.LoadFunc` (`consoleLoad` adds the console's own keys)
-and acts through `coreapi.ActionFunc` (`tuiAndWebActions`,
-`cmd/mate/console_actions.go`, wrapped by `invalidateAfter`).
+and acts through `coreapi.ActionFunc`: `Engine.Act` (`internal/core/act.go`).
+
+`Engine.Act` is the one entry for an action from any UI: the console's
+keys (`tuiAction`, `cmd/mate/console_actions.go`) and every
+`POST /api/actions` of Office and City. It runs the chat (`say`,
+`interrupt`, `answer`, `fork`, `fork_close`) itself on the headless Mate's
+host, and every other action through `Options.Act`, cmd/mate's
+`engineActions` (**Target**: CON-215 plans moving them in). It holds one
+lock per target while an action runs: the Project, `project/crew` when the
+request names a crew, the workspace for adding a Project; the chat,
+`peek`, `explain_notice`, `okay_work`, `open_news` and `open_work` take
+`<target>#<action>` instead, so they run beside a stop or a merge. A
+second action on a held target, from any UI, is refused with
+`coreapi.ErrBusy` ("Action refused: … is still running on … · nothing
+started"; a page gets it as a 409). Each console still runs one action at
+a time of its own. After every action `Act` calls `Invalidate`.
 
 How processes exchange state:
 
@@ -133,9 +149,11 @@ How processes exchange state:
   writer gets `db.ErrLocked` (a console then observes without recording).
   Readers use `db.OpenRead`.
 - **Unix sockets.** `.mate/projects/<p>/mate/host.sock`: one JSON request
-  and one JSON response per connection (`matehost.Client`); the outbox
-  delivers to a headless Mate through it (`OpDeliver`), and spawn, Office
-  chat and City ask it for state, history and answers. The console drives
+  and one JSON response per connection (`matehost.Client`), except
+  `subscribe`, which keeps the connection and streams every host event as
+  one JSON line (CON-221); the outbox delivers to a headless Mate through
+  it (`OpDeliver`), and spawn, Office chat and City ask it for state,
+  history and answers. The console drives
   each pane runner over its own socket in a temp directory
   (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
 - **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)
@@ -149,7 +167,7 @@ How processes exchange state:
   default `127.0.0.1:7777`, LAN only with `allow_remote`).
 
 **Target** (CON-203): one `mate core` process per workspace runs the engine
-with no UI open (CON-209 one entry for actions; CON-210 bounded stop;
+with no UI open (CON-210 bounded stop;
 CON-211 `mate core run` and `core.lock`; CON-213 `start|stop|restart|status`).
 UIs reach it over `.mate/core.sock` (CON-212) through `internal/coreclient`
 (CON-214). The console becomes a client. CLI commands keep writing files
@@ -171,7 +189,7 @@ true yet.
 | `plugins.yaml` | `plugin` | `mate plugin` | `spawn` at Mate start, console, dashboard |
 | `crew-dispatch.json` | `dispatch` | the captain | `mate crew dispatch` |
 | `console.lock` | `store` | the console (flock) | a second console, which asks to replace it |
-| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, refresh |
+| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, `mate recall`, refresh; every query outside `db` and `timeline` is in `timeline/read` |
 | `notifications.json` | `notifications` | the engine's notification loop (`internal/core/notify.go`) | the same loop (flock on `notifications.json.lock`) |
 | `projects/<p>/project.yaml`, `PROJECT.md` | `store` | `mate project …`; the Mate (`PROJECT.md`) | spawn, query, `mate recall` |
 | `projects/<p>/sent.log` | `store` | outbox, `mate send`, hook, refresh, autopilot, the console | box, timeline |
@@ -197,6 +215,8 @@ creates and removes; `teardown` first stops what the worktree started.
 
 Each test fails `make check` when its rule breaks. The first four are the
 ones CON-179 names; the last three came with CON-184, CON-206 and CON-207.
+They add local rules to the repo-wide layer rule, which
+`internal/archtest/layers_test.go` checks (section 1).
 
 | Test | Rule |
 | -- | -- |

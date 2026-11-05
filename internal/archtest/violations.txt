@@ -1,0 +1,21 @@
+# Imports that break the layer rule of docs/architecture.md section 1
+# (import rule 1: a package imports only packages of its own layer or a
+# lower one), read by TestImportsFollowLayers in layers_test.go.
+#
+# One import pair per line, package paths from the repository root:
+#
+#   exception <importer> -> <imported>  # reason (required)
+#   debt      <importer> -> <imported>  # note
+#
+# exception: the import stays, for a design reason written on its line.
+# debt: the import must go; fix it in its own issue, then delete the line.
+#
+# The test fails on a rule-breaking import not listed here, and on a line
+# that no longer happens, so this list only gets shorter. Do not add debt:
+# a new import that breaks the rule is fixed, or argued as an exception.
+
+# Exceptions: none.
+
+# Debt.
+debt internal/memory -> internal/facts  # facts.Anchor and facts.NoHead; links gitx into a leaf
+debt internal/query -> internal/matehost  # matehost.LoadNews and matehost.LoadWork, the news and work log formats
