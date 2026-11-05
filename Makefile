@@ -30,8 +30,11 @@ test:
 test-race:
 	set -o pipefail; $(GO) test -race -json ./... | $(GO) run ./scripts/gotestreport
 
+# scripts/ptysmoke is its own module (it carries the vt replace that would
+# block `go install`), so ./... at the root no longer reaches it.
 vet:
 	$(GO) vet ./...
+	cd scripts/ptysmoke && $(GO) vet ./...
 
 fmt:
 	$(GOFMT) -w cmd internal scripts assets
