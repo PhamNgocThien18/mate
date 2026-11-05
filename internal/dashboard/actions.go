@@ -72,7 +72,14 @@ func coreRequest(req ActionRequest) coreapi.ActionRequest {
 		// The work sheet's Space (okayWork).
 		out.Action, out.TargetKind, out.Input = coreapi.ActionOkayWork, "project", strconv.Itoa(req.Work)
 	case talk[req.Action]:
-		out.TargetKind, out.Input, out.News = "mate", req.Text, req.News
+		// A say has no news, and an interrupt or a fork_close no text.
+		out.TargetKind = "mate"
+		if req.Action != actInterrupt && req.Action != actForkClose {
+			out.Input = req.Text
+		}
+		if req.Action != actSay {
+			out.News = req.News
+		}
 	case req.Crew != "":
 		out.TargetKind, out.Crew = "crew", req.Crew
 	case out.Action == coreapi.ActionOnboard:

@@ -11,11 +11,11 @@ import (
 )
 
 // forbiddenImports is the boundary doc.go states in prose and this test
-// enforces: the Console knows internal/query's read types and two
-// caller-supplied closures, and nothing else. It never opens a database and
-// never calls Herdr, so a snapshot on screen can only have come through
-// LoadFunc and an attach can only have gone through the `mate attach`
-// subprocess (G6 gate, ADR 0010).
+// enforces: the Console knows internal/query's read types,
+// internal/coreapi's contract and the closures its caller supplies, and
+// nothing else. It never opens a database and never calls Herdr, so a
+// snapshot on screen can only have come through LoadFunc and an attach can
+// only have gone through the `mate attach` subprocess (G6 gate, ADR 0010).
 //
 // Direct imports only. internal/query is the read boundary: it is a pure
 // DTO package, and whatever fills it (internal/query/load.go, over

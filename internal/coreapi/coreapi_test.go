@@ -7,8 +7,8 @@ import (
 	"unicode"
 )
 
-// A request crosses the core's socket as JSON (CON-212), every field under
-// its name in snake_case - a field added later too.
+// A request is to cross the core's socket as JSON (CON-212), every field
+// under its name in snake_case - a field added later too.
 func TestActionRequestFieldsAreSnakeCaseInJSON(t *testing.T) {
 	typ := reflect.TypeOf(ActionRequest{})
 	for i := range typ.NumField() {

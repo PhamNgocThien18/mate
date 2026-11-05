@@ -270,13 +270,15 @@ func TestAPressIsTheConsoleSheetsRequest(t *testing.T) {
 		{ActionRequest{Action: "peek", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionPeek, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 		{ActionRequest{Action: "explain_notice", Project: "shop", Crew: "buy"}, coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"}},
 		{ActionRequest{Action: "stop", Project: "shop", Text: "the page's own words", News: 7, Work: 3}, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}},
-		// The chat (CON-142).
+		// The chat (CON-142): a say has no news, and an interrupt or a
+		// fork_close no text, whatever the page sent.
 		{ActionRequest{Action: "say", Project: "shop", Text: "ship the button"}, coreapi.ActionRequest{Action: coreapi.ActionSay, Target: "shop", TargetKind: "mate", Input: "ship the button"}},
+		{ActionRequest{Action: "say", Project: "shop", Text: "ship the button", News: 7}, coreapi.ActionRequest{Action: coreapi.ActionSay, Target: "shop", TargetKind: "mate", Input: "ship the button"}},
 		{ActionRequest{Action: "interrupt", Project: "shop"}, coreapi.ActionRequest{Action: coreapi.ActionInterrupt, Target: "shop", TargetKind: "mate"}},
-		{ActionRequest{Action: "interrupt", Project: "shop", News: 7}, coreapi.ActionRequest{Action: coreapi.ActionInterrupt, Target: "shop", TargetKind: "mate", News: 7}},
+		{ActionRequest{Action: "interrupt", Project: "shop", News: 7, Text: "stop"}, coreapi.ActionRequest{Action: coreapi.ActionInterrupt, Target: "shop", TargetKind: "mate", News: 7}},
 		{ActionRequest{Action: "answer", Project: "shop", News: 7, Text: "[a] Stripe"}, coreapi.ActionRequest{Action: coreapi.ActionAnswer, Target: "shop", TargetKind: "mate", Input: "[a] Stripe", News: 7}},
 		{ActionRequest{Action: "fork", Project: "shop", News: 7, Text: "why Stripe?"}, coreapi.ActionRequest{Action: coreapi.ActionFork, Target: "shop", TargetKind: "mate", Input: "why Stripe?", News: 7}},
-		{ActionRequest{Action: "fork_close", Project: "shop", News: 7}, coreapi.ActionRequest{Action: coreapi.ActionForkClose, Target: "shop", TargetKind: "mate", News: 7}},
+		{ActionRequest{Action: "fork_close", Project: "shop", News: 7, Text: "bye"}, coreapi.ActionRequest{Action: coreapi.ActionForkClose, Target: "shop", TargetKind: "mate", News: 7}},
 		// The work board's tick (CON-158).
 		{ActionRequest{Action: "okay", Project: "shop", Work: 12}, coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "12"}},
 	}

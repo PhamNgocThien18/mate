@@ -60,8 +60,8 @@ const (
 	// wants to talk to a crew or read its screen opens that crew's pane,
 	// which is what a box row now does. They stay in the enum because
 	// cmd/mate implements them and an ActionFunc is free to be asked.
-	// Agent City's Peek button sends ActionPeek too (CON-142): a page and
-	// the console say `peek` alike, so it is one word here.
+	// Agent City's Peek button asks for ActionPeek (CON-142) in the same
+	// word, `peek`, so the contract has no second constant for it.
 	ActionResolve Action = "resolve"
 	ActionReply   Action = "reply"
 	ActionPeek    Action = "peek"
@@ -132,7 +132,9 @@ const (
 	ActionOpenWork Action = "open_work"
 	// The chat's actions (CON-142): what the captain says to a headless
 	// Mate, and to the private session of one of its news (CON-104), from a
-	// page. Input is the text, as a reply's line is, and News the news.
+	// page. Input is what the captain typed, as a reply's line is, and News
+	// the news; a say has no news, and an interrupt or a fork_close no
+	// text.
 	//
 	// ActionSay is a message to the Mate. ActionInterrupt stops the Mate's
 	// turn in flight or, with News, the session of that news instead.
@@ -154,8 +156,8 @@ const (
 // guessing which service to call from the string would assert more than the
 // snapshot established.
 //
-// The JSON names are snake_case, the form the core's socket sends
-// (CON-212).
+// The JSON names are snake_case: the form a request takes on the core's
+// socket, once there is one (CON-212).
 type ActionRequest struct {
 	Action     Action `json:"action"`
 	Target     string `json:"target,omitempty"`
@@ -163,7 +165,7 @@ type ActionRequest struct {
 	// Input is the request's text: the project name a workspace onboard
 	// registers, the line a reply sends or a resolve hands to the Mate, the
 	// news id of open_news, the row id of okay_work, and what the captain
-	// typed for a chat action.
+	// typed for a say, an answer or a fork.
 	Input string `json:"input,omitempty"`
 	// News is the news a chat action is about: the one an answer answers,
 	// a fork asks and a fork_close closes, and on an interrupt the session

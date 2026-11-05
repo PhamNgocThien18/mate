@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,12 +93,12 @@ func TestStartConsoleDashboardRemoteNeedsAllow(t *testing.T) {
 	}
 }
 
-// A page's press runs where it ran before the dashboard learned the
-// core's request (CON-206): the chat on the headless Mate's host, with the
-// text and the news the page sent (dashboardTalk), and everything else
-// through the console's one action function - the work board's tick too,
-// which is now the work sheet's okay_work and says what a page's okay said.
-func TestAPagePressRunsWhereItRanBefore(t *testing.T) {
+// A page's chat runs on the headless Mate's host (dashboardTalk), with the
+// text and the news the page sent, and never reaches the console's action
+// function; everything else runs through that function. A page's tick on
+// the work board is the work sheet's okay_work there (CON-206): it ticks
+// the row and says what the console says.
+func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
 	path := matehost.WorkPath(w.MateDir("shop"))
@@ -113,10 +112,10 @@ func TestAPagePressRunsWhereItRanBefore(t *testing.T) {
 	}
 	_, web := tuiAndWebActions(w, spawn.Deps{}, nil, nil)
 	var mu sync.Mutex
-	var console []coreapi.ActionRequest
+	var ran []coreapi.ActionRequest
 	act := func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 		mu.Lock()
-		console = append(console, req)
+		ran = append(ran, req)
 		mu.Unlock()
 		return web(ctx, req)
 	}
@@ -150,8 +149,8 @@ func TestAPagePressRunsWhereItRanBefore(t *testing.T) {
 		}
 	}
 	mu.Lock()
-	if len(console) != 0 {
-		t.Errorf("the chat reached the console's action function: %+v", console)
+	if len(ran) != 0 {
+		t.Errorf("the chat reached the console's action function: %+v", ran)
 	}
 	mu.Unlock()
 
@@ -160,8 +159,8 @@ func TestAPagePressRunsWhereItRanBefore(t *testing.T) {
 		t.Fatalf("okay = %d %q, want %q", status, line, want)
 	}
 	mu.Lock()
-	if len(console) != 1 || console[0].Action != coreapi.ActionOkayWork || console[0].Input != strconv.Itoa(id) || console[0].Target != "shop" {
-		t.Errorf("the console's action function got %+v, want one okay_work of row %d", console, id)
+	if len(ran) != 1 || ran[0].Action != coreapi.ActionOkayWork || ran[0].Input != strconv.Itoa(id) || ran[0].Target != "shop" {
+		t.Errorf("the console's action function got %+v, want one okay_work of row %d", ran, id)
 	}
 	mu.Unlock()
 	list, err := matehost.LoadWork(path)
@@ -175,29 +174,11 @@ func TestAPagePressRunsWhereItRanBefore(t *testing.T) {
 	}
 }
 
-// pageWorkspace is a workspace with shop, whose Mate runs headless, and
-// the database a dashboard reads. It lives under /tmp: the Mate's socket
-// is in its directory, and a t.TempDir path on macOS is longer than a unix
-// socket path may be.
+// pageWorkspace is tmpShopWorkspace with shop's Mate running headless, and
+// the database a dashboard reads.
 func pageWorkspace(t *testing.T) *store.Workspace {
 	t.Helper()
-	root, err := os.MkdirTemp("/tmp", "pg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(root) })
-	w, err := store.Init(root, workspaceDefaults())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := filepath.Join(w.ProjectHome("shop"), "shop")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	initGitRepo(t, repo)
-	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: repo, DefaultBranch: "main"}}}); err != nil {
-		t.Fatal(err)
-	}
+	w := tmpShopWorkspace(t)
 	if err := w.WriteMateMeta("shop", map[string]string{"harness": "claude", "agent": "mate-shop", store.MetaMateMode: store.MateModeHeadless}); err != nil {
 		t.Fatal(err)
 	}
@@ -218,13 +199,13 @@ type hostCall struct {
 	News int    `json:"news"`
 }
 
-// mateHostCalls stands in for a headless Mate's host: it answers every
-// request on the Mate's socket as done, and keeps what each one asked.
+// mateHostCalls is what a fakeMateHost was asked, in order.
 type mateHostCalls struct {
 	mu    sync.Mutex
 	calls []hostCall
 }
 
+// last is the latest request, or none.
 func (h *mateHostCalls) last() hostCall {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -234,6 +215,11 @@ func (h *mateHostCalls) last() hostCall {
 	return h.calls[len(h.calls)-1]
 }
 
+// fakeMateHost answers on the socket of the Mate in mateDir the way a
+// headless Mate's host does, every request as done, and records what each
+// one asked. A real host (matehost.New) would run a harness turn for a
+// say, an answer or a fork; this one speaks only the host's wire format,
+// matehost's request and response, so a change there shows up here.
 func fakeMateHost(t *testing.T, mateDir string) *mateHostCalls {
 	t.Helper()
 	if err := os.MkdirAll(mateDir, 0o755); err != nil {

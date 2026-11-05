@@ -10,8 +10,8 @@
 // through internal/coreapi's contract, never internal/core, its socket
 // client or the dashboard. It only knows internal/query's read types and
 // caller-supplied seams: coreapi.LoadFunc (how to re-read the tree),
-// coreapi.ActionFunc (how to invoke application services for start/stop/
-// resume/retry/repair/discard/onboard), StageFunc (stage.go: show an agent in the
+// coreapi.ActionFunc (how to invoke application services for one of
+// coreapi's actions), StageFunc (stage.go: show an agent in the
 // next pane), CommandViewFunc (a tool key of Snapshot.Commands - `e`, the crew's
 // report - in a tab beside the Console) and ClipboardFunc (OSC 52 for y). The CLI layer in cmd/mate is
 // the only place those seams are built, which is where the persistence,

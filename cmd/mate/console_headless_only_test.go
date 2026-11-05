@@ -41,23 +41,7 @@ func headlessFixture(t *testing.T) (*store.Workspace, spawn.Deps, *runtime.Fake)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(claude.ClaudeConfigDirEnv, "")
 	_, deps := consoleFixture(t, "shop")
-	root, err := os.MkdirTemp("/tmp", "ho")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(root) })
-	w, err := store.Init(root, workspaceDefaults())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := filepath.Join(w.ProjectHome("shop"), "shop")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	initGitRepo(t, repo)
-	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: repo, DefaultBranch: "main"}}}); err != nil {
-		t.Fatal(err)
-	}
+	w := tmpShopWorkspace(t)
 	// A host that never answers fails the start within the readiness
 	// timeout, rather than spinning on a sleep that ignores its context.
 	deps.Sleep = func(ctx context.Context, _ time.Duration) error {
@@ -95,6 +79,31 @@ func headlessFixture(t *testing.T) (*store.Workspace, spawn.Deps, *runtime.Fake)
 		return nil
 	}
 	return w, deps, rt
+}
+
+// tmpShopWorkspace is a workspace under /tmp with the Project shop and its
+// repo. A Mate's socket lives in the Mate directory, and a t.TempDir path
+// on macOS is longer than a unix socket path may be.
+func tmpShopWorkspace(t *testing.T) *store.Workspace {
+	t.Helper()
+	root, err := os.MkdirTemp("/tmp", "ho")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	w, err := store.Init(root, workspaceDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(w.ProjectHome("shop"), "shop")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: repo, DefaultBranch: "main"}}}); err != nil {
+		t.Fatal(err)
+	}
+	return w
 }
 
 // mateMode is how shop's Mate runs now, by mate.meta: headless, pane, or

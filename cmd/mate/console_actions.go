@@ -390,8 +390,9 @@ func openWorkAction(ws *store.Workspace, req coreapi.ActionRequest) (string, err
 }
 
 // okayWorkAction is the captain's tick on a done row of the work board
-// (CON-158): Space on it in the console's work sheet. The tick is final;
-// the row leaves the board and the Mate is never waiting on it.
+// (CON-158): Space on it in the console's work sheet, or a page's okay,
+// which the dashboard sends as okay_work (CON-206). The tick is final; the
+// row leaves the board and the Mate is never waiting on it.
 func okayWorkAction(ws *store.Workspace, req coreapi.ActionRequest) (string, error) {
 	id, err := strconv.Atoi(req.Input)
 	if err != nil || id <= 0 || req.Target == "" {
