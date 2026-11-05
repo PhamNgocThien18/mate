@@ -53,7 +53,18 @@ var layerNames = map[layer]string{
 	binary:      "binary",
 }
 
+// layerIdents are the constants' names, for the line a message tells you
+// to add to layers.
+var layerIdents = map[layer]string{
+	leaf: "leaf", storage: "storage", read: "read", integration: "integration",
+	service: "service", ui: "ui", binary: "binary",
+}
+
 func (l layer) String() string { return fmt.Sprintf("%d %s", int(l), layerNames[l]) }
+
+// docPath is how docs/architecture.md section 1 writes a package: under
+// internal/ without the prefix, assets and cmd/ in full.
+func docPath(pkg string) string { return strings.TrimPrefix(pkg, "internal/") }
 
 // layers places every package that has a non-test .go file under cmd/,
 // internal/ or assets/. It is the Packages column of the table in
@@ -136,6 +147,11 @@ var testOnly = map[string]string{
 // violationsFile lists the imports that break the rule today; see its
 // header for the format.
 const violationsFile = "violations.txt"
+
+// debtCeiling is the number of debt lines in violations.txt. Debt only goes
+// down: a fix deletes its line and lowers this number in the same change,
+// and the test fails if the file holds more debt or less.
+const debtCeiling = 2
 
 // importSite is one import of a mate package in a non-test file.
 type importSite struct {
@@ -234,7 +250,7 @@ type importPair struct{ from, to string }
 
 func (p importPair) String() string { return p.from + " -> " + p.to }
 
-var violationLine = regexp.MustCompile(`^(exception|debt)\s+(\S+)\s+->\s+(\S+)\s*(?:#\s*(.*))?$`)
+var violationLine = regexp.MustCompile(`^(exception|debt)\s+([^\s#]+)\s+->\s+([^\s#]+)\s*(?:#\s*(.*))?$`)
 
 // loadViolations reads violations.txt. Each line that is not blank or a
 // comment is one import pair:
@@ -287,6 +303,19 @@ func loadViolations(t *testing.T) map[importPair]listedViolation {
 func TestImportsFollowLayers(t *testing.T) {
 	pkgs := scanRepo(t)
 	listed := loadViolations(t)
+
+	debts := 0
+	for _, v := range listed {
+		if v.kind == debt {
+			debts++
+		}
+	}
+	switch {
+	case debts > debtCeiling:
+		t.Errorf("%s has %d debt lines, above debtCeiling %d: debt only goes down. Fix the new import, or argue it as an exception with its design reason", violationsFile, debts, debtCeiling)
+	case debts < debtCeiling:
+		t.Errorf("%s has %d debt lines, below debtCeiling %d: lower debtCeiling in layers_test.go to %d", violationsFile, debts, debtCeiling, debts)
+	}
 
 	importers := map[string][]string{} // dep -> packages importing it
 	for _, pkg := range sortedKeys(pkgs) {
@@ -363,6 +392,11 @@ func TestImportsFollowLayers(t *testing.T) {
 		why := "no non-test file of " + pair.from + " imports " + pair.to + " any more"
 		if _, ok := pkgs[pair.from][pair.to]; ok {
 			why = "the import is within the rule now"
+			if _, placed := layers[pair.from]; !placed {
+				why = pair.from + " has no layer (reported above)"
+			} else if _, placed := layers[pair.to]; !placed {
+				why = pair.to + " has no layer (reported above)"
+			}
 		}
 		t.Errorf("%s:%d: %s %s is listed but %s; delete the line, the list only gets shorter", violationsFile, v.lineNo, v.kind, pair, why)
 	}
@@ -378,16 +412,6 @@ func TestImportsFollowLayers(t *testing.T) {
 // narrows the choice: its imports set the lowest layer it can take without
 // a new violation, its importers the highest.
 func unplacedMessage(pkg string, pkgs map[string]pkgImports, importers map[string][]string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s has non-test .go files but no layer.\n", pkg)
-	fmt.Fprintf(&b, "Place it: add %q to layers in internal/archtest/layers_test.go and to the Packages column of docs/architecture.md section 1 (layers: ", pkg)
-	for l := leaf; l <= binary; l++ {
-		if l > leaf {
-			b.WriteString(", ")
-		}
-		b.WriteString(l.String())
-	}
-	b.WriteString(").\n")
 	lowest, lowBy := leaf, ""
 	for _, dep := range sortedKeys(pkgs[pkg]) {
 		if l, ok := layers[dep]; ok && l > lowest {
@@ -400,17 +424,39 @@ func unplacedMessage(pkg string, pkgs map[string]pkgImports, importers map[strin
 			highest, highBy = l, imp
 		}
 	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s has non-test .go files but no layer.\n", pkg)
 	if lowBy != "" {
 		fmt.Fprintf(&b, "It imports %s, so its layer is at least %s.\n", lowBy, lowest)
 	}
 	if highBy != "" {
 		fmt.Fprintf(&b, "%s imports it, so its layer is at most %s.\n", highBy, highest)
 	}
-	if lowBy != "" && highBy != "" && lowest > highest {
-		b.WriteString("No layer satisfies both: some import has to change, or be listed as debt in internal/archtest/" + violationsFile + ".\n")
+	pick, row := "<layer>", "<n layer>"
+	switch {
+	case lowest > highest:
+		b.WriteString("No layer satisfies both: one of those imports has to change.\n")
+	case lowest == highest:
+		fmt.Fprintf(&b, "Its one possible layer is %s.\n", lowest)
+		pick, row = layerIdents[lowest], lowest.String()
+	default:
+		fmt.Fprintf(&b, "Its layer is one of %s to %s (import rule 2 of the doc says where a port or an adapter goes); the lowest is shown below.\n", lowest, highest)
+		pick, row = layerIdents[lowest], lowest.String()
 	}
+	b.WriteString("Place it in both places, in one change:\n")
+	fmt.Fprintf(&b, "  internal/archtest/layers_test.go, map layers:  %q: %s,\n", pkg, pick)
+	fmt.Fprintf(&b, "  docs/architecture.md section 1, Packages column of row %q:  `%s`\n", row, docPath(pkg))
+	b.WriteString("Layers: ")
+	for l := leaf; l <= binary; l++ {
+		if l > leaf {
+			b.WriteString(", ")
+		}
+		b.WriteString(l.String())
+	}
+	b.WriteString(".\n")
 	if len(importers[pkg]) == 0 {
-		b.WriteString("If only _test.go files import it, add it to testOnly instead, with the reason.\n")
+		b.WriteString("If only _test.go files import it, add it to testOnly instead, with the reason, and to import rule 3 of the doc.\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -512,6 +558,11 @@ func TestLayerTableMatchesArchitectureDoc(t *testing.T) {
 	for _, pkg := range sortedKeys(docLayer) {
 		if _, ok := layers[pkg]; !ok {
 			t.Errorf("docs/architecture.md section 1 places %s in layer %s, but layers in layers_test.go does not", pkg, docLayer[pkg])
+		}
+	}
+	for _, pkg := range sortedKeys(testOnly) {
+		if !strings.Contains(section, "`"+docPath(pkg)+"`") {
+			t.Errorf("testOnly lists %s, but docs/architecture.md section 1 (import rule 3) does not name `%s`", pkg, docPath(pkg))
 		}
 	}
 }

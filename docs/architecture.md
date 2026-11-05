@@ -65,14 +65,9 @@ packages below storage still read or write a file under `.mate/` (section
 `internal/archtest/layers_test.go` checks rule 1 in `make check`: it fails
 on a package with no layer, on an import that breaks the rule, and on a
 line of `internal/archtest/violations.txt` that no longer happens. That
-file lists today's violations, one import pair per line, each either an
-exception (it stays; the reason is on the line) or debt (it must go). There
-are no exceptions. Debt on `main` today:
-
-- `memory` (leaf) imports `facts` (integration) for `facts.Anchor` and
-  `facts.NoHead`, and so links `gitx`.
-- `query` (read) imports `matehost` (integration) for the news and work log
-  formats (`matehost.LoadNews`, `matehost.LoadWork`).
+file is the list of today's violations, one import pair per line, each
+either an exception (it stays; the design reason is on the line) or debt
+(it must go, and `debtCeiling` in the test only goes down).
 
 Packages that mix layers, until their issue splits them:
 
