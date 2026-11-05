@@ -308,7 +308,45 @@ func TestStopEndsTheSnapshotComputation(t *testing.T) {
 		if _, err := e.Snapshot(context.Background()); !errors.Is(err, errStopped) {
 			t.Fatalf("a read after Stop: %v, want errStopped", err)
 		}
+		if _, err := e.FreshSnapshot(context.Background()); !errors.Is(err, errStopped) {
+			t.Fatalf("a fresh read after Stop: %v, want errStopped", err)
+		}
 	})
+}
+
+// A kept snapshot is not handed out after Stop either.
+func TestNoSnapshotIsHandedOutAfterStop(t *testing.T) {
+	c := newComputations()
+	e := cacheEngine(c)
+	if _, err := e.Snapshot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e.Stop()
+	if snap, err := e.Snapshot(context.Background()); !errors.Is(err, errStopped) {
+		t.Fatalf("a read after Stop got %q, %v; want errStopped", snap.WorkspaceID, err)
+	}
+}
+
+// A computation that panics fails its readers with the panic as the error,
+// rather than ending the process from the goroutine it runs on, and nothing
+// of it is kept.
+func TestAPanickingComputationFailsItsReaders(t *testing.T) {
+	calls := 0
+	e := New(Options{})
+	defer e.Stop()
+	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
+		calls++
+		if calls == 1 {
+			panic("index out of range")
+		}
+		return query.Snapshot{WorkspaceID: "ok"}, nil
+	}
+	if _, err := e.Snapshot(context.Background()); err == nil || !strings.Contains(err.Error(), "index out of range") {
+		t.Fatalf("err = %v, want the panic", err)
+	}
+	if snap, err := e.Snapshot(context.Background()); err != nil || snap.WorkspaceID != "ok" {
+		t.Fatalf("the read after a panic got %q, %v; want a new computation", snap.WorkspaceID, err)
+	}
 }
 
 // Cancelling the context Start was given ends the engine's context too, so
@@ -411,8 +449,9 @@ func TestSnapshotWithTheConsolesKeysIsWhatTheConsoleLoadedBefore(t *testing.T) {
 		status: map[string]autopilot.Status{"shop": {Sends: 2, Notice: "not delivered"}}}
 	rt := runtime.NewFake()
 	deps := spawn.Deps{Runtime: rt, Names: rt.Names, ConfigHome: t.TempDir()}
+	ingest := staleIngester(t)
 	e := New(Options{
-		Workspace: w, Watcher: watcher, Pilot: pilot, Ingest: timeline.New(nil, nil, timeline.Deps{}),
+		Workspace: w, Watcher: watcher, Pilot: pilot, Ingest: ingest,
 		Spawn: deps, Harnesses: testHarnesses,
 		Recover: func(context.Context, *store.Workspace, func(recovery.Progress)) recovery.Result {
 			return recovery.Result{Items: []recovery.Item{{Project: "shop", Crew: "k1", Err: errors.New("the worktree of crew k1 is gone")}}}
@@ -463,9 +502,14 @@ func TestSnapshotWithTheConsolesKeysIsWhatTheConsoleLoadedBefore(t *testing.T) {
 	}
 	// And it is not a vacuous match: every part put something in.
 	crews := got.Projects[0].Crews
-	if !crews[1].Health.IsKnown() || !crews[0].Error.IsKnown() || got.Runtime.Notice == "" ||
+	if !crews[1].Health.IsKnown() || !crews[0].Error.IsKnown() ||
 		got.Projects[0].Daemon.Sends != 2 || !crews[1].Tokens.IsKnown() || !got.Projects[0].Mate.Tokens.IsKnown() || got.Recovery.Line == "" {
 		t.Fatalf("a part put nothing in: %+v", got)
+	}
+	// The observer's word about Herdr replaces the runtime line, and the
+	// stale timelines are added to it: both stand only in that order.
+	if notice := got.Runtime.Notice; !strings.HasPrefix(notice, "herdr is not running; timeline shop stale since ") {
+		t.Fatalf("runtime line %q, want the observer's notice and then the stale timeline", notice)
 	}
 }
 

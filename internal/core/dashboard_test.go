@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/dashboard"
@@ -22,7 +23,9 @@ const freeAddr = "127.0.0.1:0"
 
 // dashboardEngine starts an engine over a shopWorkspace that serves the
 // dashboard on o, until the test ends. compute, when it is given, is the
-// engine's snapshot computation, set before anything can read it.
+// engine's snapshot computation, set before anything can read it, and the
+// cache's clock then stands still: a kept snapshot never ages out, so only
+// an Invalidate drops it, however slow the machine.
 func dashboardEngine(t *testing.T, o DashboardOptions, compute ...func(context.Context) (query.Snapshot, error)) *Engine {
 	t.Helper()
 	w := shopWorkspace(t)
@@ -30,6 +33,8 @@ func dashboardEngine(t *testing.T, o DashboardOptions, compute ...func(context.C
 	e := New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o})
 	for _, c := range compute {
 		e.snaps.compute = c
+		frozen := time.Now()
+		e.snaps.now = func() time.Time { return frozen }
 	}
 	if err := e.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

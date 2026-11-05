@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -39,13 +40,19 @@ func (e *Engine) Snapshot(ctx context.Context) (query.Snapshot, error) {
 	return e.snaps.get(ctx)
 }
 
-// FreshSnapshot computes a new snapshot for this reader alone, under ctx,
-// whatever is cached: for the check that a pressed button is still offered
-// before its action runs (the dashboard's POST /api/actions).
+// FreshSnapshot computes a new snapshot for this reader alone, under ctx and
+// within the same ten seconds, whatever is cached, and keeps nothing: for
+// the check that a pressed button is still offered before its action runs
+// (the dashboard's POST /api/actions). It runs on the reader's goroutine,
+// so Stop neither cancels nor waits for it; once the engine has stopped it
+// computes nothing.
 func (e *Engine) FreshSnapshot(ctx context.Context) (query.Snapshot, error) {
+	if e.snaps.isClosed() {
+		return query.Snapshot{}, errStopped
+	}
 	ctx, cancel := context.WithTimeout(ctx, snapshotLimit)
 	defer cancel()
-	return e.snaps.compute(ctx)
+	return e.snaps.safeCompute(ctx)
 }
 
 // Invalidate drops the cached snapshot, so the next read computes one that
@@ -93,6 +100,10 @@ type flight struct {
 
 func (c *snapshotCache) get(ctx context.Context) (query.Snapshot, error) {
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return query.Snapshot{}, errStopped
+	}
 	if c.held != nil && c.now().Sub(c.held.at) < c.maxAge {
 		snap := c.held.snap
 		c.mu.Unlock()
@@ -100,10 +111,6 @@ func (c *snapshotCache) get(ctx context.Context) (query.Snapshot, error) {
 	}
 	f := c.flight
 	if f == nil || f.gen != c.gen {
-		if c.closed {
-			c.mu.Unlock()
-			return query.Snapshot{}, errStopped
-		}
 		f = &flight{gen: c.gen, done: make(chan struct{})}
 		c.flight = f
 		c.running.Add(1)
@@ -123,7 +130,7 @@ func (c *snapshotCache) get(ctx context.Context) (query.Snapshot, error) {
 func (c *snapshotCache) run(f *flight, started time.Time) {
 	defer c.running.Done()
 	ctx, cancel := context.WithTimeout(c.ctx, c.limit)
-	snap, err := c.compute(ctx)
+	snap, err := c.safeCompute(ctx)
 	cancel()
 	c.mu.Lock()
 	if c.flight == f {
@@ -135,6 +142,25 @@ func (c *snapshotCache) run(f *flight, started time.Time) {
 	f.snap, f.err = snap, err
 	c.mu.Unlock()
 	close(f.done)
+}
+
+// safeCompute is one computation, with a panic in it turned into its error:
+// a shared computation runs on a goroutine of its own, where a panic would
+// end the process, and before CON-208 a dashboard's read ran inside an HTTP
+// handler, which survives one.
+func (c *snapshotCache) safeCompute(ctx context.Context) (snap query.Snapshot, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			snap, err = query.Snapshot{}, fmt.Errorf("core: computing the snapshot panicked: %v", p)
+		}
+	}()
+	return c.compute(ctx)
+}
+
+func (c *snapshotCache) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 func (c *snapshotCache) invalidate() {

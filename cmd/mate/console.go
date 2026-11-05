@@ -26,8 +26,9 @@ import (
 // This is the one place internal/ui/console's boundary (no store, no
 // runtime, no Herdr - see internal/ui/console/doc.go) is bridged to real
 // state. LoadFunc is the engine's snapshot (internal/core) plus the
-// console's own keys (consoleLoad); everything that would need a live agent is refused with a message naming
-// the mvp.md task that wires it, never a fake success.
+// console's own keys (consoleLoad); everything that would need a live agent
+// is refused with a message naming the mvp.md task that wires it, never a
+// fake success.
 func cmdConsole(dir string, stdout, stderr io.Writer) error {
 	return runConsole(dir, stdout, stderr, false)
 }

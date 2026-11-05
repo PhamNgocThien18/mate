@@ -223,8 +223,10 @@ func (e *Engine) parts() []Loop {
 
 // Stop stops the loops in the reverse of the order they started in - the
 // dashboard waits at most 5 seconds for its requests, a recovery that will
-// not stop gets 45 - and then closes the timeline. A snapshot being
-// computed is cancelled and waited for, and none is computed after. It is
+// not stop gets 45 - and then closes the timeline. A shared snapshot being
+// computed is cancelled and waited for, and after Stop no snapshot is
+// handed out or computed (a FreshSnapshot already running is its reader's
+// to wait for). It is
 // safe to call more than once, and on an engine that never started: that
 // one only closes the timeline it was given.
 func (e *Engine) Stop() {

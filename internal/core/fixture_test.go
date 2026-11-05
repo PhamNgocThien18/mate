@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
 // testHarnesses is a harness catalog for a snapshot: core knows no harness
@@ -45,6 +47,33 @@ func withTimelineDB(t *testing.T, w *store.Workspace) *db.DB {
 	}
 	t.Cleanup(func() { _ = handle.Close() })
 	return handle
+}
+
+// staleIngester is a timeline ingest whose project shop has stopped
+// moving (CON-139): over a workspace of its own, a pass whose event inserts
+// the database refuses.
+func staleIngester(t *testing.T) *timeline.Ingester {
+	t.Helper()
+	w := shopWorkspace(t)
+	if err := w.WriteCrewMeta("shop", "k3", map[string]string{"harness": "codex", "state": "spawned"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AppendStatus("shop", "k3", "working: a status line is an event"); err != nil {
+		t.Fatal(err)
+	}
+	handle := withTimelineDB(t, w)
+	if _, err := handle.SQL().Exec(`CREATE TRIGGER refuse BEFORE INSERT ON event
+		BEGIN SELECT RAISE(ABORT, 'refused for the test'); END`); err != nil {
+		t.Fatal(err)
+	}
+	ingest := timeline.New(w, handle, timeline.Deps{})
+	if err := ingest.Ingest(context.Background()); err == nil {
+		t.Fatal("Ingest = nil with every event insert refused")
+	}
+	if len(ingest.Stale()) != 1 {
+		t.Fatalf("Stale = %+v, want shop", ingest.Stale())
+	}
+	return ingest
 }
 
 // seedActorTurnAndPricing writes just enough of the schema by hand - an
