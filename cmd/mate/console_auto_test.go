@@ -144,7 +144,7 @@ func TestEngineOptionsRunsTheConsoleLoops(t *testing.T) {
 	}
 
 	waitFor(t, func() bool {
-		h, ok := engine.Watcher().Snapshot()[ref]
+		h, ok := engine.CrewHealth().Snapshot()[ref]
 		return ok && h.AgentPresent
 	})
 	waitFor(t, func() bool { return engine.Recovery().Done })
@@ -177,7 +177,7 @@ func TestEngineObservesWithoutTheTimelineWhileAnotherProcessWritesIt(t *testing.
 		t.Fatalf("engineOptions with mate.db held elsewhere: timeline %v, ingest %v; want neither", opts.Timeline, opts.Ingest)
 	}
 	waitFor(t, func() bool {
-		_, ok := engine.Watcher().Snapshot()[ref]
+		_, ok := engine.CrewHealth().Snapshot()[ref]
 		return ok
 	})
 	if snap := withTimelineStale(query.Snapshot{}, engine.Ingest()); snap.Runtime.Notice != "" {
@@ -210,7 +210,7 @@ func TestEngineObservesWithTheFixtureWhenJevIsMisconfigured(t *testing.T) {
 
 	engine, _ := startEngine(t, w, deps)
 	waitFor(t, func() bool {
-		h, ok := engine.Watcher().Snapshot()[ref]
+		h, ok := engine.CrewHealth().Snapshot()[ref]
 		return ok && h.AgentPresent && h.Composer == send.StateEmpty
 	})
 }

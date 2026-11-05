@@ -280,13 +280,13 @@ func TestEngineReadsThePartsItRuns(t *testing.T) {
 	opts.Ingest = ingest
 	e := New(opts)
 
-	if h := e.Watcher().Snapshot(); !h[ref].AgentPresent {
+	if h := e.CrewHealth().Snapshot(); !h[ref].AgentPresent {
 		t.Errorf("crew health %+v, want the watcher's reading", h)
 	}
-	if notice, when := e.Watcher().RuntimeNotice(); notice != "herdr is not running" || !when.Equal(at) {
+	if notice, when := e.CrewHealth().RuntimeNotice(); notice != "herdr is not running" || !when.Equal(at) {
 		t.Errorf("runtime notice %q at %s, want the watcher's", notice, when)
 	}
-	if got := e.Pilot().Snapshot()["shop"].Sends; got != 2 {
+	if got := e.AutoStatus().Snapshot()["shop"].Sends; got != 2 {
 		t.Errorf("daemon sends = %d, want 2", got)
 	}
 	if e.Ingest() != ingest {

@@ -193,13 +193,13 @@ func (e *Engine) stop() {
 	}
 }
 
-// Watcher is the observer's readings: each crew's health, and its word
+// CrewHealth is the observer's readings: each crew's health, and its word
 // about a Herdr it could not reach.
-func (e *Engine) Watcher() CrewHealth { return e.o.Watcher }
+func (e *Engine) CrewHealth() CrewHealth { return e.o.Watcher }
 
-// Pilot is the auto daemon's per-project state: when it last sent, and why
-// it last could not.
-func (e *Engine) Pilot() AutoStatus { return e.o.Pilot }
+// AutoStatus is the auto daemon's per-project state: when it last sent, and
+// why it last could not.
+func (e *Engine) AutoStatus() AutoStatus { return e.o.Pilot }
 
 // Ingest is the timeline ingest, for which projects' timeline has stopped
 // moving (Ingester.Stale). It is nil while another process writes the

@@ -17,11 +17,13 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// The Mate's delivery wiring (mvp.md tasks 19 and 30), beside the observer's
-// in console_watch.go and for the same reason: internal/query is file-only and
-// internal/ui/console may reach neither Herdr, internal/outbox nor
-// internal/autopilot (its boundary test), so this package is the one place
-// that can hold both a live runtime and a snapshot.
+// The Mate's delivery wiring (mvp.md tasks 19 and 30), and engineOptions,
+// which hands it, the observer and recovery to internal/core's engine
+// (CON-207). They sit beside the observer's wiring in console_watch.go, and
+// for the same reason: internal/query is file-only and internal/ui/console
+// may reach neither Herdr, internal/outbox nor internal/autopilot (its
+// boundary test), so this package is the one place that can hold both a
+// live runtime and a snapshot.
 
 // engineOptions builds the parts internal/core's engine runs for an open
 // workspace (CON-207): the observer with the timeline it records, the outbox

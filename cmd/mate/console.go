@@ -170,7 +170,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	defer engine.Stop()
 	// loadFrom reads their state through the engine, by the names it read
 	// the loops by when runConsole ran them itself.
-	watcher, ingest, pilot := engine.Watcher(), engine.Ingest(), engine.Pilot()
+	watcher, ingest, pilot := engine.CrewHealth(), engine.Ingest(), engine.AutoStatus()
 	recovery := &consoleRecovery{now: time.Now, state: engine.Recovery}
 
 	// loadFrom is the console's snapshot read over one Workspace. The

@@ -204,9 +204,9 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 
 // The console runs its background loops through internal/core (CON-207):
 // it builds their parts with engineOptions, which `mate core` can share
-// (CON-211), and the engine starts them in order and stops them in reverse.
-// A Start, Stop or Close of runConsole's own would be a loop or the
-// timeline database outside that order again.
+// (CON-211), and the engine starts them in order, stops them in reverse and
+// closes the timeline last. A Start or Stop of runConsole's own, or a loop
+// or timeline database it opened itself, would be outside that order again.
 func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
 	calls := callersOf(t)["runConsole"]
 	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop"} {
@@ -215,15 +215,13 @@ func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
 		}
 	}
 	for call := range calls {
-		for _, method := range []string{".Start", ".Stop", ".Close"} {
-			if strings.HasSuffix(call, method) && !strings.HasPrefix(call, "engine.") {
-				t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
-			}
+		if (strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop")) && !strings.HasPrefix(call, "engine.") {
+			t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
 		}
 	}
-	for _, builder := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "consoleOutbox"} {
-		if calls[builder] {
-			t.Errorf("runConsole builds a loop with %s; engineOptions builds them all", builder)
+	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "consoleOutbox", "db.Open"} {
+		if calls[opener] {
+			t.Errorf("runConsole calls %s; engineOptions builds the loops and opens the timeline", opener)
 		}
 	}
 }
