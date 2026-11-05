@@ -24,3 +24,9 @@ TestLiveCrewFreshSessionAfterFindings
 # the host listed under the Mate's name, two resumed -p turns, hooks in sent.log, a clean stop.
 # Already covered by TestLive*, listed by name.
 TestLiveHeadlessMate
+# The pi Mate extension is JavaScript these tests run under node. The golang image
+# `make check-linux` uses has no node, so they skip there (CON-182); macOS make check
+# still runs them, and a Mac without node fails because the skip is linux-only.
+TestPiMateExtensionEvents linux
+TestPiHookErrorsAreVisibleAndBounded linux
+TestPiRecallOutlastsTheReceiptTimeout linux
