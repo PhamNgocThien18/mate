@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -221,6 +222,162 @@ func TestStoreLoadConfigKeepsTheConfigOverABrokenFile(t *testing.T) {
 				t.Fatalf("config after the failed LoadConfig = %+v, want the one loaded before, %+v", got, before)
 			}
 		})
+	}
+}
+
+// emptyWorkspaceFiles are empty workspace.yaml files: no key at their top.
+// Each parses without an error, as a workspace with no projects on layout 1
+// (CON-218).
+var emptyWorkspaceFiles = []struct{ name, body string }{
+	{"an empty file", ""},
+	{"only whitespace", "  \n\n    \n"},
+	{"only comments", "# workspace.yaml\n# nothing here yet\n"},
+	{"an empty mapping", "{}\n"},
+	{"a null document", "---\n"},
+	{"a null value", "~\n"},
+}
+
+// keptSession is a session name no LoadConfig derives: over an empty file,
+// the old LoadConfig filled in SessionName(root), which is also what Init
+// stores, so only a session set by hand shows that it was kept.
+const keptSession = "mate-kept0001"
+
+// TestStoreLoadConfigRefusesAnEmptyFile: an editor that empties
+// workspace.yaml before writing it, or a shell redirect, can leave the file
+// empty for a moment. LoadConfig fails with ErrEmptyWorkspaceFile, naming the
+// file, and leaves the configuration it had loaded in place; once the file is
+// written again, the next LoadConfig reads it (CON-218). Before, the console's
+// refresh swapped in a configuration with no projects.
+func TestStoreLoadConfigRefusesAnEmptyFile(t *testing.T) {
+	for _, tc := range emptyWorkspaceFiles {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newProjectWorkspace(t)
+			if err := w.SetSession(keptSession); err != nil {
+				t.Fatal(err)
+			}
+			projects, layout, session := w.Projects(), w.Layout(), w.Session()
+			before := w.Config()
+			if err := os.WriteFile(w.WorkspaceFile(), []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := w.LoadConfig()
+			if !errors.Is(err, store.ErrEmptyWorkspaceFile) {
+				t.Errorf("LoadConfig over %s: err = %v, want ErrEmptyWorkspaceFile", tc.name, err)
+			} else if !strings.Contains(err.Error(), w.WorkspaceFile()) {
+				t.Errorf("error %q does not name the file, %s", err, w.WorkspaceFile())
+			}
+			if got := w.Projects(); !reflect.DeepEqual(got, projects) {
+				t.Errorf("projects after the failed LoadConfig = %+v, want the ones loaded before, %+v", got, projects)
+			}
+			if got := w.Layout(); got != layout {
+				t.Errorf("layout after the failed LoadConfig = %d, want the one loaded before, %d", got, layout)
+			}
+			if got := w.Session(); got != session {
+				t.Errorf("session after the failed LoadConfig = %q, want the one loaded before, %q", got, session)
+			}
+			if got := w.Config(); !reflect.DeepEqual(got, before) {
+				t.Errorf("config after the failed LoadConfig = %+v, want the one loaded before, %+v", got, before)
+			}
+
+			again := before
+			again.Projects = append(append([]store.ProjectRef(nil), before.Projects...), store.ProjectRef{Name: "garden"})
+			if err := saveAsAnotherProcess(w, again); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.LoadConfig(); err != nil {
+				t.Fatalf("LoadConfig once the file is written again: %v", err)
+			}
+			if got := w.Projects(); !reflect.DeepEqual(got, again.Projects) {
+				t.Errorf("projects once the file is written again = %+v, want %+v", got, again.Projects)
+			}
+		})
+	}
+}
+
+// TestStoreASaveAfterAnEmptyFileKeepsTheProjects: the next change through
+// the handle that refused an empty workspace.yaml writes the file from the
+// configuration it kept, every project plus the change (CON-218). Before, the
+// change was made to the empty configuration, and the save wrote the file
+// without the projects or the layout.
+func TestStoreASaveAfterAnEmptyFileKeepsTheProjects(t *testing.T) {
+	w := newProjectWorkspace(t)
+	if err := w.AddProject("garden", store.ProjectConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetSession(keptSession); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.WorkspaceFile(), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.LoadConfig(); !errors.Is(err, store.ErrEmptyWorkspaceFile) {
+		t.Errorf("LoadConfig over an empty file: err = %v, want ErrEmptyWorkspaceFile", err)
+	}
+	if err := w.AddProject("orchard", store.ProjectConfig{}); err != nil {
+		t.Fatalf("AddProject after the empty file: %v", err)
+	}
+
+	reopened, err := store.Open(w.Root())
+	if err != nil {
+		t.Fatalf("Open after the save: %v", err)
+	}
+	want := []store.ProjectRef{{Name: "shop"}, {Name: "garden"}, {Name: "orchard"}}
+	if got := reopened.Projects(); !reflect.DeepEqual(got, want) {
+		t.Errorf("projects on disk = %+v, want %+v", got, want)
+	}
+	if got := reopened.Session(); got != keptSession {
+		t.Errorf("session on disk = %q, want %q", got, keptSession)
+	}
+}
+
+// TestStoreOpenRefusesAnEmptyFile: a command that opens a workspace whose
+// workspace.yaml is empty is told so, and the file is not read as layout 1.
+// Before, Open refused it with ErrLayoutOld, which sent the captain to `mate
+// migrate`, and OpenForMigrate let that migrate run over no projects
+// (CON-218).
+func TestStoreOpenRefusesAnEmptyFile(t *testing.T) {
+	for _, tc := range emptyWorkspaceFiles {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newProjectWorkspace(t)
+			if err := os.WriteFile(w.WorkspaceFile(), []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, open := range []struct {
+				name string
+				fn   func(string) (*store.Workspace, error)
+			}{{"Open", store.Open}, {"OpenForMigrate", store.OpenForMigrate}} {
+				if _, err := open.fn(w.Root()); !errors.Is(err, store.ErrEmptyWorkspaceFile) {
+					t.Errorf("%s over %s: err = %v, want ErrEmptyWorkspaceFile", open.name, tc.name, err)
+				}
+			}
+		})
+	}
+}
+
+// TestStoreAFileWithoutVersionStillLoads: an empty workspace.yaml is one with
+// no key at its top, not one without `version:` (CON-218). A file that names
+// neither a version nor a layout, as an old workspace's may, still opens as
+// layout 1 with its projects.
+func TestStoreAFileWithoutVersionStillLoads(t *testing.T) {
+	w := newWorkspace(t)
+	if err := os.WriteFile(w.WorkspaceFile(), []byte("session: mate-old\nprojects:\n    - name: shop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old, err := store.OpenForMigrate(w.Root())
+	if err != nil {
+		t.Fatalf("OpenForMigrate: %v", err)
+	}
+	if got, want := old.Projects(), []store.ProjectRef{{Name: "shop"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("projects = %+v, want %+v", got, want)
+	}
+	if got := old.Session(); got != "mate-old" {
+		t.Errorf("session = %q, want mate-old", got)
+	}
+	if got := old.Layout(); got != 1 {
+		t.Errorf("layout = %d, want 1", got)
+	}
+	if _, err := store.Open(w.Root()); !errors.Is(err, store.ErrLayoutOld) {
+		t.Errorf("Open: err = %v, want ErrLayoutOld", err)
 	}
 }
 
