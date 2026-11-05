@@ -13,8 +13,11 @@
 // Readers take no lock (docs/timeline.md): the database is derived, and a
 // reader that finds no `mate.db`, or one `mate reindex` is rebuilding,
 // handles that itself, as it did before this package existed. The package
-// imports nothing of mate's: event kinds and actor ids are the caller's to
-// pass, so `timeline` stays the one place that names them.
+// imports nothing of mate's: actor ids and the event kinds a caller filters
+// on are the caller's to pass, so `timeline` stays the one place that names
+// them. The few literals left in the SQL (`'mate'`, `'crew'`, `'thinking'`,
+// `'telemetry.%'`) are values of the schema itself, as docs/timeline.md
+// defines them.
 package read
 
 import (

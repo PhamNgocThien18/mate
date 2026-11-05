@@ -136,8 +136,9 @@ func NowRows(ctx context.Context, q Querier, project string) ([]Now, error) {
 	}, `
 		SELECT n.actor_id, n.actor_name, n.actor_kind, n.project, n.state, n.since,
 		       t.name, n.detail, n.tokens_today,
-                   (SELECT CASE WHEN p.context_window > 0 THEN 100.0 * u.context_tokens_after / p.context_window END
-                    FROM turn u LEFT JOIN pricing p ON p.model=u.model WHERE u.actor_id=n.actor_id ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1),
+		       (SELECT CASE WHEN p.context_window > 0 THEN 100.0 * u.context_tokens_after / p.context_window END
+		          FROM turn u LEFT JOIN pricing p ON p.model = u.model WHERE u.actor_id = n.actor_id
+		         ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1),
 		       (SELECT u.context_tokens_after FROM turn u WHERE u.actor_id = n.actor_id ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1)
 		  FROM v_now n LEFT JOIN actor t ON t.id = n.target_actor_id
 		 WHERE n.project = ?`, project)

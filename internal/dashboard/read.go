@@ -106,9 +106,9 @@ func (s *Server) actorFacts(ctx context.Context, actorID string) (actorFacts, bo
 // the way `v_task_ledger` computes a task's - including the guard that a
 // pricing row of all zeroes is not a price (docs/timeline.md section 10).
 // There is no task row for a Mate, so `v_task_ledger` cannot answer for
-// one and this does, from `turn` directly. It is the same SQL
-// cmd/mate/usage.go's mateLedgerRow runs (read.ActorTotals and
-// read.ActorCost), and the unit tests compare the two number for number.
+// one and this does, from `turn` directly, through read.ActorTotals and
+// read.ActorCost: the same two reads cmd/mate/usage.go's mateLedgerRow
+// makes, so the page and `mate usage` cannot disagree about a Mate.
 func (s *Server) actorTotals(ctx context.Context, actorID string) (int64, Tokens, *float64, error) {
 	totals, err := read.ActorTotals(ctx, s.db.SQL(), actorID)
 	if err != nil {

@@ -31,10 +31,10 @@ func ToolAgents(ctx context.Context, q Querier, after, upTo int64, kind string) 
 	return collect(ctx, q, func(rows *sql.Rows, a *ToolAgent) error {
 		return rows.Scan(&a.Project, &a.ActorID, &a.Agent, &a.At)
 	}, `
-			SELECT project, actor_id, json_extract(payload, '$.agent'), at
-			  FROM event
-			 WHERE id > ? AND id <= ? AND +kind = ? AND payload LIKE '%"agent":%'
-			   AND json_extract(payload, '$.agent') IS NOT NULL`, after, upTo, kind)
+		SELECT project, actor_id, json_extract(payload, '$.agent'), at
+		  FROM event
+		 WHERE id > ? AND id <= ? AND +kind = ? AND payload LIKE '%"agent":%'
+		   AND json_extract(payload, '$.agent') IS NOT NULL`, after, upTo, kind)
 }
 
 // Event is an event row with what a reader of its payload needs.
@@ -85,14 +85,16 @@ func ActorEventsOfKinds(ctx context.Context, q Querier, project, actorID string,
 		args = append(args, k)
 	}
 	return collect(ctx, q, scanEvent, `
-		SELECT actor_id, id, at, turn_id, kind, payload, ref_path, ref_offset FROM event
-		 WHERE project=? AND actor_id=? AND kind IN (`+placeholders(len(kinds))+`)
-		 ORDER BY at,id`, args...)
+		SELECT actor_id, id, at, turn_id, kind, payload, ref_path, ref_offset
+		  FROM event WHERE project = ? AND actor_id = ? AND kind IN (`+placeholders(len(kinds))+`)
+		 ORDER BY at, id`, args...)
 }
 
 // TelemetryEvents reads one actor's `telemetry.*` events in id order.
 func TelemetryEvents(ctx context.Context, q Querier, actorID string) ([]Event, error) {
-	return collect(ctx, q, scanEvent, `SELECT actor_id,id,at,turn_id,kind,payload,ref_path,ref_offset FROM event WHERE actor_id=? AND kind LIKE 'telemetry.%' ORDER BY id`, actorID)
+	return collect(ctx, q, scanEvent, `
+		SELECT actor_id, id, at, turn_id, kind, payload, ref_path, ref_offset
+		  FROM event WHERE actor_id = ? AND kind LIKE 'telemetry.%' ORDER BY id`, actorID)
 }
 
 // TelemetryCursor is what the native observer last recorded for an actor:
