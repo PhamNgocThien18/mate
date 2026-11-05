@@ -75,9 +75,11 @@ type RemoveProjectResult struct {
 //
 // "Running" is Herdr's answer (query.ReadLiveness) where it can be had: an
 // agent whose meta records a pane that Herdr does not list is already gone,
-// and only its run meta is cleared. Closed crews and agents with no pane
-// are skipped. Herdr closes a workspace with its last tab, so once the
-// agents' tabs are closed the project's workspace is gone with them.
+// and only its run meta is cleared. A headless Mate whose host runs as a
+// process of its own (CON-225) is its socket's to answer for. Closed crews
+// and agents with no pane are skipped. Herdr closes a workspace with its
+// last tab, so once the agents' tabs are closed the project's workspace is
+// gone with them.
 func RemoveProject(ctx context.Context, w *store.Workspace, deps Deps, project string, opts RemoveProjectOptions) (RemoveProjectResult, error) {
 	out := RemoveProjectResult{Project: project}
 	if w == nil {
@@ -98,6 +100,7 @@ func RemoveProject(ctx context.Context, w *store.Workspace, deps Deps, project s
 		return out, err
 	}
 	live := query.ReadLiveness(ctx, deps.Runtime, spec)
+	live.Hosts = HostLiveness(ctx, w)
 	gone := func(agent string) bool { return live.Asked && !live.Alive(agent) }
 	fail := func(who string, err error) { out.Failed = append(out.Failed, fmt.Sprintf("%s: %v", who, err)) }
 
@@ -134,10 +137,10 @@ func RemoveProject(ctx context.Context, w *store.Workspace, deps Deps, project s
 	mate, err := w.ReadMateMeta(project)
 	if err != nil {
 		fail("mate", err)
-	} else if mate[MetaPane] != "" {
+	} else if store.MateRecorded(mate) {
 		progress("stopping the Mate")
 		stow := opts.Stow
-		if gone(mate[MetaAgent]) {
+		if live.MateGone(project, mate) {
 			stow = nil
 		}
 		var err error

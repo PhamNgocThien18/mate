@@ -26,9 +26,10 @@ const newsPoll = 700 * time.Millisecond
 // before it is killed.
 const replQuitWait = 2 * time.Second
 
-// cmdMateHost implements `mate mate host <project>` (CON-78): the program a
-// headless Mate's pane runs. spawn.StartMate starts it there; run by hand
-// in a terminal it works the same, without telling Herdr anything.
+// cmdMateHost implements `mate mate host <project>` (CON-78): the headless
+// Mate. spawn.StartMate starts it as a background process of its own,
+// outside Herdr, with no terminal and its output in host.log (CON-225);
+// run by hand in a terminal it works the same.
 //
 // The host runs until it is told to stop: the socket's stop op, SIGTERM or
 // SIGHUP. In a terminal it runs the REPL in the foreground as a process of
@@ -81,32 +82,22 @@ func cmdMateHost(args []string, stdout, stderr io.Writer) error {
 		Turns:  turns,
 		Lock:   func() (func(), bool, error) { return w.TryMateLock(project, matehost.TurnLock) },
 	}
-	opts := matehost.Options{History: matehost.HistoryPath(mateDir), News: matehost.NewsPath(mateDir), Topics: matehost.TopicsPath(mateDir)}
+	opts := matehost.Options{History: matehost.HistoryPath(mateDir), News: matehost.NewsPath(mateDir), Topics: matehost.TopicsPath(mateDir), PID: os.Getpid()}
 	bin, _ := os.Executable()
 	if forks, ok := profile.(harness.ForkTurns); ok {
 		// A topic's session (CON-104) runs the binary the Mate's manual
 		// names, which is this one.
 		opts.Forks, opts.MateBin, opts.Allow = forks, bin, matehost.ForkAllow(bin, project)
 	}
-	reporter, inHerdr := matehost.NewHerdrReporter(launch.Agent)
-	if inHerdr {
-		opts.Reporter = reporter
-	}
 	host := matehost.New(runner, opts)
+	// spawn starts the host as a process of its own, outside Herdr, with
+	// this output in host.log (CON-225): a line per start says which run
+	// the lines below it belong to.
+	fmt.Fprintf(stderr, "%s mate mate host %s: pid %d, session %s, socket %s\n",
+		time.Now().UTC().Format(time.RFC3339), project, os.Getpid(), launch.SessionID, matehost.SocketPath(mateDir))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if inHerdr {
-		// After the socket is up, so whoever waits for the agent can also
-		// reach the host.
-		go func() {
-			if err := waitSocket(ctx, mateDir); err == nil {
-				if err := reporter.Register(); err != nil {
-					host.Warn(fmt.Errorf("could not register with Herdr: %w", err))
-				}
-			}
-		}()
-	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP)
 	// ^C belongs to the REPL, which reads it as a key. One typed while no
@@ -197,18 +188,4 @@ func launchFlag(args []string, flag string) string {
 		}
 	}
 	return ""
-}
-
-func waitSocket(ctx context.Context, mateDir string) error {
-	c := matehost.Dial(mateDir)
-	for {
-		if err := c.Ping(ctx); err == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }

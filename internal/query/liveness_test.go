@@ -122,3 +122,73 @@ func TestLoadLiveUnaskedKeepsRecordedState(t *testing.T) {
 		t.Fatalf("mate status = %q, want the recorded running when Herdr could not be asked", got)
 	}
 }
+
+// A headless Mate whose host runs as a process of its own (CON-225) has no
+// pane: its host's answer on its socket, not Herdr's, says whether it runs.
+func TestLoadLiveDetachedHostAnswersForItsMate(t *testing.T) {
+	ws := newWorkspace(t, "shop")
+	if err := ws.WriteMateMeta("shop", map[string]string{
+		"harness": "claude", "agent": "mate-shop", "mode": "headless", "pid": "4242", "socket": "/x/host.sock", "session": "fm-x"}); err != nil {
+		t.Fatal(err)
+	}
+	load := func(live Liveness) MateNode {
+		t.Helper()
+		snap, err := LoadLive(context.Background(), ws, testHarnesses, nil, live)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return snap.Projects[0].Mate
+	}
+	for name, tc := range map[string]struct {
+		live   Liveness
+		status MateStatus
+		bound  bool
+	}{
+		"host answers": {Liveness{Asked: true, Hosts: map[string]bool{"shop": true}}, MateRunning, true},
+		"host gone":    {Liveness{Asked: true, Hosts: map[string]bool{"shop": false}}, MateStopped, false},
+		// Herdr lists nothing: that says nothing about a host outside it.
+		"host not asked":     {Liveness{Asked: true}, MateRunning, true},
+		"nothing asked":      {Liveness{}, MateRunning, true},
+		"herdr down, answer": {Liveness{Hosts: map[string]bool{"shop": true}}, MateRunning, true},
+	} {
+		m := load(tc.live)
+		if got := m.Designated.Value.Status; got != tc.status {
+			t.Errorf("%s: status = %q, want %q", name, got, tc.status)
+		}
+		if bound := m.Binding.State == Known && m.Binding.Value.Status == BindingActive; bound != tc.bound {
+			t.Errorf("%s: binding = %+v, want active %v", name, m.Binding, tc.bound)
+		}
+		if tc.bound && (m.Binding.Value.Runtime != "host" || m.Binding.Value.Pane != "") {
+			t.Errorf("%s: binding = %+v, want the host's, with no pane", name, m.Binding.Value)
+		}
+		if got := findAction(t, m.Actions, "stop").Available; got != tc.bound {
+			t.Errorf("%s: stop available = %v, want %v", name, got, tc.bound)
+		}
+		if got := findAction(t, m.Actions, "resume").Available; got != !tc.bound {
+			t.Errorf("%s: resume available = %v, want %v", name, got, !tc.bound)
+		}
+	}
+}
+
+func TestMateGone(t *testing.T) {
+	pane := map[string]string{"agent": "mate-shop", "pane": "w1:p1", "mode": "headless"}
+	host := map[string]string{"agent": "mate-shop", "mode": "headless", "pid": "1"}
+	stopped := map[string]string{"mode": "headless"}
+	for name, tc := range map[string]struct {
+		live Liveness
+		meta map[string]string
+		want bool
+	}{
+		"pane listed":       {Liveness{Asked: true, Agents: map[string]bool{"mate-shop": true}}, pane, false},
+		"pane not listed":   {Liveness{Asked: true}, pane, true},
+		"pane unasked":      {Liveness{}, pane, false},
+		"host answers":      {Liveness{Hosts: map[string]bool{"shop": true}}, host, false},
+		"host silent":       {Liveness{Hosts: map[string]bool{"shop": false}}, host, true},
+		"host unasked":      {Liveness{Asked: true}, host, false},
+		"stopped, recorded": {Liveness{Asked: true, Hosts: map[string]bool{"shop": false}}, stopped, false},
+	} {
+		if got := tc.live.MateGone("shop", tc.meta); got != tc.want {
+			t.Errorf("%s: gone = %v, want %v", name, got, tc.want)
+		}
+	}
+}

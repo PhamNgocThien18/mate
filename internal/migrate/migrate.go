@@ -29,6 +29,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -235,6 +236,7 @@ func Plan(ctx context.Context, ws *store.Workspace, deps Deps) ([]Move, []Refusa
 	}
 	lctx, cancel := context.WithTimeout(ctx, livenessBound)
 	live := query.ReadLiveness(lctx, deps.Runtime, deps.Session)
+	live.Hosts = spawn.HostLiveness(lctx, ws)
 	cancel()
 	snap, err := query.LoadLive(ctx, ws, query.Harnesses{}, nil, live)
 	if err != nil {
@@ -409,7 +411,7 @@ func (pl *planner) plan(cfg store.ProjectConfig, node query.ProjectNode) []Move 
 	case mate.State == query.Unknown:
 		pl.refuse("the Mate of %s cannot be read (%s); stop it before migrating", p, mate.Reason)
 	case mate.State == query.Known && mate.Value.Status.OccupiesActiveSlot():
-		if pl.live.Asked {
+		if _, hostAsked := pl.live.Host(p); pl.live.Asked || hostAsked {
 			pl.refuse("the Mate of %s is running; stop it with mate mate stop %s before migrating", p, p)
 		} else {
 			// mate mate stop asks Herdr too, so the way out is Herdr

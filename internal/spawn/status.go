@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -77,7 +78,28 @@ func MateStatus(ctx context.Context, w *store.Workspace, deps Deps, project stri
 		Resumed:     meta[MetaResumed] == "true",
 		ResumedFrom: meta[MetaResumedFrom],
 	}
+	if store.MateHostDetached(meta) {
+		return hostStatus(ctx, w, project, meta, out), nil
+	}
 	return agentStatus(ctx, w, deps, meta, out)
+}
+
+// hostStatus is MateStatus for a headless Mate whose host runs as a
+// process of its own (CON-225): its socket, not Herdr, is asked.
+func hostStatus(ctx context.Context, w *store.Workspace, project string, meta map[string]string, out Status) Status {
+	out.Agent = meta[MetaAgent]
+	out.Session = meta[MetaSession]
+	out.Harness = meta[MetaHarness]
+	out.SessionID = meta[MetaSessionID]
+	pid := meta[MetaPID]
+	if pingHost(ctx, w.MateDir(project)) != nil {
+		out.State = StateStale
+		out.Detail = fmt.Sprintf("the headless host (pid %s) does not answer on %s", pid, matehost.SocketPath(w.MateDir(project)))
+		return out
+	}
+	out.State = StateRunning
+	out.Detail = fmt.Sprintf("headless host pid %s answers on its socket", pid)
+	return out
 }
 
 // CrewStatus is MateStatus for one crew: `crews/<id>.meta` names an agent,

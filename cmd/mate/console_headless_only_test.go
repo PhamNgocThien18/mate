@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -42,8 +44,8 @@ func consoleUIs(t *testing.T, w *store.Workspace, deps spawn.Deps, h host.Host) 
 }
 
 // headlessFixture is consoleFixture's shop in a workspace under /tmp, with
-// the fake runtime playing `mate mate host`: a start that runs headless
-// gets a host answering on the Mate's socket, and Herdr lists it. The
+// playHosts playing `mate mate host`: a start that runs headless gets a
+// host answering on the Mate's socket, outside Herdr (CON-225). The
 // socket lives in the Mate directory, and a t.TempDir path on macOS is
 // longer than a unix socket path may be. Nothing asks for a mode by
 // default (consoleFixture's DefaultMode is empty), so a fresh Mate runs in
@@ -65,32 +67,84 @@ func headlessFixture(t *testing.T) (*store.Workspace, spawn.Deps, *runtime.Fake)
 		}
 	}
 	rt := deps.Runtime.(*runtime.Fake)
-	ctx, cancel := context.WithCancel(context.Background())
-	var serving sync.WaitGroup
-	// Before the workspace is removed: the hosts stop serving and take
-	// their sockets with them.
-	t.Cleanup(func() { cancel(); serving.Wait() })
-	rt.OnRunInPane = func(tab runtime.TabHandle, argv []string) error {
-		mateDir := w.MateDir("shop")
-		l, err := matehost.ReadLaunch(mateDir)
-		if err != nil {
-			return err
-		}
-		mateHost := matehost.New(&matehost.Runner{
+	playHosts(t, w, &deps, "shop", func(l matehost.Launch, pid int) *matehost.Host {
+		return matehost.New(&matehost.Runner{
 			Launch: l,
 			Turns:  claude.Claude{},
 			Lock:   func() (func(), bool, error) { return func() {}, true, nil },
 			Opened: func(string, string) bool { return false },
-		}, matehost.Options{})
-		rt.SeedAgent(runtime.AgentHandle{Session: tab.Session, Name: l.Agent, RawID: "shop", Kind: claude.KindClaude, Tab: tab}, runtime.AgentIdle)
-		serving.Add(1)
-		go func() {
-			defer serving.Done()
-			_ = mateHost.Serve(ctx, matehost.SocketPath(mateDir), nil)
-		}()
-		return nil
-	}
+		}, matehost.Options{PID: pid})
+	})
 	return w, deps, rt
+}
+
+// playedHosts counts the hosts playHosts started.
+type playedHosts struct {
+	mu     sync.Mutex
+	starts int
+}
+
+func (p *playedHosts) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.starts
+}
+
+// playHosts plays `mate mate host` for deps (CON-225): a host start runs
+// mk's host in-process on the Mate's socket, holding the host lock as the
+// real process does, and it leaves, lock and socket, once it has answered
+// its stop or is signalled.
+func playHosts(t *testing.T, w *store.Workspace, deps *spawn.Deps, project string, mk func(l matehost.Launch, pid int) *matehost.Host) *playedHosts {
+	t.Helper()
+	played := &playedHosts{}
+	ctx, cancel := context.WithCancel(context.Background())
+	var serving sync.WaitGroup
+	var mu sync.Mutex
+	ends := map[int]context.CancelFunc{}
+	// Before the workspace is removed: the hosts stop serving and take
+	// their sockets with them.
+	t.Cleanup(func() { cancel(); serving.Wait() })
+	deps.Hosts = spawn.HostFuncs{
+		Start: func(spec spawn.HostSpec) (int, <-chan struct{}, error) {
+			l, err := matehost.ReadLaunch(spec.Dir)
+			if err != nil {
+				return 0, nil, err
+			}
+			release, ok, err := w.TryMateLock(project, matehost.HostLock)
+			if err != nil || !ok {
+				return 0, nil, fmt.Errorf("the host lock is held (%v)", err)
+			}
+			played.mu.Lock()
+			played.starts++
+			pid := 5000 + played.starts
+			played.mu.Unlock()
+			mateHost := mk(l, pid)
+			hostCtx, end := context.WithCancel(ctx)
+			mu.Lock()
+			ends[pid] = end
+			mu.Unlock()
+			exited := make(chan struct{})
+			serving.Add(1)
+			go func() {
+				defer serving.Done()
+				defer close(exited)
+				defer release()
+				_ = mateHost.Serve(hostCtx, matehost.SocketPath(spec.Dir), end)
+			}()
+			return pid, exited, nil
+		},
+		Signal: func(pid int, _ syscall.Signal) error {
+			mu.Lock()
+			end, ok := ends[pid]
+			mu.Unlock()
+			if !ok {
+				return syscall.ESRCH
+			}
+			end()
+			return nil
+		},
+	}
+	return played
 }
 
 // tmpShopWorkspace is a workspace under /tmp with the Project shop and its
@@ -286,8 +340,8 @@ func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mateMode(t, w); got != spawn.ModePane || meta[spawn.MetaHarness] != "codex" || len(rt.PaneRuns) != 0 {
-		t.Fatalf("the Mate runs %s on %q, pane runs %q; want Codex in its pane (%s)", got, meta[spawn.MetaHarness], rt.PaneRuns, out)
+	if got := mateMode(t, w); got != spawn.ModePane || meta[spawn.MetaHarness] != "codex" || len(rt.PaneRuns) != 0 || meta[spawn.MetaPID] != "" {
+		t.Fatalf("the Mate runs %s on %q, pane runs %q, meta %v; want Codex in its pane (%s)", got, meta[spawn.MetaHarness], rt.PaneRuns, meta, out)
 	}
 }
 

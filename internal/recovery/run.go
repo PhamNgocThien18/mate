@@ -158,6 +158,7 @@ func Run(ctx context.Context, ws *store.Workspace, deps spawn.Deps, progress fun
 	// workspace whose agents all stopped on purpose has no reason to bring
 	// a server up just because a console opened.
 	live := query.ReadLiveness(ctx, deps.Runtime, spec)
+	live.Hosts = spawn.HostLiveness(ctx, ws)
 	if !live.Asked {
 		res.Err = fmt.Errorf("herdr could not be asked which agents are running")
 		return res
@@ -185,12 +186,14 @@ func Run(ctx context.Context, ws *store.Workspace, deps spawn.Deps, progress fun
 }
 
 // lost lists the Mates and Crews to restart: the meta records a pane, Herdr
-// does not list the agent, and the crew is not over. A meta with no pane is a
-// stop somebody asked for and is left alone.
+// does not list the agent, and the crew is not over; or it records a
+// headless Mate's host of its own that does not answer on its socket
+// (CON-225). A meta with neither is a stop somebody asked for and is left
+// alone.
 func lost(ws *store.Workspace, live query.Liveness) []Item {
 	var out []Item
 	for _, ref := range ws.Projects() {
-		if meta, err := ws.ReadMateMeta(ref.Name); err == nil && meta[spawn.MetaPane] != "" && !live.Alive(meta[spawn.MetaAgent]) {
+		if meta, err := ws.ReadMateMeta(ref.Name); err == nil && live.MateGone(ref.Name, meta) {
 			out = append(out, Item{Project: ref.Name})
 		}
 		for _, c := range crewsOf(ws, ref.Name) {

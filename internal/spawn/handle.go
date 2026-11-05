@@ -29,6 +29,11 @@ func MateHandle(ctx context.Context, w *store.Workspace, deps Deps, project stri
 	if err != nil {
 		return runtime.AgentHandle{}, "", err
 	}
+	if store.MateHostDetached(meta) {
+		// Its host is a process of its own (CON-225): HostClient reaches it.
+		return runtime.AgentHandle{}, "", observability.NewError(observability.CodeStateConflict,
+			fmt.Sprintf("the Mate of %s runs headless outside Herdr; it has no pane, only its host's socket", project))
+	}
 	return agentHandle(ctx, w, deps, meta, project, MateTabLabel,
 		fmt.Sprintf("the Mate of %s is not running; %s names no agent", project, w.MateMeta(project)))
 }
