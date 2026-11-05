@@ -14,9 +14,9 @@ import (
 // host answers the request with one ok line, then writes every Event as
 // one JSON line, in the order emit was called, starting with an Event of
 // how things stand (the turn in flight, the queue, news, work, sessions,
-// the state with the draft). The REPL in the host's process still gets the
-// same events through its callback (Host.Subscribe); subscribers are on
-// top of it.
+// the state with the draft). Every REPL is such a client (CON-223); a
+// listener in the host's own process gets the same events through its
+// callback (Host.Subscribe).
 //
 // A subscriber that falls behind by more than subscribeQueue events, or
 // whose write takes longer than subscribeWriteTimeout, is cut off: the
@@ -216,6 +216,8 @@ type wireEvent struct {
 	Item         *wireItem     `json:"item,omitempty"`
 	Queue        []string      `json:"queue"`
 	DraftCleared bool          `json:"draft_cleared,omitempty"`
+	DraftSet     bool          `json:"draft_set,omitempty"`
+	DraftBy      string        `json:"draft_by,omitempty"`
 	News         []News        `json:"news"`
 	Note         string        `json:"note,omitempty"`
 	Focus        int           `json:"focus,omitempty"`
@@ -223,12 +225,13 @@ type wireEvent struct {
 	FocusWork    bool          `json:"focus_work,omitempty"`
 	Sessions     []wireSession `json:"sessions"`
 	State        State         `json:"state"`
+	Seq          int64         `json:"seq,omitempty"`
 }
 
 // MarshalJSON writes ev in its wire form.
 func (ev Event) MarshalJSON() ([]byte, error) {
-	w := wireEvent{Item: toWireItemPtr(ev.Item), Queue: ev.Queue, DraftCleared: ev.DraftCleared, News: ev.News, Note: ev.Note,
-		Focus: ev.Focus, Work: ev.Work, FocusWork: ev.FocusWork, State: ev.State}
+	w := wireEvent{Item: toWireItemPtr(ev.Item), Queue: ev.Queue, DraftCleared: ev.DraftCleared, DraftSet: ev.DraftSet, DraftBy: ev.DraftBy, News: ev.News, Note: ev.Note,
+		Focus: ev.Focus, Work: ev.Work, FocusWork: ev.FocusWork, State: ev.State, Seq: ev.Seq}
 	if ev.Sessions != nil {
 		w.Sessions = make([]wireSession, len(ev.Sessions))
 		for i, s := range ev.Sessions {
@@ -244,8 +247,8 @@ func (ev *Event) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
-	*ev = Event{Item: fromWireItemPtr(w.Item), Queue: w.Queue, DraftCleared: w.DraftCleared, News: w.News, Note: w.Note,
-		Focus: w.Focus, Work: w.Work, FocusWork: w.FocusWork, State: w.State}
+	*ev = Event{Item: fromWireItemPtr(w.Item), Queue: w.Queue, DraftCleared: w.DraftCleared, DraftSet: w.DraftSet, DraftBy: w.DraftBy, News: w.News, Note: w.Note,
+		Focus: w.Focus, Work: w.Work, FocusWork: w.FocusWork, State: w.State, Seq: w.Seq}
 	if w.Sessions != nil {
 		ev.Sessions = make([]SessionInfo, len(w.Sessions))
 		for i, s := range w.Sessions {

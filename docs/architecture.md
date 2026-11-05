@@ -75,8 +75,9 @@ Packages that mix layers, until their issue splits them:
 - `runtime` is the port and also the Herdr adapter (`herdr*.go`). **Target**:
   the adapter moves to `internal/runtime/herdr`, integration (CON-190).
 - `matehost` is the headless Mate host, the Mate's REPL (`repl*.go`, UI
-  code) and the owner of `news.jsonl` and `work.jsonl`. **Target**: the REPL
-  becomes a client of the host (CON-216, Backlog).
+  code) and the owner of `news.jsonl` and `work.jsonl`. The REPL is a
+  client of the host's socket (CON-223): it reaches the host only through
+  `matehost.Conn` (`REPLConn` over `host.sock`), never a `*Host`.
 
 `dashboard` is in service, not UI: it is the Office/City HTTP server the
 engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
@@ -93,7 +94,8 @@ pages it serves. Since CON-165 it no longer imports `spawn`
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone |
 | Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane, Mate and Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`) |
-| Mate, headless | `spawn` (`internal/spawn/headless.go`) | `mate mate host <project>`, `internal/matehost` | One per headless Mate, in its Herdr pane: a REPL; each turn is one `claude -p` |
+| Mate, headless | `spawn` (`internal/spawn/headless.go`) | `mate mate host <project>`, `internal/matehost` (`Host.Live`) | One per headless Mate, in its Herdr pane; each turn is one `claude -p`. Runs until the `stop` op, SIGTERM or SIGHUP. In a terminal it runs the REPL as a child process, `mate mate repl <project> --in-pane`, and starts it again when it ends; the turn goes on |
+| Mate REPL | `mate mate host` (its pane); the captain, in any terminal | `mate mate repl <project>`, `matehost.RunREPL` | A client of `host.sock` (CON-223): `subscribe` for events, `history` on each connection, one op per action; connects again on its own when the host restarts. Any number per Mate; they share the chat and the draft |
 | Crew | `mate crew spawn` (`internal/spawn`) | harness TUI in a Herdr pane, in `.worktrees/<project>-<crew>` | Appends status lines to its `.status` file; stops in `wait-mate` to hand back |
 | PR watcher | `mate pr watch` (`cmd/mate/pr.go`); `prwatch.Sweep` from recovery and the auto daemon | `internal/prwatch`, detached by `prwatch.ExecStarter` | One per crew pull request; on merge or close, queues a line in the outbox and delivers it itself |
 | Read-only dashboard | `mate dashboard` | `cmdDashboard`, `cmd/mate/dashboard.go` | Office/City over `db.OpenRead`; the port is busy while a console serves it |
@@ -152,8 +154,8 @@ How processes exchange state:
   and one JSON response per connection (`matehost.Client`), except
   `subscribe`, which keeps the connection and streams every host event as
   one JSON line (CON-221); the outbox delivers to a headless Mate through
-  it (`OpDeliver`), and spawn, Office chat and City ask it for state,
-  history and answers. The console drives
+  it (`OpDeliver`), spawn, Office chat and City ask it for state,
+  history and answers, and every Mate REPL is a client of it (CON-223). The console drives
   each pane runner over its own socket in a temp directory
   (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
 - **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)

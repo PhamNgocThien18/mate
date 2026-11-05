@@ -12,8 +12,7 @@ import (
 // newsModel is the design's Topic page (v2, t1): two news owed, #3 the
 // older, and #1 answered and closed today.
 func newsModel(w, h int) Model {
-	m := sampleModel(w, h)
-	m.host = New(&Runner{}, Options{})
+	m, _ := withFake(sampleModel(w, h))
 	at := m.now().Add(-4 * time.Minute)
 	m.news = []News{
 		{ID: 1, Title: "Nhà cung cấp đăng nhập", Question: "Đăng nhập dùng nhà cung cấp nào trước?", Crew: "e1-login-resume", Status: NewsDone, Answer: "[a] Google",
@@ -39,11 +38,13 @@ func press(t *testing.T, m *Model, keys ...any) {
 			for _, r := range k {
 				next, _ := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 				*m = next.(Model)
+				drain(m)
 			}
 			continue
 		}
 		next, _ := m.key(msg)
 		*m = next.(Model)
+		drain(m)
 	}
 }
 
