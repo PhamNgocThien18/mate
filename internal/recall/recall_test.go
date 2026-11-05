@@ -446,8 +446,9 @@ func TestRecallCrossChecksInFlightWithTheTracker(t *testing.T) {
 	}
 }
 
-// silentTracker is a tracker that never answers: it waits for the read's
-// deadline, after checking there is one no later than trackerReadEach.
+// silentTracker is a tracker that never answers: it checks the read has a
+// deadline no later than trackerReadEach, then fails the way
+// process.ExecRunner does when that deadline passes.
 type silentTracker struct {
 	t     *testing.T
 	calls int

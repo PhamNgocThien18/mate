@@ -290,7 +290,7 @@ func assemble(head string, parts []part, project string, opts Options) string {
 }
 
 // livePart is part 1: the mode, the next-work setting, the crews, the
-// inbox, the outbox and the open news.
+// inbox, the outbox, the open news and the work board.
 func livePart(w *store.Workspace, deps Deps, project string, cfg store.ProjectConfig, now time.Time) (part, error) {
 	var b strings.Builder
 	mode := "manual"
