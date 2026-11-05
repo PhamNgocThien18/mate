@@ -1,6 +1,6 @@
 # Crew observability acceptance — 2026-09-28
 
-Design: `docs/plans/crew-harness-observability-2026-09-28.md`.
+Design: `docs/archive/plans/crew-harness-observability-2026-09-28.md`.
 
 ## Real transcript and dashboard
 

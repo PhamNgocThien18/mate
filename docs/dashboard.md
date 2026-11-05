@@ -202,7 +202,7 @@ A failed box read leaves `inbox` empty and puts the reason in `inbox_error` rath
 
 ## 3b. `GET /api/plugins?project=<p>`
 
-The apps a project's Mate receives from `.mate/plugins.yaml` (docs/plans/plugins-and-office-2026-10-12.md), as validated local metadata, for Mate Office's Apps block (section 11).
+The apps a project's Mate receives from `.mate/plugins.yaml` (docs/archive/plans/plugins-and-office-2026-10-12.md), as validated local metadata, for Mate Office's Apps block (section 11).
 It reads `plugins.yaml` and the workspace packages' manifests through `internal/plugin` on every request and is not cached: an edit to the file is not an event.
 It writes nothing, calls no MCP server or tracker, and runs no command; opening a link is the browser's job, never the server's.
 `project` is required; a missing or unknown one is a 404 that names it.

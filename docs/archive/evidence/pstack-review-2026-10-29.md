@@ -2,7 +2,7 @@
 
 CON-134, ngày 2026-10-29. Bản nâng cấp giữ một reviewer Crew và ngân sách dispatch
 hiện có; thêm kiểm tra giả định, đường caller bị ảnh hưởng, probe có khả năng bác bỏ
-kết luận và phân loại bằng chứng. Quy tắc chi tiết: [review](../review.md).
+kết luận và phân loại bằng chứng. Quy tắc chi tiết: [review](../../review.md).
 
 ## Kết luận
 
@@ -18,7 +18,7 @@ A là prompt full/scoped được xuất nguyên bản từ main
 và CON-109 về Notes/material findings. B dùng chính renderer production mới.
 12 phiên Codex CLI 0.165.0, cùng `gpt-6-luna`, effort `medium`, tool/environment,
 giới hạn 300 giây mỗi phiên; không đặt token cap. Thứ tự A/B cân bằng theo
-[protocol đăng ký trước](../research/pstack-review-evaluation-method-2026-10-29.md).
+[protocol đăng ký trước](../../research/pstack-review-evaluation-method-2026-10-29.md).
 
 | Tình huống | A: hiện tại | B: nâng cấp |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ thuẫn explicit; nó không tự chứng minh nội dung evidence là đúng.
 - [Chấm độc lập đã khóa trước mở nhãn](pstack-review-2026-10-29/scored.md) và [JSON](pstack-review-2026-10-29/scored.json).
 - [Log make check](pstack-review-2026-10-29/make-check.log).
 - Báo cáo từng cặp: [S1-A](pstack-review-2026-10-29/S1-A.md), [S1-B](pstack-review-2026-10-29/S1-B.md), [S2-A](pstack-review-2026-10-29/S2-A.md), [S2-B](pstack-review-2026-10-29/S2-B.md), [S3-A](pstack-review-2026-10-29/S3-A.md), [S3-B](pstack-review-2026-10-29/S3-B.md), [S4-A](pstack-review-2026-10-29/S4-A.md), [S4-B](pstack-review-2026-10-29/S4-B.md), [S5-A](pstack-review-2026-10-29/S5-A.md), [S5-B](pstack-review-2026-10-29/S5-B.md), [S6-A](pstack-review-2026-10-29/S6-A.md), [S6-B](pstack-review-2026-10-29/S6-B.md).
-- [Runner và hướng dẫn tái lập](../../scripts/revieweval/README.md).
+- [Runner và hướng dẫn tái lập](../../../scripts/revieweval/README.md).
 
 Bước áp dụng tiếp: dùng bản thử cho một nhóm task thật, theo dõi finding được tác giả
 xác nhận, vòng sửa, thời gian/token và tỷ lệ incomplete do môi trường. Giữ một

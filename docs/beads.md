@@ -8,4 +8,4 @@ exported or deleted by this change.
 Use the chosen application's own CLI/API and user-managed instructions.
 [Task management setup and migration](task-management.md) covers the workflow,
 including obsolete generated skills. The old integration is archived as
-[dated evidence](evidence/beads-integration-2026-10-07.md).
+[dated evidence](archive/evidence/beads-integration-2026-10-07.md).

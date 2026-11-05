@@ -154,4 +154,4 @@ like any configured command and opens the URL with the machine's opener
 the key on a project without that binding reports an error. A key that
 `console.yaml` binds on project rows, or that the console reserves, is refused
 before startup, naming `plugins.yaml`, the instance and the key. Without
-`plugins.yaml` nothing changes. See `docs/plans/plugins-and-office-2026-10-12.md`.
+`plugins.yaml` nothing changes. See `docs/archive/plans/plugins-and-office-2026-10-12.md`.

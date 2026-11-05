@@ -11,7 +11,7 @@ The dashboard UI draws a four-card strip from those fields, a tool-mix table per
 
 **Tech stack:** Go 1.2x (`internal/diagnostics`, `internal/dashboard`), plain browser JavaScript and CSS with no build step (`internal/dashboard/ui`), `node --test` for UI behaviour, `go test` table-driven tests, `make check` (gofmt + vet + tests with declared skips).
 
-**Design source:** `docs/evidence/crew-observer-first-screen-2026-09-28/crew-observer-design-20260928.html` (approved by the captain on 2026-09-28). Callouts ①–⑧ there map to the tasks below.
+**Design source:** `docs/archive/evidence/crew-observer-first-screen-2026-09-28/crew-observer-design-20260928.html` (approved by the captain on 2026-09-28). Callouts ①–⑧ there map to the tasks below.
 
 **Decisions taken from the design's open questions:** "most expensive step" shows both rankings and leads with output + thinking (Q1); aggregation lives in the Go projector with tests, never only in the browser (Q2); tracks P, C and U run now and D6/D7 (rollout, pricing row) stay with the captain (Q3); no multi-crew page in this batch (Q4).
 
@@ -424,8 +424,8 @@ jq -r '.performance.segments[] | select(.label|test("tools\\.|Begin Patch")) | .
 ```
 
 3. `make check` (gofmt, vet, every test; skips must be the declared live ones).
-4. Browser acceptance at 1440×1000 and 500×900 in the tool's Chrome: first screen shows the four cards with the ios7 numbers above, no horizontal overflow, console has no errors, light and dark themes readable; screenshots saved beside the design artifact as `docs/evidence/crew-observer-first-screen-2026-09-28/crew-observer-after-*.png`.
+4. Browser acceptance at 1440×1000 and 500×900 in the tool's Chrome: first screen shows the four cards with the ios7 numbers above, no horizontal overflow, console has no errors, light and dark themes readable; screenshots saved beside the design artifact as `docs/archive/evidence/crew-observer-first-screen-2026-09-28/crew-observer-after-*.png`.
 5. Code review: `go-reviewer` on the diagnostics diff (`diff -ru <baseline>/internal/diagnostics internal/diagnostics`), `code-reviewer` on the UI diff; fix Critical/Important findings; re-run 3–4.
-6. Evidence: `docs/evidence/crew-observer-first-screen-2026-09-28.md` with the measured before/after (unnamed segments 71 → N, kinds table, loops numbers, screenshots), the commands above, and the rollout note (7777 stays the old build until the captain runs D6).
+6. Evidence: `docs/archive/evidence/crew-observer-first-screen-2026-09-28.md` with the measured before/after (unnamed segments 71 → N, kinds table, loops numbers, screenshots), the commands above, and the rollout note (7777 stays the old build until the captain runs D6).
 
 Not in this batch: D6 (close console, migrate schema, restart), D7 (`pricing.yaml` row for gpt-6-sol), Claude-specific polling detection, the multi-crew page.

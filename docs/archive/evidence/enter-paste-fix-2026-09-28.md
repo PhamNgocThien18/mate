@@ -1,6 +1,6 @@
 # Verified paste and saved-send recovery
 
-Follow-up to [the incident investigation](enter-paste-2026-09-28.md).
+Follow-up to [the incident investigation](../../evidence/enter-paste-2026-09-28.md).
 
 ## Change
 
@@ -42,7 +42,7 @@ inbox and not a worker acknowledgement that the task was completed.
   unsubmitted draft using recovery, then suspends only its owned Codex TUI,
   queues a 650-character bracketed paste and three Enters, resumes the TUI,
   and proves a second local `/status` output plus an empty composer.
-  [Live output](enter-paste-2026-09-28/fix-live-codex.txt).
+  [Live output](../../evidence/enter-paste-2026-09-28/fix-live-codex.txt).
 - The local probe provider points to `127.0.0.1:1`; `/status` uses zero model
   tokens. The test uses a private temporary Codex home, closes its workspace,
   and stops the private daemon/updater and their leftover children. The
@@ -63,7 +63,7 @@ inbox and not a worker acknowledgement that the task was completed.
 - `TestLiveSendToClaudeThreeCases` did not reach delivery: the existing
   classifier treated `Try "refactor <filepath>"` as pending input. This is
   not counted as a passing Claude live proof.
-  [Blocked Claude run](enter-paste-2026-09-28/fix-live-claude.txt).
+  [Blocked Claude run](../../evidence/enter-paste-2026-09-28/fix-live-claude.txt).
 - Full-draft matching uses measured terminal structure and wrapping. Unknown
   layouts fail closed. Snapshot and keystroke remain separate operations;
   simultaneous human input or process replacement is not atomic with them.

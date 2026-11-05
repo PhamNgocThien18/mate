@@ -3,7 +3,7 @@
 - Ngày: 2026-09-27.
 - Trạng thái: đề xuất triển khai; chưa sửa production code.
 - Baseline đã review: `f769416`, Codex 0.157.1 và Claude Code 2.1.283 trên máy.
-- Bằng chứng ban đầu: [review nhận diện TUI](../research/tui-state-review-2026-09-27.md).
+- Bằng chứng ban đầu: [review nhận diện TUI](../archive/research/tui-state-review-2026-09-27.md).
 - Spec cần cập nhật khi triển khai: [MVP](../mvp.md), đặc biệt mục 4, 4b, 5 và ghi chú về send/startup.
 
 ## 1. Quyết định kiến trúc
@@ -316,7 +316,7 @@ Các thay đổi spec phải nói rõ delivery ID/receipt là giao thức vận 
 
 ## Nguồn tham khảo
 
-- [Review và các probe tái hiện](../research/tui-state-review-2026-09-27.md).
+- [Review và các probe tái hiện](../archive/research/tui-state-review-2026-09-27.md).
 - [Spec hiện tại](../mvp.md).
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks): nguồn để thiết kế lab; semantics và khả năng thực tế vẫn phải đo trên binary được launch.
 - [Codex App Server](https://learn.chatgpt.com/docs/app-server): tham khảo cho hướng native transport về sau, không được giả định điều khiển được TUI Herdr bất kỳ đang chạy.

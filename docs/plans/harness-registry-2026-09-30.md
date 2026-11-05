@@ -4,7 +4,7 @@
 - Trạng thái: đã chốt 2026-10-01. PR 0 và các sửa lỗi độc lập đã merge (#7 đến #13); PR 1 đến 7 làm theo mục 6.
 - Hai lỗi hygiene độc lập, sửa ở PR riêng, không thuộc phương án này: hai test Console phụ thuộc locale (`TestConsoleGalleryRendersRegisteredProjects`, `TestRefreshUpdatesAsOfAndTheAgesMeasuredFromIt`), và doc comment của `TranscriptParser.ParseTranscriptFinal` khẳng định "no caller establishes that today" trong khi `timeline/telemetry.go` đã gọi nó sau `StopMate.confirmGone → FreezeMateSession → Located.Finalized` từ `d584f0e`.
 - Baseline đã review: `5d93926`, Herdr 0.8.2, Claude Code 2.1.285, codex-cli 0.156.1, pi 0.99.1 trên máy.
-- Liên quan: [phương án probe TUI](tui-probe-redesign-2026-09-27.md), [crew observability](crew-harness-observability-2026-09-28.md).
+- Liên quan: [phương án probe TUI](tui-probe-redesign-2026-09-27.md), [crew observability](../archive/plans/crew-harness-observability-2026-09-28.md).
 - Spec cần cập nhật khi triển khai: [MVP](../mvp.md) mục 2, 7, 9 và 10.
 
 ## 1. Vấn đề

@@ -1,6 +1,6 @@
 # Crew observer first screen — evidence 2026-09-28
 
-Design: `docs/evidence/crew-observer-first-screen-2026-09-28/crew-observer-design-20260928.html` (approved by the captain).
+Design: `docs/archive/evidence/crew-observer-first-screen-2026-09-28/crew-observer-design-20260928.html` (approved by the captain).
 Plan: `docs/plans/2026-09-28-crew-observer-first-screen.md`.
 Contract: `docs/dashboard.md`, "Crew performance projection" (`overview`, `top_output_segment_ids`, `top_output_call_ids`, `loops`, work-vocabulary segment kinds).
 
@@ -51,7 +51,7 @@ Tool-launched Chrome against the 7779 build, page `#/p/hellovietnam/t/ios7`.
 
 - 1440×1000: four answer cards render with the numbers above; `scrollWidth == clientWidth == 1440`; no console errors.
 - 500×900: cards stack in one column; `scrollWidth == clientWidth == 500`; no console errors.
-- Screenshots beside the design: `docs/evidence/crew-observer-first-screen-2026-09-28/crew-observer-after-1440.png`, `-1440-answers.png`, `-1440-timeline.png`, `-1440-toolmix.png`, `-500.png`, `-500-answers.png`.
+- Screenshots beside the design: `docs/archive/evidence/crew-observer-first-screen-2026-09-28/crew-observer-after-1440.png`, `-1440-answers.png`, `-1440-timeline.png`, `-1440-toolmix.png`, `-500.png`, `-500-answers.png`.
 
 ## Review round
 

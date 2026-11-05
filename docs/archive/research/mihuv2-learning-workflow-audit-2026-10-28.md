@@ -66,7 +66,7 @@ Sources: [HU-109 metrics](/Users/erics/workspace/.mate/projects/mihuv2/mate/lear
 
 HU-108 already recorded that a reviewer repeated a 777s gate despite a pass at the same SHA, nominating targeted review verification. HU-110 still repeated it; HU-112 reviewer ran 1903s, and HU-114 reviewer ran 1256s after the crew had passed at the same target (crew 1957s). The records show awareness and some narrower instructions, not a general reduction in redundant gates. See the separate gate audit for exact command coverage and wrong-SHA HU-110 r2 evidence.
 
-Sources: [HU-108 gate lesson](/Users/erics/workspace/.mate/projects/mihuv2/mate/learnings/hu-108-sizepicker.md:8), [HU-112 reviewer gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-112-r1/report.md:18), [HU-114 reviewer gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-114-r1/report.md:13), [HU-114 crew gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-114-pick-wire/handback.md:18), [gate audit](/Users/erics/app/mate/docs/research/mihuv2-gate-audit-2026-10-28.md).
+Sources: [HU-108 gate lesson](/Users/erics/workspace/.mate/projects/mihuv2/mate/learnings/hu-108-sizepicker.md:8), [HU-112 reviewer gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-112-r1/report.md:18), [HU-114 reviewer gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-114-r1/report.md:13), [HU-114 crew gate](/Users/erics/workspace/.mate/projects/mihuv2/crews/hu-114-pick-wire/handback.md:18), [gate audit](/Users/erics/app/mate/docs/archive/research/mihuv2-gate-audit-2026-10-28.md).
 
 ### 4. Learning has not prevented false test-coverage claims
 

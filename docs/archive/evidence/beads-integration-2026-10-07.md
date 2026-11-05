@@ -2,7 +2,7 @@
 
 Historical integration from 2026-10-07/08, removed on 2026-10-12.
 The Mate commands and built-in shortcuts below no longer exist.
-Current setup: [external task management](../task-management.md).
+Current setup: [external task management](../../task-management.md).
 
 # Beads task management
 
@@ -12,7 +12,7 @@ Install the pinned release archives for your platform from the two release pages
 
 ## Use
 
-Beads is a tool to mate: a profile in the tool registry (`internal/tool/beads`). Editors are separate user-configured console commands ([setup](../console-commands.md)). Mate binds a console key to it and wraps its CLI; the tasks are Beads' data, not Mate state.
+Beads is a tool to mate: a profile in the tool registry (`internal/tool/beads`). Editors are separate user-configured console commands ([setup](../../console-commands.md)). Mate binds a console key to it and wraps its CLI; the tasks are Beads' data, not Mate state.
 
 In the console, select a project and press `t`. Mate opens/reuses a separate Tasks tab running `bv --db <workspace>/<project>/.beads` with the same tracker environment as `bd`, without requiring Fresh or a running agent; a project with no tracker yet gets one first. `mate tool beads hellovietnam --workspace ~/workspace` makes the tracker if needed and opens the same viewer in a terminal. In the viewer, `E` opens the epic tree, `b` Kanban, `g` the graph, `/` search, and `q` exits. Use `?` for the installed viewer's key reference.
 

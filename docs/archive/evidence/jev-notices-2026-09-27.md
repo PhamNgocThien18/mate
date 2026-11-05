@@ -21,4 +21,4 @@ Latency đo end-to-end ở client, 241–374 ms. Không dùng mẫu 12 request �
 
 Validation deterministic: HTTP fake cho payload/auth, bounded input, redaction, error response không echo, schema/enum/probabilities, cancellation và redirect; console fake runtime cho chọn đúng Mate/Crew và state không đổi; UI action chỉ có khi opt-in, result là advisory sheet. `make check` và `make test-race` pass. Các live Herdr/harness test còn lại skip theo quy định repo; chưa chạy full console với pane harness thật trong bản thử này.
 
-Lệnh tái hiện và giới hạn dữ liệu: [hướng dẫn](../jev-notices.md).
+Lệnh tái hiện và giới hạn dữ liệu: [hướng dẫn](../../jev-notices.md).

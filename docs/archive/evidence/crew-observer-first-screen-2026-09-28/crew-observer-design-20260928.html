@@ -176,7 +176,7 @@ svg .k-poll{fill:var(--series-2)}svg .k-read{fill:var(--series-1)}svg .k-test{fi
     <div><span>Bị lặp bao nhiêu</span><b>17 chuỗi · 153 poll</b><span>123 poll không có output mới (80%) · các call poll tốn 20,6M = 51% token của Crew</span><span class="status part">Tính được, chưa hiện</span></div>
     <div><span>Bước suy luận tốn nhất</span><b>call #301 · 2,7k</b><span>1,9k output + 790 thinking · 40,8 s · là bước <code>apply_patch</code> nhưng đang hiện "Tool wrapper"</span><span class="status part">Có số, chưa xếp hạng</span></div>
   </div>
-  <p class="note" style="margin-top:12px">Nguồn: <code>GET http://127.0.0.1:7778/api/projects/hellovietnam/tasks/ios7</code> lúc 11:51 hôm nay (review server của bản working tree, DB tách riêng đọc transcript thật, xem <code>docs/evidence/crew-observability-2026-09-28.md</code>); <code>internal/diagnostics</code>, <code>internal/telemetry</code>, <code>internal/dashboard/ui/app.js</code>; screenshot chụp từ đúng trang đó ở 1440×1000. Dashboard 7777 mà console đang dùng là build cũ: response của nó <b>không có</b> khối <code>performance</code>.</p>
+  <p class="note" style="margin-top:12px">Nguồn: <code>GET http://127.0.0.1:7778/api/projects/hellovietnam/tasks/ios7</code> lúc 11:51 hôm nay (review server của bản working tree, DB tách riêng đọc transcript thật, xem <code>docs/archive/evidence/crew-observability-2026-09-28.md</code>); <code>internal/diagnostics</code>, <code>internal/telemetry</code>, <code>internal/dashboard/ui/app.js</code>; screenshot chụp từ đúng trang đó ở 1440×1000. Dashboard 7777 mà console đang dùng là build cũ: response của nó <b>không có</b> khối <code>performance</code>.</p>
 </header>
 
 <section class="section" id="ketluan">
@@ -194,7 +194,7 @@ svg .k-poll{fill:var(--series-2)}svg .k-read{fill:var(--series-1)}svg .k-test{fi
 
 <section class="section" id="hientrang">
   <h2>2. Hiện trạng: trang Crew ở bản working tree (review server 7778)</h2>
-  <p>Đây là trang mà bản build hôm nay đã vẽ cho <code>ios7</code>. Nó đã đúng hướng của <code>docs/plans/crew-harness-observability-2026-09-28.md</code> mục 6.1 (đang làm gì, đáng xem, timeline, bảng đoạn, bằng chứng). Bốn câu hỏi của captain nằm trong đó nhưng phải đi tìm.</p>
+  <p>Đây là trang mà bản build hôm nay đã vẽ cho <code>ios7</code>. Nó đã đúng hướng của <code>docs/archive/plans/crew-harness-observability-2026-09-28.md</code> mục 6.1 (đang làm gì, đáng xem, timeline, bảng đoạn, bằng chứng). Bốn câu hỏi của captain nằm trong đó nhưng phải đi tìm.</p>
   <div class="grid three">
     <figure><a href="crew-observer-before-top.png" target="_blank" rel="noopener"><img src="crew-observer-before-top.png" alt="Màn hình đầu hiện tại: Last recorded work, Worth a look" width="1440" height="1000"></a><figcaption>Màn hình đầu: token tổng có, "Most tokens" có nhưng là đoạn poll, findings là câu tiếng Anh dài với lệnh bị cắt. Bấm để xem cỡ thật.</figcaption></figure>
     <figure><a href="crew-observer-before-timeline.png" target="_blank" rel="noopener"><img src="crew-observer-before-timeline.png" alt="Work over time của Prompt 3" width="1440" height="1000"></a><figcaption>Timeline Prompt 3: đường token cộng dồn, khối đoạn, tick lệnh. Chuỗi poll chỉ là các tick nhỏ, không có số lần.</figcaption></figure>

@@ -75,7 +75,7 @@ MATE_LIVE=1 MATE_JEV_API_KEY_FILE="$HOME/.config/mate/jev-trial-api-key" \
   go test ./internal/notice -run TestLiveJevNotices -v -count=1
 ```
 
-Live test gửi các fixture **giả lập** trong `internal/notice/testdata/notices.json`, không đọc pane/workspace của người dùng. Biến môi trường `MATE_JEV_API_KEY_FILE` ở đây chỉ dành cho live test; console chỉ đọc `.mate/.env`. Kết quả đầu tiên: [evidence 2026-09-27](evidence/jev-notices-2026-09-27.md). Đây không phải live acceptance của toàn bộ luồng Herdr → console → API.
+Live test gửi các fixture **giả lập** trong `internal/notice/testdata/notices.json`, không đọc pane/workspace của người dùng. Biến môi trường `MATE_JEV_API_KEY_FILE` ở đây chỉ dành cho live test; console chỉ đọc `.mate/.env`. Kết quả đầu tiên: [evidence 2026-09-27](archive/evidence/jev-notices-2026-09-27.md). Đây không phải live acceptance của toàn bộ luồng Herdr → console → API.
 
 Bộ quan sát không có live acceptance trong `make check`: unit test chạy từ cassette, không gọi mạng. Bằng chứng của nó là một ngày chạy thật trên workspace của captain với chain bật. Sau ngày đó:
 

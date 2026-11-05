@@ -3,7 +3,7 @@
 > Workspace scope correction (2026-10-12): new installations put `config` and
 > `key` directly under the instance and apply to every current/future Mate
 > project. The project bindings below describe the original pilot design;
-> existing files remain readable for compatibility. See [current setup](../plugins.md).
+> existing files remain readable for compatibility. See [current setup](../../plugins.md).
 
 
 Ngày: 2026-10-12. Trạng thái: **đề xuất đã thu hẹp sau review**, chưa triển khai.
@@ -26,7 +26,7 @@ bản đang review, không thay thế commit có thể checkout.
 
 ### Vì sao đổi từ registry 2026-10-08?
 
-[Registry cũ](workspace-layout-and-tools-2026-10-08.md) giải đúng yêu cầu lúc đó:
+[Registry cũ](../../plans/workspace-layout-and-tools-2026-10-08.md) giải đúng yêu cầu lúc đó:
 đưa Fresh/Beads vào profile, thêm công cụ bằng package trong repo + một dòng
 catalog, giữ data ngoài Mate và bỏ task schema trong core. Nó gom coupling
 rải rác và có contract tests; không có evidence rằng abstraction đó bị lỗi.
@@ -84,7 +84,7 @@ chỉ chỉnh đường cho MCP nếu probe chứng minh cần, bằng cơ chế
 
 Tiếp nối 2026-10-13: adapter Codex và pi được triển khai theo
 [plan MCP](codex-pi-mcp-2026-10-13.md); kết quả đo mới ở
-[evidence](../evidence/codex-pi-mcp-2026-10-13.md). Phần dưới ghi baseline pilot.
+[evidence](../../evidence/codex-pi-mcp-2026-10-13.md). Phần dưới ghi baseline pilot.
 
 ### Codex
 
@@ -201,7 +201,7 @@ anchor Open (`target=_blank`, `rel=noopener`). Không thêm màn quản lý vào
 Có thể thêm `GET /api/plugins?project=<p>` trả metadata local đã validate.
 Route đọc file config, không ghi database/state, không gọi Linear/MCP, không
 exec. Không thêm POST, control token, form mutation hay cross-origin request
-trong Office. [Dashboard §10–11](../dashboard.md#10-the-ui) giữ GET-only,
+trong Office. [Dashboard §10–11](../../dashboard.md#10-the-ui) giữ GET-only,
 read-only, same-origin. Spec chỉ bổ sung endpoint metadata và link trong PR nhỏ
 cùng implementation; việc cho Office ghi sau này cần spec change riêng trước.
 
@@ -265,6 +265,6 @@ Chỉ cân nhắc bước sau nếu pilot có evidence:
 Giữ hướng dài hạn package ngoài binary + một project config. V1 chứng minh
 seam nhỏ bằng Linear; không coi việc cài một app là bằng chứng đã cần Host.
 
-Nguồn nền: [task management](../task-management.md),
-[console commands](../console-commands.md),
+Nguồn nền: [task management](../../task-management.md),
+[console commands](../../console-commands.md),
 [Linear research](../research/linear-for-mate-2026-10-12.md).

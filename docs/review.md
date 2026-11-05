@@ -47,7 +47,7 @@ the legacy `--followups` path. Unsupported contract versions are refused.
 
 The implementation adapts pstack's assumptions, ownership and falsification
 methods while keeping mate's existing task, Crew and merge ownership. Research:
-[philosophy](research/pstack-design-philosophy-2026-10-29.md). Reproducible paired
+[philosophy](archive/research/pstack-design-philosophy-2026-10-29.md). Reproducible paired
 pilot: [revieweval](../scripts/revieweval/README.md). It compares reviewer behaviour
 separately from report-schema enforcement and does not substitute for a Herdr
 lifecycle test.

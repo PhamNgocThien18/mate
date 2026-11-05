@@ -72,7 +72,7 @@ quitting the console stops that server. `external` is for short GUI launchers;
 use it to open an already-running board URL, not to run its server. No
 application binding is supplied by Mate.
 
-[Research and primary sources](research/local-task-management-2026-10-12.md)
+[Research and primary sources](archive/research/local-task-management-2026-10-12.md)
 cover the installation, UI, storage and concurrency limits in more detail.
 
 ## Existing Beads users

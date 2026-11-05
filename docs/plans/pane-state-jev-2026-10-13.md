@@ -1,6 +1,6 @@
 # Trạng thái pane lúc khởi động: stub trước, Jev khi stub chịu thua
 
-Ngày: 2026-10-13. Trạng thái: triển khai xong; live proof 2026-10-13 (docs/evidence/pane-state-jev-2026-10-13.md).
+Ngày: 2026-10-13. Trạng thái: triển khai xong; live proof 2026-10-13 (docs/archive/evidence/pane-state-jev-2026-10-13.md).
 
 ## 1. Vấn đề
 

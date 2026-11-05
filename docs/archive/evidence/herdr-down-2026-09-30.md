@@ -80,7 +80,7 @@ Herdr 0.8.2, cùng máy, lúc không còn server Herdr nào chạy:
 
 - Không chạy lại được repro live trong console thật với một server Herdr chết và
   agent đang attach: phiên SSH tmux là phần đang dở, chưa commit (xem
-  `docs/plans/ssh-console-2026-09-30.md`). Bằng chứng live ở đây là đầu vào thật
+  `docs/archive/plans/ssh-console-2026-09-30.md`). Bằng chứng live ở đây là đầu vào thật
   mà `LookupSession` đọc (`running: false`) cộng dòng `server_not_running` đúng
   như captain thấy; phần console là test hồi quy ở tầng Go.
 - `mate` chưa tự dựng lại Herdr. Đường phục hồi vẫn là `s` (start/resume Mate),

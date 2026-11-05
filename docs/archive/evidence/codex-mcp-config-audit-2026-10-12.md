@@ -1,6 +1,6 @@
 # Codex MCP config injection audit (2026-10-12)
 
-Task 1b of `docs/plans/plugins-and-office-2026-10-12.md`. Offline parser probe
+Task 1b of `docs/archive/plans/plugins-and-office-2026-10-12.md`. Offline parser probe
 of whether codex-cli accepts `-c mcp_servers.<name>.*` per launch under
 `--strict-config`. Companion to `claude-mcp-probe-2026-10-12.md`. No Go changed.
 

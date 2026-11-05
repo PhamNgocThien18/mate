@@ -22,7 +22,7 @@ Ngày: 2026-10-13. Trạng thái: triển khai trong draft PR; chờ Linear pilo
   chờ pilot; mock issuer không chứng minh tương thích Linear.
 - R1: capability hỗ trợ adapter dựa trên fixture proof ở phiên bản đã đo;
   chưa coi đây là hoàn thành điều kiện phát hành Linear. `make check`, build
-  và live checks được ghi riêng trong [evidence](../evidence/codex-pi-mcp-2026-10-13.md).
+  và live checks được ghi riêng trong [evidence](../../evidence/codex-pi-mcp-2026-10-13.md).
 
 Phần dưới giữ thiết kế/acceptance gốc để reviewer đối chiếu các gate còn thiếu.
 Đợt này gom vào một draft PR theo yêu cầu người dùng; không cài binary hệ thống.
@@ -51,9 +51,9 @@ Linear HTTP OAuth phải có bằng chứng read tool thành công trên cả ha
 | Codex | Prepare và Build từ chối MCP; `MCPConfig` unsupported; Hooks đã verified | `internal/harness/codex/codex.go` |
 | Codex parser | 0.162.1 nhận dotted overrides HTTP/stdio; chưa đo auth, tool call, resume | [audit](../evidence/codex-mcp-config-audit-2026-10-12.md) |
 | pi | 0.99.1 chạy Crew; Hooks và MCPConfig unsupported; launch tắt auto extensions/skills | `internal/harness/pi/pi.go` |
-| pi extension | `-e` vẫn nạp extension chỉ định khi có `--no-extensions`; có input, before_agent_start, agent_end | [contract](../evidence/pi-contract-2026-10-01.md) |
+| pi extension | `-e` vẫn nạp extension chỉ định khi có `--no-extensions`; có input, before_agent_start, agent_end | [contract](../../evidence/pi-contract-2026-10-01.md) |
 | pi resume | session_start.reason là startup cả khi resume; không dùng reason để phân biệt | Cùng evidence pi |
-| Claude | Chỉ stdio qua `claude -p` đã đo; HTTP OAuth và pane interactive chưa đo | [plugins](../plugins.md), [Linear pilot](../evidence/linear-pilot-2026-10-12.md) |
+| Claude | Chỉ stdio qua `claude -p` đã đo; HTTP OAuth và pane interactive chưa đo | [plugins](../../plugins.md), [Linear pilot](../../evidence/linear-pilot-2026-10-12.md) |
 
 Khi triển khai phải ghi lại version thực tế; các version trên là mốc bằng chứng,
 không phải giả định rằng mọi version mới giữ nguyên API.

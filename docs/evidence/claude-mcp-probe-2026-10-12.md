@@ -1,6 +1,6 @@
 # Claude MCP probe dưới cờ launch Mate — 2026-10-12
 
-Task 1a của `docs/plans/plugins-and-office-2026-10-12.md` (mục 3, Claude). Đo,
+Task 1a của `docs/archive/plans/plugins-and-office-2026-10-12.md` (mục 3, Claude). Đo,
 không suy từ help: một MCP server stdio có đúng một tool `read_probe`
 (`scripts/mcpfixture`), chạy `claude -p` headless dưới đúng cờ Mate trong
 `internal/harness/claude/claude.go` (RoleMate), cwd là temp dir rỗng.

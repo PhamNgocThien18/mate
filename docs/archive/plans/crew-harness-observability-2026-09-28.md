@@ -4,7 +4,7 @@ Ngày: 2026-09-28. Trạng thái: collector, projector và Crew dashboard đã t
 khai, kiểm chứng trên transcript thật. Captain chọn giữ console hiện tại và
 xem trước bản mới ở cổng 7778; chưa chuyển database chính.
 Bằng chứng triển khai:
-`docs/evidence/crew-observability-2026-09-28.md`.
+`docs/archive/evidence/crew-observability-2026-09-28.md`.
 
 ## 1. Yêu cầu sản phẩm
 

@@ -970,7 +970,7 @@ git commit -m "Settle startup on the pane state and wait out a dialog drawn afte
 
 **File:**
 - Sửa: `scripts/jeveval/main.go`, `scripts/jeveval/call.go`, `scripts/jeveval/score.go`, `scripts/jeveval/corpus.go`
-- Tạo: `scripts/jeveval/testdata/cassette-state/` (ghi lại từ lần gọi thật), `docs/evidence/pane-state-jev-2026-10-13.md`
+- Tạo: `scripts/jeveval/testdata/cassette-state/` (ghi lại từ lần gọi thật), `docs/archive/evidence/pane-state-jev-2026-10-13.md`
 - Test: `scripts/jeveval/jeveval_test.go`
 
 **Interface:**
@@ -981,7 +981,7 @@ git commit -m "Settle startup on the pane state and wait out a dialog drawn afte
 - [ ] **Bước 2: Chạy**: `go test ./scripts/jeveval` → FAIL (flag chưa có).
 - [ ] **Bước 3: Triển khai** flag: corpus là các màn hình khởi động trong `internal/harness/*/testdata/startup/` cộng `scripts/jeveval/testdata/screens/`; nhãn là trạng thái fixture đọc ra (màn hình fixture đọc là `unknown` vẫn được liệt kê, chấm là `unscored`); request là `StateRequestBody`; manifest ghi `StatePromptHash()`.
 - [ ] **Bước 4: Ghi cassette** (gọi thật, captain đã cho dùng API Jev; tốn vài cent): `go run ./scripts/jeveval -question state -cassette scripts/jeveval/testdata/cassette-state`. Sau đó `go test ./scripts/jeveval` với replay → PASS.
-- [ ] **Bước 5: Viết evidence** `docs/evidence/pane-state-jev-2026-10-13.md` (tiếng Việt như các evidence khác): ngày, `StatePromptHash`, bảng theo từng màn hình (file, trạng thái xác định, trạng thái Jev, độ tin cậy, khớp hay không), độ chính xác trên các màn hình được chấm, và câu trả lời của Jev trên các màn hình không chấm. Nói thẳng Jev có đủ tin cậy cho settle ở ngưỡng 0.85 hay không; không làm tròn lên.
+- [ ] **Bước 5: Viết evidence** `docs/archive/evidence/pane-state-jev-2026-10-13.md` (tiếng Việt như các evidence khác): ngày, `StatePromptHash`, bảng theo từng màn hình (file, trạng thái xác định, trạng thái Jev, độ tin cậy, khớp hay không), độ chính xác trên các màn hình được chấm, và câu trả lời của Jev trên các màn hình không chấm. Nói thẳng Jev có đủ tin cậy cho settle ở ngưỡng 0.85 hay không; không làm tròn lên.
 - [ ] **Bước 6: Commit**: `git commit -m "Measure Jev's pane state question on the startup corpus"`
 
 ---
@@ -995,5 +995,5 @@ Không thêm code production. Chỉ đặt `MATE_LIVE=1` khi một test cần.
 - [ ] **Bước 3**: Trong `/Users/erics/workspace`, xác nhận hook của `matemarketing` chưa được trust (`grep matemarketing ~/.codex/config.toml` không in gì dưới `hooks.state`), rồi chạy `mate mate start matemarketing --harness codex`. Kỳ vọng: start được; `~/.codex/config.toml` giờ trust đúng `.../matemarketing/mate/.codex/hooks.json:session_start:0:0`; không hook nào khác được trust thêm (so bảng `hooks.state` trước và sau).
 - [ ] **Bước 4**: `mate mate stop matemarketing` rồi `mate mate start matemarketing --harness codex` (resume): start không gặp dialog nào.
 - [ ] **Bước 5**: Restart một Claude Mate (`mihu`): `mate mate stop mihu && mate mate start mihu` resume như trước.
-- [ ] **Bước 6**: Ghi vào `docs/evidence/pane-state-jev-2026-10-13.md`: phiên bản (codex-cli, Herdr, Claude Code), các lệnh đã chạy, các dòng `jev.log` và mọi file `.mate/screens/` mà các lần chạy tạo ra, và phần chênh lệch trust. Đổi dòng trạng thái của spec thành "triển khai xong; live proof <ngày>".
+- [ ] **Bước 6**: Ghi vào `docs/archive/evidence/pane-state-jev-2026-10-13.md`: phiên bản (codex-cli, Herdr, Claude Code), các lệnh đã chạy, các dòng `jev.log` và mọi file `.mate/screens/` mà các lần chạy tạo ra, và phần chênh lệch trust. Đổi dòng trạng thái của spec thành "triển khai xong; live proof <ngày>".
 - [ ] **Bước 7**: Commit `git commit -m "Record the live startup proof for Codex hook review"` và mở PR theo template của skill `pr`.

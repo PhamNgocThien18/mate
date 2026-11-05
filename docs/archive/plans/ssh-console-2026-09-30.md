@@ -4,7 +4,7 @@
 - Trạng thái: đã chốt hướng ngày 2026-09-30 (mục 5); chưa sửa production code.
 - Baseline: `5d93926` cộng phần tmux/SSH chưa commit (`internal/host/tmux.go`, `sshTmuxCommand` trong `cmd/mate/console.go`), binary `bin/mate` build 2026-09-29 10:25.
 - Máy: Mac mini chạy Mate, Herdr 0.8.2, tmux 3.6a với oh-my-tmux; laptop macOS chạy Ghostty; hai máy nối qua Tailscale.
-- Spec liên quan: [MVP](../mvp.md) mục cột host (M13), dòng về phiên SSH.
+- Spec liên quan: [MVP](../../mvp.md) mục cột host (M13), dòng về phiên SSH.
 
 ## 1. Bối cảnh
 

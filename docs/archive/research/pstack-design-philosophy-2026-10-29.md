@@ -154,7 +154,7 @@ Các hàng là diễn giải giải quyết tradeoff, không khẳng định ups
 | Tính đúng được giữ tại nơi thay đổi | `checkReview` đối chiếu fingerprint hiện tại và record; khác head/base/brief/handback thì review stale. | Không bắt agent nhớ bằng lời rằng verdict cũ hết hiệu lực. Fingerprint không tự chứng minh test đã bao phủ đúng hành vi. |
 | Giữ ý định người dùng bằng cấu trúc | `ReviseTask` kiểm lời captain không bị thay đổi khi sửa task; revise và append có ý nghĩa riêng. | Dùng operation nêu đúng mục đích, giữ provenance; semantic consistency vẫn cần người/agent xét. |
 
-Nguồn: [spec, mục 1–4b](../mvp.md), [send](../../internal/send/send.go), [pending recovery](../../internal/send/pending.go), [catalog](../../internal/harness/catalog/catalog.go), [capability](../../internal/capability/capability.go), [harness ratchet](../../internal/harness/ratchet_test.go), [review](../../cmd/mate/review.go), [brief revision](../../internal/brief/revise.go).
+Nguồn: [spec, mục 1–4b](../../mvp.md), [send](../../../internal/send/send.go), [pending recovery](../../../internal/send/pending.go), [catalog](../../../internal/harness/catalog/catalog.go), [capability](../../../internal/capability/capability.go), [harness ratchet](../../../internal/harness/ratchet_test.go), [review](../../../cmd/mate/review.go), [brief revision](../../../internal/brief/revise.go).
 
 **Ba hướng đáng áp dụng tiếp, theo thứ tự đề xuất:**
 
@@ -162,7 +162,7 @@ Nguồn: [spec, mục 1–4b](../mvp.md), [send](../../internal/send/send.go), [
 2. **Thiết kế từ thao tác của caller cho thay đổi có ảnh hưởng rộng.** Trước khi thêm một module/flag/lifecycle mới, viết hai tình huống dùng thật, owner của state, invariant và một alternative khác cấu trúc. Ví dụ retry sau crash cần giữ điều gì, caller được phép tự quyết điều gì, thông tin nào không nên lộ. Gói trong một trang rationale hoặc report scout hiện có; sửa nhỏ không cần ceremony này. Không bắt Mate tự đọc code: phần khảo sát và sketch là việc Crew, Mate quyết phạm vi từ report.
 3. **Làm bằng chứng rẻ và đúng mục tiêu hơn.** Mỗi claim quan trọng gắn artifact/revision, command đã chạy, điều kiện và hành vi được kiểm. Trước khi thêm gate, hỏi nó phân biệt được lỗi nào mà gate hiện tại bỏ sót; trước khi bỏ gate, hỏi bằng chứng thay thế giữ gì. Nếu một schema/receipt giúp chống nhầm, chỉ chuẩn hoá những field có consumer thực sự dùng để ra quyết định. Không dựng evidence framework chung khi một command hoặc check nhỏ đủ. Việc nhận diện đầy đủ yêu cầu sản phẩm vẫn cần judgment.
 
-Với task-learning hiện tại, bổ sung quan trọng nhất về tư duy là phân biệt **đã ghi nhận**, **đã thay đổi cách làm**, và **đã có bằng chứng cải thiện**. Chúng là ba mức khác nhau; không cần ép mỗi task tạo một rule mới. Record hiện đã có giới hạn độ dài, nguồn revision và prediction pointers để làm việc này có chọn lọc. [Task-learning](../../assets/mate/skills/task-learning/SKILL.md.tmpl).
+Với task-learning hiện tại, bổ sung quan trọng nhất về tư duy là phân biệt **đã ghi nhận**, **đã thay đổi cách làm**, và **đã có bằng chứng cải thiện**. Chúng là ba mức khác nhau; không cần ép mỗi task tạo một rule mới. Record hiện đã có giới hạn độ dài, nguồn revision và prediction pointers để làm việc này có chọn lọc. [Task-learning](../../../assets/mate/skills/task-learning/SKILL.md.tmpl).
 
 ## Dùng cho dự án và hệ agent sau này
 
@@ -191,7 +191,7 @@ Với hệ agent, giữ ba loại trách nhiệm rõ:
 | Agent | Hiểu tình huống, đặt giả thuyết, chọn phương án trong quyền đã giao, giải thích đánh đổi. | Đây là phần thay đổi theo bối cảnh và khó mã hoá đầy đủ. |
 | Code/công cụ | Quy tắc thao tác rõ, state canonical, kiểm input, ownership, retry, evidence metadata và giới hạn quyền có thể enforce. | Cơ chế này vẫn hoạt động khi context thiếu, người chạy quên hoặc session bị ngắt. |
 
-Từ đó, “agent thông minh hơn” là một cải tiến có thể có; thiết kế không nên đặt tính an toàn của mọi operation vào việc agent phải nhớ đủ prompt. Ngược lại, một validator chỉ biết hình dạng không được tự phong thành người hiểu ý định. `brief check` hiện nói rõ nó kiểm shape, không xét meaning: đó là một phân chia đáng giữ. [Brief CLI](../../cmd/mate/brief.go).
+Từ đó, “agent thông minh hơn” là một cải tiến có thể có; thiết kế không nên đặt tính an toàn của mọi operation vào việc agent phải nhớ đủ prompt. Ngược lại, một validator chỉ biết hình dạng không được tự phong thành người hiểu ý định. `brief check` hiện nói rõ nó kiểm shape, không xét meaning: đó là một phân chia đáng giữ. [Brief CLI](../../../cmd/mate/brief.go).
 
 **Tám câu hỏi dùng khi một quyết định thiết kế đáng cân nhắc:**
 

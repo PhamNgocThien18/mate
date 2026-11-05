@@ -6,7 +6,7 @@ optional. A workspace installs packages in `.mate/plugins.yaml`. Every current a
 future project's Mate receives them when it starts; Crews never do.
 Installation scope is independent of the external app's teams and projects. Mate has no
 package manager: it downloads, locks, caches and updates nothing. Design and
-rulings: [plans/plugins-and-office-2026-10-12.md](plans/plugins-and-office-2026-10-12.md).
+rulings: [plans/plugins-and-office-2026-10-12.md](archive/plans/plugins-and-office-2026-10-12.md).
 
 ```yaml
 # /path/to/tracker-plugin/mate-plugin.yaml
