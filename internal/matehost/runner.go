@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/harness"
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 // ErrBusy is a turn refused because another one holds the turn lock.
@@ -98,7 +99,6 @@ func startRun(l Launch, args []string, turn int, text string, turns harness.Head
 	cmd.Dir = l.Dir
 	cmd.Env = turnEnv(os.Environ(), l, turn)
 	cmd.Stdin = strings.NewReader(text)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		release()
@@ -106,7 +106,7 @@ func startRun(l Launch, args []string, turn int, text string, turns harness.Head
 	}
 	stderr := &tailBuffer{max: 4096}
 	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
+	if err := platform.StartNewGroup(cmd); err != nil {
 		release()
 		return nil, fmt.Errorf("matehost: start %s: %w", l.Program, err)
 	}
@@ -164,8 +164,8 @@ func (r *Run) Interrupt() {
 		return
 	}
 	pid := r.cmd.Process.Pid
-	_ = syscall.Kill(-pid, syscall.SIGINT)
-	time.AfterFunc(r.grace, func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+	_ = platform.SignalGroup(pid, syscall.SIGINT)
+	time.AfterFunc(r.grace, func() { _ = platform.SignalGroup(pid, syscall.SIGKILL) })
 }
 
 // Kill ends the run now.
@@ -174,7 +174,7 @@ func (r *Run) Kill() {
 	r.interrupted = true
 	r.mu.Unlock()
 	if r.cmd.Process != nil {
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+		_ = platform.SignalGroup(r.cmd.Process.Pid, syscall.SIGKILL)
 	}
 }
 

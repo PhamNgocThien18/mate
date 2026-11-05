@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
@@ -19,7 +20,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/screen/chain"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The MATE_JEV value table (jevSettings): with a readable key, on and
@@ -169,8 +169,8 @@ func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
 		f := newBoxFixture(t)
 		observer := &seesBusy{}
 		f.deps.Observer = observer
-		_, err := boxReplyAction(context.Background(), f.ws, f.deps, console.ActionRequest{
-			Action: console.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
+		_, err := boxReplyAction(context.Background(), f.ws, f.deps, coreapi.ActionRequest{
+			Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
 		if !errors.Is(err, send.ErrAgentBusy) || observer.calls != 1 {
 			t.Fatalf("err %v after %d observations, want busy from the observer", err, observer.calls)
 		}

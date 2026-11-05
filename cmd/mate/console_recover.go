@@ -1,87 +1,49 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
-	"github.com/nguyenngocanh94/mate/internal/spawn"
-	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
 // recoverySummaryFor is how long the one-line summary stays on the status
 // line after recovery finishes. A row that failed keeps its own error.
 const recoverySummaryFor = 30 * time.Second
 
-// consoleRecovery runs internal/recover in the background while the console is
-// open (docs/mvp.md M17) and says where it is: a status line while it works,
-// a summary after, and an error on the row of each agent that did not come
-// back. The console is usable throughout; it reads this the way it reads the
-// observer's, through apply on every load.
+// consoleRecovery says where recovery stands (docs/mvp.md M17), which the
+// engine runs in the background while the workspace is open (internal/core):
+// a status line while it works, a summary after, and an error on the row of
+// each agent that did not come back. The console is usable throughout; it
+// reads this the way it reads the observer's, through apply on every load.
 type consoleRecovery struct {
 	now func() time.Time
-
-	mu     sync.Mutex
-	status query.RecoveryStatus
-	doneAt time.Time
-	// rowErrs is the error of each agent that did not come back, by
-	// project and crew ("" for the Mate).
-	rowErrs map[[2]string]string
-
-	done chan struct{}
+	// state is the engine's Recovery.
+	state func() core.Recovery
 }
 
-// startConsoleRecovery begins recovering the workspace and returns at once.
-// stop cancels what is left and waits briefly for it to undo a half-started
-// agent.
-func startConsoleRecovery(ctx context.Context, ws *store.Workspace, deps spawn.Deps) (r *consoleRecovery, stop func()) {
-	return startRecovery(ctx, func(ctx context.Context, progress func(recovery.Progress)) recovery.Result {
-		return recovery.Run(ctx, ws, deps, progress)
-	})
-}
-
-func startRecovery(ctx context.Context, run func(context.Context, func(recovery.Progress)) recovery.Result) (*consoleRecovery, func()) {
-	r := &consoleRecovery{now: time.Now, done: make(chan struct{})}
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		defer close(r.done)
-		res := run(ctx, r.progress)
-		r.finish(res)
-	}()
-	return r, func() {
-		cancel()
-		select {
-		case <-r.done:
-		case <-time.After(abandonedWait):
-		}
-	}
-}
-
-func (r *consoleRecovery) progress(p recovery.Progress) {
+// recoveryProgress is the status line while recovery works.
+func recoveryProgress(p recovery.Progress) query.RecoveryStatus {
 	line := "recovering…"
 	if p.Total > 0 {
 		line = fmt.Sprintf("recovering %d of %d…", p.Done, p.Total)
 	}
-	r.mu.Lock()
-	r.status = query.RecoveryStatus{Line: line, Active: true}
-	r.mu.Unlock()
+	return query.RecoveryStatus{Line: line, Active: true}
 }
 
-func (r *consoleRecovery) finish(res recovery.Result) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.doneAt = r.now()
-	r.status = recoverySummary(res)
-	r.rowErrs = map[[2]string]string{}
+// recoveryRowErrors is the error of each agent that did not come back, by
+// project and crew ("" for the Mate).
+func recoveryRowErrors(res recovery.Result) map[[2]string]string {
+	errs := map[[2]string]string{}
 	for _, it := range res.Items {
 		if it.Err != nil {
-			r.rowErrs[[2]string{it.Project, it.Crew}] = "recovery failed: " + oneLineText(it.Err.Error())
+			errs[[2]string{it.Project, it.Crew}] = "recovery failed: " + oneLineText(it.Err.Error())
 		}
 	}
+	return errs
 }
 
 // recoverySummary is the line recovery leaves behind: what came back, what
@@ -132,20 +94,23 @@ func oneLineText(s string) string {
 
 // apply puts recovery's state into a snapshot query.Load built out of files
 // alone: the status line, and the error of each row that did not come back.
+// Nothing is said before recovery first reports, and the summary leaves the
+// status line recoverySummaryFor after recovery returned.
 func (r *consoleRecovery) apply(snap query.Snapshot) query.Snapshot {
 	if r == nil {
 		return snap
 	}
-	r.mu.Lock()
-	status, doneAt := r.status, r.doneAt
-	errs := make(map[[2]string]string, len(r.rowErrs))
-	for k, v := range r.rowErrs {
-		errs[k] = v
-	}
-	r.mu.Unlock()
-
-	if !status.Active && !doneAt.IsZero() && r.now().Sub(doneAt) > recoverySummaryFor {
-		status = query.RecoveryStatus{}
+	st := r.state()
+	var status query.RecoveryStatus
+	var errs map[[2]string]string
+	switch {
+	case st.Done:
+		if r.now().Sub(st.DoneAt) <= recoverySummaryFor {
+			status = recoverySummary(st.Result)
+		}
+		errs = recoveryRowErrors(st.Result)
+	case st.Reported:
+		status = recoveryProgress(st.Progress)
 	}
 	snap.Recovery = status
 	for p := range snap.Projects {

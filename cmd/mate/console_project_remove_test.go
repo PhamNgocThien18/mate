@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The Project row's Remove entry is `mate project remove`: the crew is
@@ -17,8 +17,8 @@ func TestConsoleRemoveProjectStopsAgentsThenUnregisters(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
-	line, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionRemoveProject, Target: "shop", TargetKind: "project",
+	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project",
 	})
 	if err != nil {
 		t.Fatalf("remove project action: %v", err)
@@ -50,8 +50,8 @@ func TestConsoleRemoveProjectKeepsTheProjectWhenACrewRefuses(t *testing.T) {
 	runGitOrFatal(t, crew.Worktree, "add", "work.txt")
 	runGitOrFatal(t, crew.Worktree, "commit", "-q", "-m", "work")
 
-	_, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionRemoveProject, Target: "shop", TargetKind: "project",
+	_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project",
 	})
 	if err == nil || !strings.Contains(err.Error(), "crew k3") {
 		t.Fatalf("err = %v, want it to name crew k3", err)

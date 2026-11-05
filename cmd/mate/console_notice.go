@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 type noticeClassifier interface {
@@ -118,9 +118,9 @@ func keyFilePath(root, path string) string {
 
 // This wrapper receives no observer health and writes no state. One explicit
 // action produces one capture and one request, bounded by a shared deadline.
-func consoleNoticeAction(ws *store.Workspace, deps spawn.Deps, classifier noticeClassifier, next console.ActionFunc) console.ActionFunc {
-	return func(ctx context.Context, req console.ActionRequest) (string, error) {
-		if req.Action != console.ActionNotice {
+func consoleNoticeAction(ws *store.Workspace, deps spawn.Deps, classifier noticeClassifier, next coreapi.ActionFunc) coreapi.ActionFunc {
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+		if req.Action != coreapi.ActionNotice {
 			return next(ctx, req)
 		}
 		if classifier == nil {

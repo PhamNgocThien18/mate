@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -63,7 +64,7 @@ func TestBoxEnterOpensTheNewsInTheMate(t *testing.T) {
 	if len(spy.calls) != 1 || spy.calls[0].Kind != StageMate {
 		t.Fatalf("stage calls = %+v, want the Mate", spy.calls)
 	}
-	if len(act.reqs) != 1 || act.reqs[0].Action != ActionOpenNews || act.reqs[0].Target != "payments-api" || act.reqs[0].Input != "5" {
+	if len(act.reqs) != 1 || act.reqs[0].Action != coreapi.ActionOpenNews || act.reqs[0].Target != "payments-api" || act.reqs[0].Input != "5" {
 		t.Fatalf("requests = %+v, want open_news #5 of payments-api", act.reqs)
 	}
 }

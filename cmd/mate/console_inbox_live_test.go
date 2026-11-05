@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -98,8 +99,8 @@ func TestLiveConsoleInboxResolve(t *testing.T) {
 	})
 
 	// 1. The Mate, through the Console's own action seam.
-	startOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	startOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("console start action: %v", err)
 	}
@@ -159,8 +160,8 @@ func TestLiveConsoleInboxResolve(t *testing.T) {
 	}
 
 	// 4. `[assign]`: the line into the Mate's composer, through ActionFunc.
-	resolveOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionResolve, Target: "shop", TargetKind: "project",
+	resolveOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project",
 		Crew: ask.Crew, Input: ask.Resolve})
 	if err != nil {
 		t.Fatalf("resolve action: %v\ncrew pane:\n%s", err, paneTail())
@@ -211,7 +212,7 @@ func TestLiveConsoleInboxResolve(t *testing.T) {
 	if _, err := spawn.StopCrew(ctx, w, deps, "shop", "k3", true); err != nil {
 		t.Fatalf("StopCrew: %v", err)
 	}
-	stopOut, err := action(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"})
+	stopOut, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("console stop action: %v", err)
 	}

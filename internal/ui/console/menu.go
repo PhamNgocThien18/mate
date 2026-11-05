@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -167,9 +168,9 @@ func (m Model) startMateEntry(r row) menuEntry {
 	}
 	c := m.mateStartChoice(r, mate)
 	switch c.action {
-	case ActionOnboard:
+	case coreapi.ActionOnboard:
 		e.label = "Create mate…"
-	case ActionResume:
+	case coreapi.ActionResume:
 		e.label = "Resume mate"
 	}
 	e.enabled, e.about = c.enabled, c.desc

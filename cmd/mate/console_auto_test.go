@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/core"
+	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/outbox"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
+	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/watch"
 )
 
 // The console's auto-daemon wiring (mvp.md task 19): internal/autopilot over
@@ -97,3 +102,115 @@ func TestWithAutoStatusLeavesUntickedProjectsAlone(t *testing.T) {
 type noSleep struct{}
 
 func (noSleep) Sleep(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+
+// engineFixture is a workspace with one crew the fake Herdr shows at an
+// empty composer, and deps for an engine over it. The live deps set no
+// Sleep; the fixture's instant one would make the sender loop, which sleeps
+// its interval through it, spin.
+func engineFixture(t *testing.T) (*store.Workspace, spawn.Deps, watch.CrewRef) {
+	t.Helper()
+	w, deps := consoleFixture(t, "shop")
+	res := spawnFakeCrew(t, w, deps, "shop", "k3")
+	deps.Runtime.(*runtime.Fake).SetReadOutput(spawnedHandle(res), codexEmptyScreen)
+	deps.Sleep = nil
+	return w, deps, watch.CrewRef{Project: "shop", Crew: "k3"}
+}
+
+// startEngine runs the console's own parts under an engine, as runConsole
+// does, until the test ends.
+func startEngine(t *testing.T, w *store.Workspace, deps spawn.Deps) (*core.Engine, core.Options) {
+	t.Helper()
+	opts, err := engineOptions(w, deps)
+	if err != nil {
+		t.Fatalf("engineOptions: %v", err)
+	}
+	engine := core.New(opts)
+	if err := engine.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(engine.Stop)
+	return engine, opts
+}
+
+// engineOptions hands the engine every part the console ran itself before
+// CON-207. Run over the fake Herdr, the observer reads the crew, recovery
+// finishes, and Stop closes the timeline: the next writer can open it.
+func TestEngineOptionsRunsTheConsoleLoops(t *testing.T) {
+	w, deps, ref := engineFixture(t)
+	engine, opts := startEngine(t, w, deps)
+	if opts.Workspace != w || opts.Watcher == nil || opts.Timeline == nil || opts.Ingest == nil ||
+		opts.Sender == nil || opts.Pilot == nil || opts.Recover == nil {
+		t.Fatalf("engineOptions left a part out: %+v", opts)
+	}
+
+	waitFor(t, func() bool {
+		h, ok := engine.CrewHealth().Snapshot()[ref]
+		return ok && h.AgentPresent
+	})
+	waitFor(t, func() bool { return engine.Recovery().Done })
+	if engine.Ingest() != opts.Ingest {
+		t.Error("the engine reads another ingest than the one the observer runs")
+	}
+
+	engine.Stop()
+	handle, err := db.Open(w)
+	if err != nil {
+		t.Fatalf("opening mate.db after Stop: %v; the engine must release the writer's lock", err)
+	}
+	_ = handle.Close()
+}
+
+// Another process holds `.mate/mate.db` - `mate reindex`, say. The console
+// observes all the same, records no timeline and says nothing about one
+// (internal/db.ErrLocked); quitting leaves the other writer's database and
+// lock alone.
+func TestEngineObservesWithoutTheTimelineWhileAnotherProcessWritesIt(t *testing.T) {
+	w, deps, ref := engineFixture(t)
+	other, err := db.Open(w)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	defer other.Close()
+
+	engine, opts := startEngine(t, w, deps)
+	if opts.Timeline != nil || opts.Ingest != nil {
+		t.Fatalf("engineOptions with mate.db held elsewhere: timeline %v, ingest %v; want neither", opts.Timeline, opts.Ingest)
+	}
+	waitFor(t, func() bool {
+		_, ok := engine.CrewHealth().Snapshot()[ref]
+		return ok
+	})
+	if snap := withTimelineStale(query.Snapshot{}, engine.Ingest()); snap.Runtime.Notice != "" {
+		t.Errorf("status line %q, want nothing about a timeline this console does not write", snap.Runtime.Notice)
+	}
+
+	engine.Stop()
+	if handle, err := db.Open(w); !errors.Is(err, db.ErrLocked) {
+		if handle != nil {
+			_ = handle.Close()
+		}
+		t.Fatalf("a writer after Stop got %v, want ErrLocked: the other process still holds mate.db", err)
+	}
+	if err := other.SQL().Ping(); err != nil {
+		t.Fatalf("the other writer's database after Stop: %v", err)
+	}
+}
+
+// A Jev setting that asks for what it cannot have leaves no observer
+// configured: runConsole puts the reason on the status line, and the engine
+// runs on with the fixture observer reading the panes.
+func TestEngineObservesWithTheFixtureWhenJevIsMisconfigured(t *testing.T) {
+	w, deps, ref := engineFixture(t)
+	writeEnv(t, w, "MATE_JEV=on\n")
+	observer, err := configuredObserver(w)
+	if err == nil || observer != nil {
+		t.Fatalf("configuredObserver = %v, %v; want no observer and the reason", observer, err)
+	}
+	deps.Observer = observer
+
+	engine, _ := startEngine(t, w, deps)
+	waitFor(t, func() bool {
+		h, ok := engine.CrewHealth().Snapshot()[ref]
+		return ok && h.AgentPresent && h.Composer == send.StateEmpty
+	})
+}

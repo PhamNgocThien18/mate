@@ -15,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -102,11 +103,11 @@ func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 		t.Fatalf("write workspace.yaml: %v", err)
 	}
 
-	var got []console.ActionRequest
+	var got []coreapi.ActionRequest
 	load := func(ctx context.Context) (query.Snapshot, error) {
 		return query.Load(ctx, ws, consoleHarnesses(), nil)
 	}
-	act := func(_ context.Context, req console.ActionRequest) (string, error) {
+	act := func(_ context.Context, req coreapi.ActionRequest) (string, error) {
 		got = append(got, req)
 		return "ok", nil
 	}
@@ -199,6 +200,30 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	listAgents(baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr"))))
 	if !ran() {
 		t.Fatal("the console's deps did not run the herdr findTool resolved")
+	}
+}
+
+// The console runs its background loops through internal/core (CON-207):
+// it builds their parts with engineOptions, which `mate core` can share
+// (CON-211), and the engine starts them in order, stops them in reverse and
+// closes the timeline last. A Start or Stop of runConsole's own, or a loop
+// or timeline database it opened itself, would be outside that order again.
+func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
+	calls := callersOf(t)["runConsole"]
+	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop"} {
+		if !calls[want] {
+			t.Errorf("runConsole does not call %s", want)
+		}
+	}
+	for call := range calls {
+		if (strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop")) && !strings.HasPrefix(call, "engine.") {
+			t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
+		}
+	}
+	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "consoleOutbox", "db.Open"} {
+		if calls[opener] {
+			t.Errorf("runConsole calls %s; engineOptions builds the loops and opens the timeline", opener)
+		}
 	}
 }
 

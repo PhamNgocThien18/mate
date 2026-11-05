@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/process"
 )
 
@@ -28,7 +29,7 @@ type Processes struct {
 	Runner process.Runner
 	// Grace is how long a process gets after SIGTERM; zero is 5 s.
 	Grace time.Duration
-	// Signal sends a signal; nil is syscall.Kill. Signal 0 probes.
+	// Signal sends a signal; nil is platform.Signal. Signal 0 probes.
 	Signal func(pid int, sig syscall.Signal) error
 }
 
@@ -72,7 +73,7 @@ func (p Processes) Sweep(ctx context.Context, targets []Target, dry bool) ([]str
 	}
 	signal := p.Signal
 	if signal == nil {
-		signal = syscall.Kill
+		signal = platform.Signal
 	}
 	grace := p.Grace
 	if grace <= 0 {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 )
 
@@ -89,20 +90,30 @@ func TestWorkListsTheBoardWithEachRowsState(t *testing.T) {
 	f.get(t, "/api/work?project=nope", http.StatusNotFound, &e)
 }
 
-// The tick is a press like the others: it goes to the console with the
-// row, and a press without a row is refused before anything runs.
+// The tick is a press like the others: it goes to the console as the work
+// sheet's okay_work with the row (CON-206), and a press without a row, or
+// with one that is not positive, is refused before anything runs.
 func TestOkayGoesToTheConsoleWithItsRow(t *testing.T) {
 	f := newFixture(t)
 	rec := &actRecorder{}
 	ts := actingServer(t, f, rec)
 	status, e, ok := post(t, ts, `{"action":"okay","project":"`+fixtureProject+`","work":3}`, nil)
-	if status != 200 || ok.Line != "did okay" {
+	if status != 200 || ok.Line != "did okay_work" {
 		t.Fatalf("okay = %d %+v", status, e)
 	}
-	if got := rec.got[len(rec.got)-1]; got.Work != 3 || got.Project != fixtureProject {
+	if got := rec.got[len(rec.got)-1]; got.Action != coreapi.ActionOkayWork || got.Input != "3" || got.Target != fixtureProject {
 		t.Errorf("okay request = %+v", got)
 	}
-	if status, e, _ := post(t, ts, `{"action":"okay","project":"`+fixtureProject+`"}`, nil); status != 400 || !strings.Contains(e.Error, "row") {
-		t.Errorf("okay without a row = %d %+v", status, e)
+	for _, body := range []string{
+		`{"action":"okay","project":"` + fixtureProject + `"}`,
+		`{"action":"okay","project":"` + fixtureProject + `","work":0}`,
+		`{"action":"okay","project":"` + fixtureProject + `","work":-1}`,
+	} {
+		if status, e, _ := post(t, ts, body, nil); status != 400 || e.Error != "okay wants the work row it ticks" {
+			t.Errorf("%s = %d %+v", body, status, e)
+		}
+	}
+	if len(rec.got) != 1 {
+		t.Errorf("act ran %+v; a tick without a row must be refused first", rec.got)
 	}
 }

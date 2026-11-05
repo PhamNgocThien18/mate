@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -57,8 +58,7 @@ func (s ExecStarter) Start(spec Spec) (int, error) {
 	cmd.Stdin = nil
 	cmd.Stdout = log
 	cmd.Stderr = log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
+	if err := platform.StartNewSession(cmd); err != nil {
 		return 0, err
 	}
 	pid := cmd.Process.Pid
@@ -83,7 +83,7 @@ var Alive = func(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	err := syscall.Kill(pid, 0)
+	err := platform.Signal(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 

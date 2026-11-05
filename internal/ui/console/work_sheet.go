@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -47,10 +48,6 @@ var workGroups = []struct{ status, heading string }{
 	{"okayed", "okayed"},
 }
 
-// ErrNoMateREPL is an open-work request for a Mate that runs without the
-// REPL: the console shows the board in its own sheet.
-var ErrNoMateREPL = errors.New("the Mate runs without the REPL")
-
 // workOpenedMsg is the REPL's answer to an open-work request.
 type workOpenedMsg struct {
 	project string
@@ -79,7 +76,7 @@ func (m Model) beginWork() (Model, tea.Cmd) {
 		return m.openWorkSheet(project), nil
 	}
 	action, ctx := m.action, m.baseCtx()
-	req := ActionRequest{Action: ActionOpenWork, Target: project, TargetKind: "project"}
+	req := coreapi.ActionRequest{Action: coreapi.ActionOpenWork, Target: project, TargetKind: "project"}
 	return m, func() tea.Msg {
 		_, err := action(ctx, req)
 		return workOpenedMsg{project: project, row: r, err: err}
@@ -90,7 +87,7 @@ func (m Model) beginWork() (Model, tea.Cmd) {
 // sheet when the Mate has no REPL.
 func (m Model) onWorkOpened(msg workOpenedMsg) (Model, tea.Cmd) {
 	switch {
-	case errors.Is(msg.err, ErrNoMateREPL):
+	case errors.Is(msg.err, coreapi.ErrNoMateREPL):
 		return m.openWorkSheet(msg.project), nil
 	case msg.err != nil:
 		m.msg = errMsg("Open work refused: " + msg.err.Error())
@@ -207,10 +204,10 @@ func (m Model) okayWork() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	c := actionChoice{
-		action:  ActionOkayWork,
+		action:  coreapi.ActionOkayWork,
 		desc:    "Tick a done row off the work board",
 		enabled: true,
-		req:     ActionRequest{Action: ActionOkayWork, Target: m.work.project, TargetKind: "project", Input: strconv.Itoa(w.ID)},
+		req:     coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: m.work.project, TargetKind: "project", Input: strconv.Itoa(w.ID)},
 	}
 	return m.runAction(c)
 }

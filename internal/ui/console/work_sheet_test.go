@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -30,7 +31,7 @@ func bxWork(t *testing.T) (Model, *bxAction) {
 // request is not kept in act.
 func bxOpenSheet(t *testing.T, m Model, act *bxAction) Model {
 	t.Helper()
-	act.err = ErrNoMateREPL
+	act.err = coreapi.ErrNoMateREPL
 	m, cmd := send(t, m, key("w"))
 	if cmd == nil {
 		t.Fatal("w sent no open-work request")
@@ -89,7 +90,7 @@ func TestSpaceTicksADoneRow(t *testing.T) {
 	}
 	done := cmd()
 	m, _ = send(t, m, done)
-	if len(act.reqs) != 1 || act.reqs[0].Action != ActionOkayWork || act.reqs[0].Target != "payments-api" || act.reqs[0].TargetKind != "project" || act.reqs[0].Input != "3" {
+	if len(act.reqs) != 1 || act.reqs[0].Action != coreapi.ActionOkayWork || act.reqs[0].Target != "payments-api" || act.reqs[0].TargetKind != "project" || act.reqs[0].Input != "3" {
 		t.Fatalf("requests = %+v, want okay_work #3 of payments-api", act.reqs)
 	}
 	if !m.work.open || m.work.note != "done" {
@@ -110,7 +111,7 @@ func TestSpaceTicksADoneRow(t *testing.T) {
 		t.Fatal("t on a waiting row opened no topic")
 	}
 	cmd()
-	if len(act.reqs) != 2 || act.reqs[1].Action != ActionOpenNews || act.reqs[1].Input != "7" {
+	if len(act.reqs) != 2 || act.reqs[1].Action != coreapi.ActionOpenNews || act.reqs[1].Input != "7" {
 		t.Fatalf("requests = %+v, want open_news #7", act.reqs)
 	}
 }
@@ -201,7 +202,7 @@ func TestWAsksAHeadlessMateForTheWorkPage(t *testing.T) {
 		t.Fatalf("w ran %+v before its command", act.reqs)
 	}
 	m, stage := send(t, m, cmd())
-	if len(act.reqs) != 1 || act.reqs[0].Action != ActionOpenWork || act.reqs[0].Target != "payments-api" {
+	if len(act.reqs) != 1 || act.reqs[0].Action != coreapi.ActionOpenWork || act.reqs[0].Target != "payments-api" {
 		t.Fatalf("requests = %+v, want open_work of payments-api", act.reqs)
 	}
 	if m.sheetOpen() != sheetNone {

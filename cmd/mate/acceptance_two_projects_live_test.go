@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/catalog"
@@ -20,7 +21,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The captain's three lines. Each is what a human types into a Mate's pane:
@@ -190,8 +190,8 @@ func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	// ---------- both Mates ----------
 
 	for _, project := range []string{"shop", "blog"} {
-		out, startErr := action(ctx, console.ActionRequest{
-			Action: console.ActionStart, Target: project, TargetKind: "mate", Harness: query.HarnessKind("claude")})
+		out, startErr := action(ctx, coreapi.ActionRequest{
+			Action: coreapi.ActionStart, Target: project, TargetKind: "mate", Harness: query.HarnessKind("claude")})
 		if startErr != nil {
 			t.Fatalf("start the %s Mate: %v", project, startErr)
 		}
@@ -231,7 +231,7 @@ func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	waitForSent(t, ctx, w, "blog", 3*time.Minute, func(e store.SentEntry) bool {
 		return e.Source == store.SourceUser && e.Text == twoProjectsShipBlog
 	})
-	modeOut, err := action(ctx, console.ActionRequest{Action: console.ActionMode, Target: "blog", TargetKind: "project"})
+	modeOut, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "blog", TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("mode action on blog: %v", err)
 	}
@@ -344,8 +344,8 @@ func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	}
 
 	// The captain merges, from the Console's own Actions menu.
-	mergeLine, err := action(ctx, console.ActionRequest{
-		Action: console.ActionMerge, Target: "shop", TargetKind: "crew", Crew: ship})
+	mergeLine, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: ship})
 	if err != nil {
 		t.Fatalf("console merge action: %v\nmate pane:\n%s", err, shopPane())
 	}
@@ -706,7 +706,7 @@ func waitForSentAfter(t *testing.T, ctx context.Context, w *store.Workspace, pro
 // Claude Code Mate that has finished a turn sometimes leaves a suggestion
 // in its own composer, which internal/send correctly refuses to type over
 // and which no amount of waiting clears.
-func typeCaptainLine(t *testing.T, ctx context.Context, deps spawn.Deps, action console.ActionFunc,
+func typeCaptainLine(t *testing.T, ctx context.Context, deps spawn.Deps, action coreapi.ActionFunc,
 	project string, handle runtime.AgentHandle, kind harness.Kind, text string,
 	within time.Duration, evidence func() string) {
 	t.Helper()
@@ -724,8 +724,8 @@ func typeCaptainLine(t *testing.T, ctx context.Context, deps spawn.Deps, action 
 		last = err
 		t.Logf("the captain's line was refused (%v)", err)
 		if errors.Is(err, send.ErrComposerPending) {
-			out, clearErr := action(ctx, console.ActionRequest{
-				Action: console.ActionClearComposer, Target: project, TargetKind: "mate"})
+			out, clearErr := action(ctx, coreapi.ActionRequest{
+				Action: coreapi.ActionClearComposer, Target: project, TargetKind: "mate"})
 			if clearErr != nil {
 				t.Fatalf("[clear composer] on %s: %v", project, clearErr)
 			}
@@ -746,11 +746,11 @@ func typeCaptainLine(t *testing.T, ctx context.Context, deps spawn.Deps, action 
 // answers "queued for the Mate" and its outbox sender delivers the line when
 // the composer clears, so the proof of delivery is the `app → mate` line in
 // `sent.log`, not the action's own answer.
-func assignAndAwaitDelivery(t *testing.T, ctx context.Context, w *store.Workspace, action console.ActionFunc,
+func assignAndAwaitDelivery(t *testing.T, ctx context.Context, w *store.Workspace, action coreapi.ActionFunc,
 	project string, item query.BoxEntry, within time.Duration, evidence func() string) string {
 	t.Helper()
-	out, err := action(ctx, console.ActionRequest{
-		Action: console.ActionResolve, Target: project, TargetKind: "project",
+	out, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionResolve, Target: project, TargetKind: "project",
 		Crew: item.Crew, Input: item.Resolve, Key: item.AssignKey})
 	if err != nil {
 		t.Fatalf("[assign] on the %s inbox item: %v\nmate pane:\n%s", project, err, evidence())

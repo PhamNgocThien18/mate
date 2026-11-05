@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -138,8 +139,8 @@ func TestLiveConsoleDiffShowsACrewBranch(t *testing.T) {
 
 	// 4. The Console's own action, with the request the Actions menu builds
 	// for a Crew row: the Project in Target, the Crew in Crew.
-	text, err := action(ctx, console.ActionRequest{
-		Action: console.ActionDiff, Target: "shop", TargetKind: "crew", Crew: "k3"})
+	text, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionDiff, Target: "shop", TargetKind: "crew", Crew: "k3"})
 	if err != nil {
 		t.Fatalf("console diff action: %v\ncrew pane:\n%s", err, paneTail())
 	}

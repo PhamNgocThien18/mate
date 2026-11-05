@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief/brieftest"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
@@ -20,7 +21,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestLiveUsageMatchesTheHarness is docs/mvp.md M5 task 27's live proof: the
@@ -98,8 +98,8 @@ func TestLiveUsageMatchesTheHarness(t *testing.T) {
 	// so a Mate asked only one question would show zero turns in the
 	// ledger forever, not because nothing happened but because the ingest
 	// cannot yet prove that group is finished.
-	startOut, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	startOut, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("start the Mate: %v", err)
 	}

@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recovery"
+	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
 func recoverySnapshot() query.Snapshot {
@@ -21,10 +23,12 @@ func recoverySnapshot() query.Snapshot {
 	}}}
 }
 
+// Recovery runs in the engine (internal/core); the console draws where it
+// stands, read through the engine on every load.
 func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
 	step := make(chan struct{})
 	release := make(chan struct{})
-	r, stop := startRecovery(context.Background(), func(_ context.Context, progress func(recovery.Progress)) recovery.Result {
+	engine := core.New(core.Options{Recover: func(_ context.Context, _ *store.Workspace, progress func(recovery.Progress)) recovery.Result {
 		progress(recovery.Progress{Total: 2})
 		progress(recovery.Progress{Done: 1, Total: 2})
 		close(step)
@@ -33,8 +37,12 @@ func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
 			{Project: "shop", Resumed: true},
 			{Project: "shop", Crew: "k2", Err: errors.New("the worktree of crew k2 is gone\nsecond line")},
 		}}
-	})
-	defer stop()
+	}})
+	if err := engine.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer engine.Stop()
+	r := &consoleRecovery{now: time.Now, state: engine.Recovery}
 	<-step
 
 	snap := r.apply(recoverySnapshot())
@@ -42,7 +50,7 @@ func TestConsoleRecoveryReportsProgressThenASummaryAndRowErrors(t *testing.T) {
 		t.Fatalf("while running: %+v, want `recovering 1 of 2…` active", snap.Recovery)
 	}
 	close(release)
-	<-r.done
+	engine.Stop() // waits for the released run to return
 
 	snap = r.apply(recoverySnapshot())
 	want := "recovered 1; 1 failed: crew shop/k2: the worktree of crew k2 is gone"

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/platform"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -40,7 +41,7 @@ func liveConsoleClaim(in io.Reader, out io.Writer) consoleClaim {
 		in:       in,
 		out:      out,
 		now:      time.Now,
-		signal:   syscall.Kill,
+		signal:   platform.Signal,
 		where:    consoleTTY,
 		grace:    10 * time.Second,
 		killWait: 3 * time.Second,

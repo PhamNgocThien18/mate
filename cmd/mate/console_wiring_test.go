@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/panerun"
 	"github.com/nguyenngocanh94/mate/internal/query"
@@ -74,7 +75,7 @@ func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
 		t.Fatalf("before the start, mate.meta = %v (err %v), want no agent", meta, err)
 	}
 
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
 		t.Fatal("meta records no pane after a start")
 	}
 
-	stopOut, err := action(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"})
+	stopOut, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("stop: %v", err)
 	}
@@ -119,10 +120,10 @@ func TestConsoleActionStartPropagatesTheSpawnErrorVerbatim(t *testing.T) {
 	action := consoleAction(w, deps)
 	ctx := context.Background()
 
-	if _, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("first start: %v", err)
 	}
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"})
 	if err == nil {
 		t.Fatalf("a second start returned %q and no error; want the running Mate refusal", out)
 	}
@@ -138,7 +139,7 @@ func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
 	action := consoleAction(w, deps)
 	ctx := context.Background()
 
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionRepair, Target: "shop", TargetKind: "mate"})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionRepair, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("repair on a project with no Mate: %v", err)
 	}
@@ -146,10 +147,10 @@ func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
 		t.Fatalf("repair outcome = %q, want the stopped state", out)
 	}
 
-	if _, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	out, err = action(ctx, console.ActionRequest{Action: console.ActionRepair, Target: "shop", TargetKind: "mate"})
+	out, err = action(ctx, coreapi.ActionRequest{Action: coreapi.ActionRepair, Target: "shop", TargetKind: "mate"})
 	if err != nil {
 		t.Fatalf("repair on a running Mate: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestConsoleActionModeTogglesTheAutoFlagAndTheLabel(t *testing.T) {
 	if !w.Auto("shop") {
 		t.Fatal("a fresh project is not in auto mode")
 	}
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionMode, Target: "shop", TargetKind: "project"})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "shop", TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("mode: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestConsoleActionModeTogglesTheAutoFlagAndTheLabel(t *testing.T) {
 		t.Fatalf("mode outcome = %q, want the manual label", out)
 	}
 
-	out, err = action(ctx, console.ActionRequest{Action: console.ActionMode, Target: "shop", TargetKind: "project"})
+	out, err = action(ctx, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "shop", TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("mode back: %v", err)
 	}
@@ -310,7 +311,7 @@ func (r *recordingColumns) of(role string) []panerun.Command {
 func TestConsoleStageResolvesMateMeta(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
 	action := consoleAction(w, deps)
-	if _, err := action(context.Background(), console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	rec := newRecordingColumns(t)
@@ -340,7 +341,7 @@ func TestConsoleStageResolvesMateMeta(t *testing.T) {
 // server was lost to a machine restart).
 func TestConsoleStageRefusesAnAgentWhoseHerdrIsGone(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	deps.Runtime.(*runtime.Fake).SessionNotRunning = true
@@ -434,7 +435,7 @@ func TestConsoleStageShowsACrewFromItsMeta(t *testing.T) {
 // A column the captain closed is laid out again, once, and asked again.
 func TestConsoleStageRemakesAClosedColumn(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	rec := newRecordingColumns(t)
@@ -463,7 +464,7 @@ func (layoutFunc) Close(context.Context, ...string) error        { return nil }
 // the layout alone sees the pane and makes nothing.
 func TestConsoleStageRemakesAColumnWhoseRunnerDied(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	if _, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
 	}
 	rec := newRecordingColumns(t)

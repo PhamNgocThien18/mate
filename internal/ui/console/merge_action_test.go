@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -39,7 +40,7 @@ func toMergeableCrew(t *testing.T, m Model) Model {
 
 func hasMerge(m Model) bool {
 	for _, e := range m.actions.entries {
-		if e.key == "M" || e.choice.action == ActionMerge {
+		if e.key == "M" || e.choice.action == coreapi.ActionMerge {
 			return true
 		}
 	}
@@ -71,7 +72,7 @@ func TestMergeRunsOnlyOnAWaitMateCrew(t *testing.T) {
 			}
 			if !tc.want {
 				calls := 0
-				m.action = func(context.Context, ActionRequest) (string, error) { calls++; return "", nil }
+				m.action = func(context.Context, coreapi.ActionRequest) (string, error) { calls++; return "", nil }
 				m, cmd := send(t, m, key("M"))
 				if cmd != nil || calls != 0 || m.actions.confirm != nil {
 					t.Fatalf("M on a %s crew acted: cmd=%v calls=%d confirm=%v", tc.status, cmd != nil, calls, m.actions.confirm != nil)
@@ -142,7 +143,7 @@ func TestMergeNamesTheBranchesAndRunsOnlyOnItsOwnKey(t *testing.T) {
 		t.Fatalf("runner called %d time(s), want 1", len(*got))
 	}
 	req := (*got)[0]
-	if req.Action != ActionMerge || req.TargetKind != "crew" ||
+	if req.Action != coreapi.ActionMerge || req.TargetKind != "crew" ||
 		req.Target != mergeTree().Projects[0].ProjectID || req.Crew != crew.CrewID {
 		t.Fatalf("request = %+v, want the Project and the crew named separately", req)
 	}

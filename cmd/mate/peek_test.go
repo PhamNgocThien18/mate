@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/crewstate"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/harnesstest"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // TestPeekPrintsTheRawPane is the happy path: a live crew's pane comes back
@@ -90,7 +90,7 @@ func TestCrewReadersReadThroughTheProfilesSource(t *testing.T) {
 	if got.Health.Kind != crewstate.HealthBusy {
 		t.Fatalf("health = %+v, want busy read off the Codex screen", got.Health)
 	}
-	if _, err := boxPeekAction(context.Background(), w, deps, console.ActionRequest{Target: "shop", Crew: "k3"}); err != nil {
+	if _, err := boxPeekAction(context.Background(), w, deps, coreapi.ActionRequest{Target: "shop", Crew: "k3"}); err != nil {
 		t.Fatalf("boxPeekAction: %v", err)
 	}
 	if len(rt.ReadSources) < 3 {
