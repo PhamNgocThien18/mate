@@ -4,6 +4,7 @@
   When code cites it (`mvp.md section 4b`, `M18`), grep for that section. Don't add new entries to it.
 - Issues and tasks live in Linear: team `EricsNguyen` (key `CON`), project `mate`. Use the `linear` MCP server from `.mcp.json`. Teams `HVN` and `MIHU` belong to projects mate manages, not to this repo.
 - Module `github.com/nguyenngocanh94/mate`. Binary `cmd/mate`.
+- Architecture: `docs/architecture.md` maps package layers and import rules, processes, `.mate/` files and boundary tests. Read it before adding a package, a cross-package import, a process or a state file, or a harness, plugin, terminal host or CLI command; update it when your change moves one. Domain terms: `GLOSSARY.md`.
 - `make check` runs gofmt, `go vet`, and `go test -json ./...` through `scripts/gotestreport`.
   Any skipped test not declared in `scripts/gotestreport/expected-skips.txt` fails the build.
   Live Herdr/harness tests are named `TestLive*` and skip unless `MATE_LIVE=1`.
