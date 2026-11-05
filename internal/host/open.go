@@ -58,6 +58,17 @@ func AttachArgv(herdr, session, agent string) []string {
 	return []string{ResolveExec(orDefault(herdr, "herdr")), "--session", session, "agent", "attach", agent, "--takeover"}
 }
 
+// REPLArgv is the program a stage column runs to show a headless Mate
+// (CON-224): its REPL, as a client of the Mate's host. A headless Mate has
+// no TUI to attach to, and its host is not a pane the stage may lean on
+// (CON-216). The REPL is the column's own process, so a stage that shows
+// another row, or closes, ends it and leaves the host running. --in-pane:
+// ^C never closes it, as it never closed the Mate's pane the stage
+// attached before.
+func REPLArgv(mate, workspace, project string) []string {
+	return []string{ResolveExec(orDefault(mate, "mate")), "mate", "repl", project, "--workspace", workspace, "--in-pane"}
+}
+
 func orDefault(s, def string) string {
 	if s == "" {
 		return def

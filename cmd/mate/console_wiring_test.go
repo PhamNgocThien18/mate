@@ -272,6 +272,7 @@ func newRecordingColumns(t *testing.T) *recordingColumns {
 			rolePlan:   {col: host.Column{Role: rolePlan}, socket: filepath.Join(dir, "plan.sock")},
 		},
 		herdr:    "/opt/herdr",
+		mate:     "/opt/mate",
 		findTool: func(name string) string { return "/opt/" + name },
 	}
 	for role, socket := range map[string]string{roleStage: r.stage, roleReview: r.tabs[roleReview].socket, rolePlan: r.tabs[rolePlan].socket, roleTasks: r.tabs[roleTasks].socket} {
@@ -352,6 +353,48 @@ func TestConsoleStageRefusesAnAgentWhoseHerdrIsGone(t *testing.T) {
 	}
 	if len(rec.of(roleStage))+len(rec.of(roleReview)) != 0 {
 		t.Fatal("a dead Herdr still reached a column")
+	}
+}
+
+// TestConsoleStageRunsAHeadlessMatesREPL (CON-224): a headless Mate has no
+// TUI to attach, and its host is not a pane the stage may lean on
+// (CON-216). The stage runs the Mate's REPL as a client of the host
+// instead, without asking Herdr: a Herdr session that is down does not
+// refuse it. A headless Mate that is stopped is refused as before.
+func TestConsoleStageRunsAHeadlessMatesREPL(t *testing.T) {
+	w, deps := consoleFixture(t, "shop")
+	if err := w.WriteMateMeta("shop", map[string]string{
+		spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless, spawn.MetaAgent: "mate-shop",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake := deps.Runtime.(*runtime.Fake)
+	fake.SessionNotRunning = true
+	rec := newRecordingColumns(t)
+	rec.env = []string{"PATH=/console/bin"}
+	fn := consoleStage(w, deps, rec.consoleColumns)
+	target := console.StageTarget{Kind: console.StageMate, ID: "mate:shop", ProjectID: "shop"}
+	if err := fn(context.Background(), target); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	stage := rec.of(roleStage)
+	want := []string{"/opt/mate", "mate", "repl", "shop", "--workspace", w.Root(), "--in-pane"}
+	if len(stage) != 1 || !slices.Equal(stage[0].Argv, want) || !slices.Equal(stage[0].Env, rec.env) {
+		t.Fatalf("stage shown %+v, want %q with the console's PATH", stage, want)
+	}
+	if slices.Contains(fake.Calls, "LookupSession") {
+		t.Fatalf("the stage asked Herdr %q for a headless Mate", fake.Calls)
+	}
+
+	// Stopped: the mode stays in mate.meta, the agent does not.
+	if err := w.WriteMateMeta("shop", map[string]string{spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fn(context.Background(), target); err == nil || !strings.Contains(err.Error(), "stopped") {
+		t.Fatalf("error = %v, want the stopped state", err)
+	}
+	if len(rec.of(roleStage)) != 1 {
+		t.Fatal("a stopped headless Mate reached the stage")
 	}
 }
 

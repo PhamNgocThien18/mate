@@ -145,6 +145,12 @@ type Host struct {
 	idle     chan struct{}
 	// seq numbers the events (Event.Seq).
 	seq int64
+	// The console's last open requests (news.focus, work.focus), with
+	// when the host read them: a REPL that subscribes soon after is given
+	// them too (focusFresh).
+	focusNews   int
+	focusNewsAt time.Time
+	focusWorkAt time.Time
 
 	// Sessions (session.go): the open ones by news, and what they run with.
 	sessions  map[int]*session
@@ -785,6 +791,7 @@ func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 		if at, ok := readFocusAt(workFocusPath); ok && h.newsPath != "" && at.After(askedWork) {
 			askedWork = at
 			h.mu.Lock()
+			h.focusWorkAt = h.now()
 			ev := h.eventLocked(nil)
 			h.mu.Unlock()
 			ev.FocusWork = true
@@ -793,6 +800,7 @@ func (h *Host) WatchNews(ctx context.Context, every time.Duration) {
 		if f, ok := readNewsFocus(focusPath); ok && h.newsPath != "" && f.At.After(asked.At) {
 			asked = f
 			h.mu.Lock()
+			h.focusNews, h.focusNewsAt = f.ID, h.now()
 			ev := h.eventLocked(nil)
 			h.mu.Unlock()
 			ev.Focus = f.ID
