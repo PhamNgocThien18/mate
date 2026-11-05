@@ -2,8 +2,15 @@
 
 `mate review <project> <crew> --id <reviewer>` starts one independent scout Crew.
 It reviews the committed change at the recorded target SHA, using the task brief
-as the contract and the hand-back as evidence to verify. The dispatch profile and
-budget still come from the normal review settings.
+as the contract and the hand-back as evidence to verify. Without `--model` or
+`--effort`, the reviewer takes the `review` profile of `.mate/crew-dispatch.json`,
+or `review_small` when the change has at most `review_small_max_lines` (50)
+changed lines and no code file. `--budget` defaults to `review_budget`.
+
+Whether a project's tasks get a reviewer at all is `review: on|off` in its
+`project.yaml`, set with `mate project review <project> on|off`. `on`: the Mate
+lands only after a passing review. `off`: it lands after checking the hand-back
+against the brief. Unset: the Mate asks the captain and records the answer.
 
 The reviewer identifies the assumptions that matter to the change, traces their
 owner and directly affected callers, and tries the smallest check that could
@@ -35,10 +42,11 @@ repeated only when the delta invalidates their earlier evidence. If only the
 environment/evidence changed at the same commit, request a fresh review without
 `--since`, which requires a new commit.
 
-`mate review <project> <crew> --check <reviewer>` and `mate merge --review` retain
-the existing revision, brief, hand-back and prior-report freshness checks. New
-review records carry `review_contract=2`. Their passing reports must contain
-exactly one Verdict, Findings and Verification gaps section. A scoped pass also
+`mate review <project> <crew> --check <reviewer>`, `mate merge --review` and
+`mate land --review` run the revision, brief, hand-back and prior-report
+freshness checks. New review records carry `review_contract=2`. Their passing
+reports must contain exactly one Verdict, Findings and Verification gaps
+section. A scoped pass also
 needs exactly one closed mark for every prior finding, with no unknown numbers.
 Contradictory, missing or duplicate sections cannot authorize a merge. This is a
 structural check; the reviewer remains responsible for the truth of its evidence.

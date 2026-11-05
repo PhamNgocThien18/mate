@@ -1,7 +1,6 @@
 # Dashboard
 
-This is the contract of `mate dashboard` and of `internal/dashboard` (docs/mvp.md M6, tasks 28 and 29).
-Task 28 owns the server and this document; task 29 builds the three-tier UI against it.
+This is the contract of `mate dashboard` and of `internal/dashboard` (docs/mvp.md M6).
 
 The dashboard reads, and the one served by `mate console` can also act.
 It opens `.mate/mate.db` with `db.OpenRead`, which takes no lock, so it runs beside an open console rather than instead of it.
@@ -16,6 +15,11 @@ A workspace's timeline quotes every line the captain typed and names every path 
 `--open` runs the platform opener (`open`, `xdg-open`, `rundll32`) on the URL; a machine with none of them says so and keeps serving.
 The server prints its URL and runs until Ctrl+C.
 
+`mate console` serves the same dashboard for as long as it is open, on `127.0.0.1:7777` unless `.mate/console.yaml` says otherwise.
+Its `dashboard.addr` is the bind address and `dashboard.allow_remote: true` is what `--allow-remote` is for `mate dashboard`; with a non-loopback `addr` and no `allow_remote` the console says `dashboard not started` and serves nothing.
+When the bind is reachable from the LAN the status line shows the LAN URL beside the loopback one (docs/console-commands.md, "Dashboard on the LAN").
+The setting is read at console start.
+
 ## 1. Conventions
 
 Every response carries two fields before anything else.
@@ -28,8 +32,9 @@ Every response carries two fields before anything else.
 It is the number to hand back to `/api/events?since=`, so a page always polls from the exact id the data it is showing was computed at.
 
 `generated_at` is when the snapshot behind the bytes was computed, not when they were served.
-Workspace, project, model-call and diff responses are cached per `last_event_id`: while the id stands still they return the bytes already built, and when it moves every cached answer is dropped at once.
-Crew task and Mate conversation responses are rebuilt on each request: running execution clocks and recording-heartbeat age can change without a new event. Usage is never extrapolated between harness records. The events endpoint is also uncached, and so is `/api/plugins` (section 3b), which reads files rather than the timeline.
+Workspace, project, history, turn, diff and `/api/now` responses are cached per `last_event_id`: while the id stands still they return the bytes already built, and when it moves every cached answer is dropped at once.
+Crew task and Mate conversation responses are rebuilt on each request: running execution clocks and recording-heartbeat age can change without a new event. Usage is never extrapolated between harness records.
+The events endpoint is uncached, and so are plugins, board, news, work, actions, chat and forks: each reads files, the console or a window that moves at midnight, none of which is an event.
 
 A timestamp is the database's own string: RFC3339 with nanoseconds, in UTC (`db.TimeFormat`).
 It is passed through and never reformatted, so a value on the page and a row in the database compare byte for byte.
@@ -51,8 +56,8 @@ A `ref` is a transcript locator - the file a fact was read out of and the byte o
 {"path": "/Users/x/.codex/sessions/2026/09/19/rollout-01a0b944.jsonl", "offset": 18422}
 ```
 
-Errors are JSON with the same envelope.
-An unknown project or crew is `404` and the reason names what was missing and what there is instead.
+Errors are JSON with the same envelope, an `error` sentence and, when there is more to say, a `reason`.
+An unknown project or crew is `404` and the error names what was missing and what there is instead.
 
 ```json
 {"generated_at": "…", "last_event_id": 412, "error": "no project \"nosuch\" in this workspace; it has shop, site"}
@@ -66,10 +71,11 @@ The only page that reads this API is the one this server serves.
 Tier 1: one card per registered project.
 
 `mate.harness` and `mate.running` come from the `actor` row (`harness`, `first_seen`, `gone_at`), which `v_now` has no column for; running means started and not stopped, where stopped is the current `mate.meta`'s `stopped_at`: a relaunch writes a meta without one and clears the `gone_at` of the life before it.
-`mate.state`, `mate.since`, `mate.tokens_today` and `mate.context_pct` are `v_now`.
+`mate.state`, `mate.since` and `mate.tokens_today` are `v_now`.
+`mate.context_tokens` is the actor's latest turn's `context_tokens_after` and `mate.context_pct` that against the model's `pricing.context_window`; for a Mate whose `mate.meta` names a `session_id`, both are the latest of that session, and `null` until it has one.
 `crews_by_state` counts this project's crew actors by their `v_now` scene state, and a crew no projection has placed counts under `"unknown"` rather than being dropped.
 `inbox_waiting` is the length of `box.Inbox` through `query.LoadBox`, the same loader and the same number the console's rail header shows.
-`mode` is `store.Auto`: `"auto"` or `"manual"`.
+`mode` is `Workspace.Auto`: `"auto"`, or `"manual"` while the project's `mate/.manual` exists.
 `repos` names the project's repos in `project.yaml` order (`RepoNames`), and is empty when it has none or its `project.yaml` cannot be read; Agent City draws one tent per repo (section 12, CON-125).
 
 ```json
@@ -87,7 +93,8 @@ Tier 1: one card per registered project.
         "state": "idle",
         "since": "2026-09-19T10:46:40.000000000Z",
         "tokens_today": 57683,
-        "context_pct": 29.2
+        "context_pct": 29.2,
+        "context_tokens": 58400
       },
       "crews_by_state": {"waiting_review": 1},
       "inbox_waiting": 1,
@@ -113,7 +120,7 @@ and the Mate's response. Calls are grouped by `(session_id,
 harness_turn_ref)`, so a prompt spanning several model calls appears once.
 An inbound message with no call still appears with `model_calls: 0` and an
 empty response. The prompt and response come from `sent.log` through the
-`message` table; hook echoes are excluded as duplicate prompts. Selected
+`message` table; a hook echo is used only when no other message carries the prompt. Selected
 events and messages to Crew appear as human-readable activities. `turns` in
 the Mate summary remains the count of model calls used for token accounting.
 The UI shows newest exchanges first and reveals older ones in batches of 20.
@@ -123,17 +130,20 @@ The UI shows newest exchanges first and reveals older ones in batches of 20.
 `age_ms` is `closed_at - spawned_at` for a closed task and `now - spawned_at` for an open one.
 `harness` is the crew's `actor.harness`, the same source the Mate card reads, so a page can name the harness of a recording whose telemetry carries no version.
 `closed` is true when the task has a `close_state` or a `closed_at`.
-`review` is set only for a reviewer crew, one `mate review` started and so left `review.meta` beside its report: the first line of the report's `## Verdict` section (`pass`, `changes-requested`, `incomplete`), or `pending` while there is none. A reviewer is closed `finished` or `failed` like any crew; `review` is what it concluded.
-`failed_reason` is crew meta's `failed_reason=`, written when a spawn never came up; a crew closed with `crew stop --discard` is `failed` with none. A reviewer that delivered its Verdict is closed `reviewed` instead (CON-75).
+`review` is set only for a reviewer crew, one `mate review` started and so left `review.meta` beside its report: the first line of the report's `## Verdict` section (`pass`, `changes-requested`, `incomplete`), or `pending` while there is none. A reviewer that delivered its Verdict is closed `reviewed`, otherwise `finished` or `failed` like any crew; `review` is what it concluded.
+`failed_reason` is crew meta's `failed_reason=`, written when a spawn never came up; a crew closed with `crew stop --discard` is `failed` with none.
 `reviews` names the reviewers `mate review` started for the task (crew meta `reviews=`, or a reviewer's `review.meta` naming the crew); `review_of` is the task a reviewer row reviewed; `tokens_with_reviews` is `tokens.total` plus every reviewer's total, so a task's cost with its reviews is one number (CON-75). The Office's cabinet peek reads it.
 
 `repo` is the repo the crew worked in: crew meta `repo=`, or the project's sole repo, resolved through `project.yaml` as `mate crew spawn` does (`CrewRepo`); absent when that does not resolve, for a crew whose repo has left `project.yaml` or a project whose `project.yaml` cannot be read (CON-125).
 
 `role` is what the task was for: `review` for a reviewer crew (it has `review.meta`), `scout` for a scout (crew meta `kind=scout`, or a brief with `## Deliverable` for a crew spawned before `kind` was recorded), else `ship`.
 
+`model` and `effort` are the launch settings crew meta recorded (`model=`, `effort=`), which is what was asked for; `last_model` is the model the recording observed. Each is absent when unknown.
+
 `agents` is the kinds of agent the crew delegated to, first use first and each once: the `agent` of its `tool.called` events (docs/timeline.md), which is Claude's `subagent_type` - a project's `.claude/agents/<name>.md` such as `backend-reviewer`, or a built-in such as `Explore`, as written. Finding them reads every `tool.called` payload, so the server keeps them in memory, reads only the events past the highest id it has seen, and starts over when that id goes backwards (a `mate reindex`) (CON-126). Absent for a crew that delegated to none, or only to agents of no named kind. Events ingested before the field existed carry no `agent`; `mate reindex` rebuilds them from the transcripts (CON-124).
 
 `inbox` is `box.Inbox` flattened through `query.LoadBox`, oldest first, the same rows in the same order the console's rail draws.
+`assign_key` is set on an entry the Mate can be handed: it is what section 7b's `assign` names the entry by.
 A failed box read leaves `inbox` empty and puts the reason in `inbox_error` rather than failing the page.
 
 ```json
@@ -151,6 +161,7 @@ A failed box read leaves `inbox` empty and puts the reason in `inbox_error` rath
     "detail": "",
     "tokens_today": 57683,
     "context_pct": 29.2,
+    "context_tokens": 58400,
     "turns": 6,
     "tokens": {"input": 212, "cache_read": 55112, "cache_write": 1840, "output": 519, "thinking": 84, "total": 57683},
     "cost": null,
@@ -264,7 +275,7 @@ Each day carries:
 - `spawned`: tasks spawned that day by `role` (`ship`, `scout`, `review`, as in section 3).
 - `closed`: ships and scouts closed that day by final state: `finished`, `discarded` (a `failed` task with no `failed_reason`), `didnt_start` (one with), or any other `close_state` as it is. There is no `merged`: the timeline sees only the merges mate made itself, and a PR merged on GitHub is not one of them, so a merged count would read as work not landing.
 - `reviews`: reviewers closed that day by verdict: `pass`, `changes-requested`, `incomplete`, or `no_verdict` for one closed without a Verdict. The Office calls `changes-requested` rework.
-- `incidents`: incidents opened that day by `kind` (`stale`, `runtime_lost`, `wedged`, `budget`). `budget` is a crew or the project crossing its token budget. A harness running out of quota is not recorded on the timeline yet (CON-85), so the board cannot count it.
+- `incidents`: incidents opened that day by `kind` (`stale`, `runtime_lost`, `wedged`, `budget`, `no_turn`, `context_high`). `budget` is a crew or the project crossing its token budget, or a crew reaching half of it without a hand-back. A harness running out of quota is not recorded on the timeline yet (CON-85), so the board cannot count it.
 
 `total` is every project summed. A project whose tasks could not be read carries `error`, and its tokens and incidents are still counted.
 
@@ -279,9 +290,17 @@ Each day carries:
 }
 ```
 
+`GET /api/board/day?date=<YYYY-MM-DD>` opens one of those days (CON-88), in the same zone, for every project; the page filters by project.
+`date` is required, and one that is not a day is a 400. It is not cached either.
+
+- `actors`: each Mate and crew that took turns that day, with `project`, `kind` (`mate` or `crew`), `name` (empty for a Mate), `turns` and `tokens`, biggest first.
+- `tasks`: every task opened, closed or taking turns that day: a section 3 task object plus `project`, `opened`, `closed_today`, `day_turns` and `day_tokens`; its own `tokens` stay the task's whole life. Most tokens that day first.
+- `incidents`: incidents opened that day, oldest first: `project`, `kind`, `actor_kind`, `name` (empty for the Mate), `opened_at`, and `resolved_at` once resolved.
+- `errors`: by project, why its tasks could not be read; absent when every project was read.
+
 ## 3d. `GET /api/news?project=<p>`
 
-Every news a headless Mate opened for the captain (`mate news open`, `mate/news.jsonl`, CON-78), closed ones included, for Mate Office's captain drawer (section 11, CON-97).
+Every news a headless Mate opened for the captain (`mate news open`, `mate/news.jsonl`, CON-78), closed ones included, for Mate Office's captain drawer (section 11, CON-97) and the City's Topics (section 12).
 Without `project` it answers for every project in workspace order; an unknown `project` is a 404 that names it.
 It folds the log through `matehost.LoadNews` on every request and is not cached: the REPL marking a news seen or the captain answering it writes the log, not an event.
 It writes nothing: reading a news here does not mark it seen.
@@ -304,7 +323,9 @@ It writes nothing: reading a news here does not mark it seen.
 `news` is newest move first (`at`: opened, updated, answered, closed; being seen is not a move).
 `status` is the log's: `new` (the captain has not opened it), `waiting` (opened, not answered), `working` (answered, the Mate is on it), `done`, `dropped`.
 `seen_at` is when a `new` news was last opened and `answered_at` when the last answer was given; both are absent when that never happened, or happened before the log recorded it.
+`archived` is true once the news was taken out of the list; a new question on an open news clears it. The City hides an archived news unless it waits on the captain.
 `logged` is false when the Mate has no news log, which is not the same answer as a log with nothing in it; a log that cannot be read is `logged: true` with `error` and no news.
+Answering a news from a page is `POST /api/actions` `answer` (section 7b).
 
 ## 3e. `GET /api/work?project=<p>`
 
@@ -338,7 +359,7 @@ status lines, questions and the branch remain available as supporting evidence.
 
 `ledger` is the same task object as tier 2's row.
 
-`?view=summary` answers with `ledger`, `status_lines` and `questions` only - no `turns`, `branch` or `performance`, which are most of the full answer's time and bytes (CON-126).
+`?view=summary` answers with `ledger`, `status_lines` and `questions` only - no `turns`, `branch`, `performance` or `journey`, which are most of the full answer's time and bytes (CON-126).
 
 `turns` is one object per model call, oldest first.
 `trigger_kind` is the `kind` of the event named by `turn.trigger_event_id`, joined on because a page showing a bare id would be showing the reader a number they cannot read.
@@ -348,7 +369,7 @@ status lines, questions and the branch remain available as supporting evidence.
 
 `status_lines` is the crew's `status.appended` events, with `verb`, `text` and `line` read out of the payload docs/timeline.md section 4 documents.
 
-`questions` is the `question` table for this crew.
+`questions` is the `question` table for this crew, decisions only (`kind` `decision`, a `needs-decision` line); a hand-back wait the Mate or the captain answered is a `handback` row, which feeds the decision-wait findings but is not listed here.
 The answer's text is not on that table - it records which event answered, not what the answer said - so it is read from the answering event: `message.text` when a `message` row exists for it, otherwise that event's own payload, whose `text` is the answer verbatim.
 `answered_by` is the answering actor's name.
 `waited_ms` is `null` while a question is still waiting, which is not the same as having waited zero.
@@ -415,8 +436,8 @@ A branch that is gone is not an error: the crew was torn down and its work lande
 
 | Field | Meaning |
 | --- | --- |
-| `brief` | `crews/<crew>/brief.md`: `captain_words` (the `## Captain's words` section) and `task` (the `# Task` body up to the next level-one heading); the role and rules boilerplate is not returned. `null` when there is no brief. |
-| `handback` | `crews/<crew>/handback.md` verbatim in `markdown` (`kind` `handback`), or for a scout without one its `report.md` (`kind` `report`), which is what a scout hands back. Plus `closes` (the tracker lines at the top), `criteria[]{name, result, pass, command, output}` from the table whose header starts with `criterion`, `deviations[]`, `still_open[]`, and `learning` (the text after `Learning:`). `null` when the crew has not handed back. |
+| `brief` | `crews/<crew>/brief.md`, with its `path` and `bytes`: `captain_words` (the `## Captain's words` section) and `task` (the `# Task` body up to the next level-one heading); the role and rules boilerplate is not returned. `null` when there is no brief. |
+| `handback` | `crews/<crew>/handback.md` verbatim in `markdown`, with its `path` and `bytes` (`kind` `handback`), or for a scout without one its `report.md` (`kind` `report`), which is what a scout hands back. Plus `closes` (the tracker lines at the top), `criteria[]{name, result, pass, command, output}` from the table whose header starts with `criterion`, `deviations[]`, `still_open[]`, and `learning` (the text after `Learning:`). `null` when the crew has not handed back. |
 | `meta` | The crew's `.meta`, the keys the page reads: `pr_url`, `pr_state`, `pr_sync`, `merge_commit`, `lane`, `size`, `teardown`, `cleanup`, `launched_at`, `started_at`, `stopped_at`, `state`, `worktree`, `repo`. |
 | `reviews[]` | `{crew, verdict}` for each reviewer `mate review` started for this task; the verdict is the reviewer's report's, `pending` while it has none. |
 | `mate_turns[]` | The Mate's exchanges (section 3's shape) that touched this crew: one whose activities name it (spawned, answered, merged, closed) or whose prompt opens with the crew's name (its digests). Each is the whole exchange: what else the Mate did in it is not separated out, and `activities` says what it did. They are computed once per `last_event_id` and shared across task pages. |
@@ -501,9 +522,9 @@ an empty overview until activity arrives. The overview adds no model calls.
 
 ## 4b. `GET /api/projects/{project}/history?since=<RFC3339>`
 
-Every crew's `status_lines` and decision `questions`, as section 4 carries them, from `since` on, by crew name: `{ "project", "since", "crews": { "<crew>": { "status_lines": [...], "questions": [...] } } }`. A crew with neither since then is absent. Two queries for the whole project, where section 4 takes two a crew, so Agent City's tent reads a week of a busy project in one request (section 12, CON-127).
+Every crew's `status_lines` and decision `questions`, as section 4 carries them, from `since` on, by crew name: `{ "project", "since", "crews": { "<crew>": { "status_lines": [...], "questions": [...] } } }`. A crew with neither since then is absent. Two queries for the whole project, where section 4 takes two a crew, so Agent City's tent reads a week of a busy project in one request (section 12, CON-127), and Mate Office's inbox reads its last 24 hours (section 11).
 
-`since` is required; a missing or unparsable one is a 400. The answer is cached per `last_event_id` like section 2's, keyed by the query, so a reader that keeps `since` fixed for the day is answered from the cache.
+`since` is required; a missing or unparsable one is a 400. The answer's `since` is the database's own string for it. The answer is cached per `last_event_id` like section 2's, keyed by the query, so a reader that keeps `since` fixed for the day is answered from the cache.
 
 ## 5. `GET /api/projects/{project}/tasks/{crew}/turns/{turn}`
 
@@ -599,7 +620,7 @@ Otherwise it waits up to `wait` seconds, polling the database once a second, and
 
 `timeline_stale`, present only when there is something to say, lists the projects whose ingest has failed every pass since `since` (wall clock), with the latest `error` on one line (CON-139). Everything served for such a project is behind its files from then on. Only the console's dashboard knows: it is the timeline's writer. `mate dashboard` on its own never sends the field.
 
-This endpoint is not cached: it answers "what happened after the id you hold", which depends on the caller's cursor. Crew task snapshots are also uncached because heartbeat age and running durations advance without events; the remaining endpoints use the event generation cache.
+This endpoint is not cached: it answers "what happened after the id you hold", which depends on the caller's cursor. Section 1 names the endpoints that are.
 
 ```json
 {
@@ -619,7 +640,8 @@ This endpoint is not cached: it answers "what happened after the id you hold", w
       "target": "mate",
       "detail": "",
       "tokens_today": 57774,
-      "context_pct": null
+      "context_pct": null,
+      "context_tokens": 41220
     }
   ]
 }
@@ -648,7 +670,7 @@ The press is checked again against a fresh snapshot, then run by the console's `
 | Status | When |
 | --- | --- |
 | `200` | it ran; `line` says what happened |
-| `400` | an action not offered for that row (`repair`, an `assign` whose `key` is no open question, …) or a body that is not one |
+| `400` | an action not offered for that row (`repair`, an `assign` whose `key` is no open question, an `okay` with no `work`, …) or a body that is not one |
 | `403` | no console behind this dashboard, or an `Origin` that is not this server's |
 | `404` | an unknown project, or a crew that is not open |
 | `409` | the action cannot run now (its `reason`), or another action is still running on the same Mate or crew |
@@ -661,23 +683,23 @@ An action runs to its end even when the page that pressed it goes away.
 
 #### The City's actions (CON-142)
 
-Agent City (section 12) presses more than the console's sheet, still through the same `POST /api/actions` and the same checks.
+Agent City (section 12) and Mate Office (section 11) press more than the console's sheet, still through the same `POST /api/actions` and the same checks.
 `GET /api/projects/{project}/actions` carries them beside the sheet, and `GET /api/actions` answers every project at once from one read of the console's snapshot, `{"read_only"?, "projects": {"<p>": <the per-project answer>}}`, which is what the City polls:
 
 | Field | Buttons |
 | --- | --- |
-| `mate_more` | `say` (the Mate's chat; it stands for `answer`, `fork`, `fork_close` and `interrupt` too, refused while the Mate is not running or is not headless) and `remove_project`, with the console's own question |
+| `mate_more` | `say` (the Mate's chat; it stands for `answer`, `fork`, `fork_close` and `interrupt` too, refused while the Mate is not running or is not headless), `remove_project`, with the console's own question, and `okay` (section 3e) |
 | `crew_more` | `peek` and `explain_notice` (a live binding; Jev configured), then one `assign` per open question of the crew, with its `key` (`query.BoxEntry.AssignKey`), refused once the Mate has it or while it waits in the outbox |
 | `harnesses` | the harnesses a new Mate can run on, the workspace's default first: `onboard` takes one as `harness` |
 | `daemon` | the auto daemon's `sends`, `last_sent_at`, and the `notice` of why the digest queued has not gone, when there is any |
 
-A press may carry `text` (`say`, `answer`, `fork`), `news` (`answer`, `fork`, `fork_close`, and `interrupt` of a session rather than the Mate's turn), `harness` (`onboard`), `repo` (`add_project`) and `key` (`assign`).
+A press may carry `text` (`say`, `answer`, `fork`), `news` (`answer`, `fork`, `fork_close`, and `interrupt` of a session rather than the Mate's turn), `work` (`okay`), `harness` (`onboard`), `repo` (`add_project`) and `key` (`assign`).
 `assign` hands the question's resolve line to the Mate, the console's `[assign]`; the line is the server's from its snapshot, never the page's.
 `add_project` names a project that is not there yet in `project` and is refused (`409`) for a name `[a-z][a-z0-9-]{0,31}` does not take or one already in the workspace; with an empty `repo` the project starts with none.
 The chat's actions go to the headless Mate's own host over its socket (`matehost`'s `submit`, `interrupt`, `answer`, `session-ask`, `session-close`): a message sent from a page is the same captain turn as one typed in the Mate's pane, queued behind the turn in flight, and an answer lands in its news.
-Talking and peeking take no lock on the Mate or crew, so they neither wait for nor hold up a stop or a merge; the body may be 64 KiB.
+Talking, peeking and `okay` take no lock on the Mate or crew, so they neither wait for nor hold up a stop or a merge; the body may be 64 KiB.
 
-`GET /api/projects/{project}/chat` is the headless Mate's conversation as its REPL keeps it (`mate/history.jsonl`, the last 80 items): `{"headless", "items": [{"at", "source", "label", "text", "reply", "silent", "interrupted", "error", "done", "tools": [names], "ms", "tokens", "news"}], "state": {"busy", "queued", "turn_source", …} | null, "state_error"?}`. `state` is the host's own answer; `null` with `state_error` when it did not give one, and `null` without one for a Mate that is not headless.
+`GET /api/projects/{project}/chat` is the headless Mate's conversation with the captain as its REPL shows it (`mate/history.jsonl`, the last 80 items, CON-151): `{"headless", "items": [{"at", "source", "label", "text", "reply", "silent", "interrupted", "error", "done", "tools": [names], "ms", "tokens", "news"}], "state": {"busy", "queued", "turn_source", …} | null, "state_error"?}`. `state` is the host's own answer; `null` with `state_error` when it did not give one, and `null` without one for a Mate that is not headless.
 `GET /api/projects/{project}/forks/{news}` is what was said in a news's private session (`mate/topics/<news>.jsonl`), with `open` (`null` when the host did not answer) and the question it is answering now as `running`.
 
 ### `GET /api/now?project=<p>`
@@ -700,11 +722,12 @@ An actor with no scene row yet is simply absent, and a page reads its tokens tod
 ## 8. `GET /` - the UI
 
 `/` serves an embedded `embed.FS` rooted at `internal/dashboard/ui/`: plain HTML and JS, no build step and no CDN, so the dashboard is a single binary that works with no network at all.
-Task 28 ships a placeholder that lists these endpoints and fetches `/api/workspace` to prove the wiring; task 29 owns everything else under that directory.
+Each file carries a content `ETag` with `Cache-Control: no-cache`, so a browser picks up a changed asset after a binary upgrade without a forced reload.
+The admin UI is at `/` (section 10), Mate Office at `/office/` (section 11) and Agent City at `/city/` (section 12).
 
 ## 9. What is read directly rather than through a view
 
-The views are the contract, and these are the five places they do not reach.
+The views are the contract, and these are the places they do not reach.
 Each is named here because a later change to a view should absorb them rather than leave two ways to ask the same question.
 
 1. `actor.harness`, `actor.first_seen` and `actor.gone_at`, for a Mate card's harness and whether it is running. `v_now` carries neither.
@@ -712,12 +735,15 @@ Each is named here because a later change to a view should absorb them rather th
 3. The Mate's own turn count, token buckets and cost, from `turn`. `v_task_ledger` joins `task`, and a Mate has no task row.
 4. `turn`, `action`, `question` and `message` themselves, for the turn timeline: the views summarise a task, they do not enumerate what happened inside it.
 5. `transition`, for which actors moved since an event id, because `v_now` is a snapshot with no history in it.
+6. Each actor's latest `turn` joined to `pricing`, for every scene row's `context_tokens` and `context_pct`, and for a Mate the latest turn of the session its `mate.meta` names.
+7. The `agent` of `tool.called` event payloads, for a task's `agents`.
+8. `turn` joined to `actor`, and the `incident` table, for the daily board's tokens and incidents (section 3c).
 
-`v_now`'s `context_pct` is read from the view directly rather than through `scene.Now`, which selects only the eight columns `mate events --scene` prints.
+Scene rows are read from `v_now` directly rather than through `scene.Now`, which selects only the eight columns `mate events --scene` prints.
 
 ## 10. The UI
 
-Task 29's page, under `internal/dashboard/ui/`: `index.html`, `app.css`, `app.js`, `task.js` (the task tier, docs/design/task-page.md), `trace.js` (its Trace tab) and `humanize.js`.
+The admin page, under `internal/dashboard/ui/`: `index.html`, `app.css`, `app.js`, `task.js` (the task tier, docs/design/task-page.md), `trace.js` (its Trace tab) and `humanize.js`. `chat.js` beside them is the chat's markdown and meta line, shared by Mate Office and Agent City.
 Plain HTML, CSS and JavaScript loaded as classic scripts - no build step, no framework, no CDN and no off-origin request of any kind.
 `internal/dashboard/ui_assets_test.go` walks every embedded file and fails the build on a `<script src=`, `<link href=`, `<img src=`, `fetch(`, `url(`, `@import` or `new WebSocket/EventSource/Worker` pointing anywhere but this origin, and on any bare `http://` or `https://` outside a comment.
 
@@ -730,21 +756,21 @@ The three tiers are one document, routed on the hash, so a link to a task surviv
 | `#/` | workspace: one card per project - mode, the Mate's harness, running/stopped, scene state, since, tokens today, context %, crews counted by state, `N waiting` |
 | `#/p/<project>` | project: the Mate panel, the task table (filter chips, default `open`), the inbox beside it |
 | `#/p/<project>/mate` | Mate: prompt-level questions, replies, decisions and outcomes; filter by captain, crew or system |
-| `#/p/<project>/t/<crew>` | task: one header (state, crew tokens, Mate tokens around the task, model calls, spawn→close, time waiting on the machine, context peak, questions · hand-backs) over two tabs. **Journey** (default): a swimlane of Captain, Mate, Crew, Machine and GitHub from spawn to close, the hand-offs between them as numbered steps with their price, and three cards reading the task at a glance. **Trace**: the per-step diagnostics - a strip of the stages in prompt order (one block per stage, as wide as its tokens, coloured by kind, skill pins and failed commands marked; a block opens its segments and evidence below the strip), findings with the most expensive step and the repeats among them, one effort-by-kind table that filters the strip; the tool mix, recording details, ledger totals, status lines, questions and raw model calls are folded, the branch diff stays a section |
+| `#/p/<project>/t/<crew>` | task: one header (state, crew tokens, Mate tokens around the task, model calls, spawn→close, time waiting on the machine, context peak, questions · hand-backs) over two tabs. **Journey** (default): a swimlane of Captain, Mate, Observer, Crew, Machine and GitHub from spawn to close, the hand-offs between them as numbered steps with their price, the project's workflow checked (`Repo workflow`), and three cards reading the task at a glance. **Trace**: the per-step diagnostics - a strip of the stages in prompt order (one block per stage, as wide as its tokens, coloured by kind, skill pins and failed commands marked; a block opens its segments and evidence below the strip), findings with the most expensive step and the repeats among them, one effort-by-kind table that filters the strip; the tool mix, recording details, ledger totals, status lines, questions and raw model calls are folded, the branch diff stays a section |
 
 `#/p/<project>/t/<crew>/usage` is the task tier opened on its Trace tab, then scrolled once to the shared header (`.task-kpis`) when it has rendered; the crumbs and links keep producing the plain task hash, and a URL without the suffix opens Journey and does not scroll.
 The chosen tab is kept across polls and reset when the route moves to another crew.
 
 The Journey tab is built from what section 4 already returns: the first prompt is the spawn, a later prompt is a message from Mate or, when it is a `<task-notification>`, a background command reporting back; a question is a hand-off to the captain and its answer one back; a status line whose own verb (the word before the colon in `line`) is `pr-open` or `pr-merged` is a hand-off to or from GitHub, `wait-mate`/`handback` one to Mate, `needs-decision`/`blocked` one to the captain; the crew lane draws the prompt overviews' stages by kind; the machine lane draws native, non-poll executions of 5 s or more; a gap of 5 s or more between prompts is idle.
-What section 4 does not return yet (the brief, the hand-back, Mate's own turns, observer incidents, the PR's merge state from `.meta`) is said to be missing on the page rather than drawn as zero; docs/design/task-page.md lists the `journey` field that will carry it.
+The brief, the hand-back, the Mate's turns about the crew, the observer's incidents, the PR from `.meta` and the workflow come from section 4's `journey` field; what it names in `missing` is said to be missing on the page rather than drawn as zero.
 Mate Office links to it.
 
 A project or crew name is `encodeURIComponent`-ed into the hash, and a turn id into the path of `/turns/{turn}` (section 5).
 
 ### Live update
 
-One loop, one request at a time: `GET /api/events?since=<the last_event_id the page's data was built at>&wait=20`, plus `&project=<p>` on tiers 2 and 3.
-On any `events` or `now` the page re-fetches only the endpoint the current tier reads and re-renders, keeping scroll position, the expanded turns and keyboard focus.
+One loop, one request at a time: `GET /api/events?since=<the last_event_id the page's data was built at>&wait=<n>`, plus `&project=<p>` below the workspace tier. `wait` is 5 on the Mate and task tiers and 20 otherwise.
+On any `events` or `now` the page re-fetches only the endpoint the current tier reads and re-renders, keeping scroll position, the expanded turns and keyboard focus. The Mate and task tiers re-fetch after a quiet poll too, because execution clocks and observer health move before a new event.
 Because the API is cached per `last_event_id` and the page always polls from the id its own bytes carry, a re-fetch after an event that changed nothing it shows costs the server a cache hit.
 
 The header links to Mate Office (section 11), opened on the crew drawer for a task page, the Mate drawer for a Mate page, and the whole floor otherwise, and beside it to Agent City (section 12).
@@ -758,7 +784,7 @@ A page holding a cursor from before a rebuild would poll a dead id for ever whil
 
 `humanize.js` re-implements `internal/query`'s `HumanizeTokens` and `HumanizeCost` - `523`, `96.3k`, `1.2M`, `$0.12`, `$1.2k` - including Go's round-half-to-even, which JavaScript's own `toFixed` does not do (`$0.125` is `$0.12` in Go and `$0.13` in `toFixed`).
 `TestUIHumanizeMatchesGo` builds a table of ~900 cases from the Go functions, sweeping every boundary plus a deterministic spread, and replays it through the page's own file in node when the machine has one.
-Durations (`840ms`, `6.2s`, `1m7s`, `2h04m`, `3d 4h`) are the page's own: the console's `shortDuration` answers a different question and rounds a minute and seven seconds down to `1m`.
+Durations (`840ms`, `6.2s`, `1m7s`, `2h04m`, `3d 4h`) are the page's own: the console's `age` answers a different question and rounds a minute and seven seconds down to `1m`.
 
 A `null` cost or context percentage renders `?`, never `0` - the same answer `mate usage` prints.
 A timestamp is shown as a local clock time with the database's own RFC3339 string on hover, so a value on the page and a row in the database stay comparable.
@@ -766,7 +792,7 @@ Every turn, action, status line and event carries its `ref` as a `path:offset` t
 
 ### Vocabulary and colour
 
-The state words are `internal/timeline/scene`'s own (`at_desk_working`, `waiting_review`, `walking_to_ceo`, …) and the inbox's phrases are the console's (`needs an answer`, `stuck, quiet too long`, `agent gone`, `over budget`, `send wedged`), so the TUI and the browser describe the same workspace in the same words.
+The state words are `internal/timeline/scene`'s own (`at_desk_working`, `waiting_review`, `walking_to_ceo`, …) and the inbox's phrases (`needs an answer`, `stuck, quiet too long`, `agent gone`, `over budget`, `send wedged`) name the same needs the console's box does, so the TUI and the browser describe the same workspace.
 Every state word is a glyph plus the word: colour is never the only difference between a crew working and a crew blocked.
 
 Colour is defined once as tokens on `:root` and redefined under `prefers-color-scheme: dark`; the dark series steps are chosen for the dark surface rather than flipped.
@@ -776,7 +802,7 @@ Below 720px the tables collapse to one card per row and the page does not scroll
 
 ## 11. Mate Office
 
-A second face on the same API, served at `/office/` from `internal/dashboard/ui/office/`: `index.html`, `office.css`, `office.js`, plus `../humanize.js` shared with the admin UI.
+A second face on the same API, served at `/office/` from `internal/dashboard/ui/office/`: `index.html`, `office.css`, `office.js`, plus `../humanize.js` shared with the admin UI and `../chat.js` shared with the City.
 It draws the workspace as an office from the owner's "Mate Office" design: a hallway with the captain's desk and the crews standing in it, and one room per project with the Mate at the big desk, a desk per open crew and a filing cabinet of closed tasks.
 A room's door light is the project's, not only its Mate's: `stopped` when the Mate is not running, `running` while the Mate or any open crew is at work (a Mate in any state but `idle`, `asleep`, `blocked` or `gone`; a crew `arriving`, `at_desk_working`, `walking_to_ceo` or `leaving`), and otherwise `idle 3h`, the age of the latest scene `since` among the Mate and its open crews.
 The nameplate of each room shows how many tokens that project has consumed: the Mate's own turns plus every task, open and closed, which is the total line of `mate usage`.
@@ -786,17 +812,22 @@ Its view switch is `Office | City | Admin`.
 
 | Hash | Opens |
 | --- | --- |
-| `#mate/<project>` | the Mate drawer: current activity, facing, last turn, mode, usage, the crews in the room |
-| `#crew/<project>/<crew>` | the crew drawer: state and why, current activity, step, target, usage with a `Usage details` button, the task, a link to the admin timeline |
-| `#cabinet/<project>` | the filing cabinet: closed tasks by age, each with its final state and a `Usage details` button under it |
-| `#board` | the daily board: tokens, work done and incidents by day (section 3c) |
+| `#mate/<project>` | the Mate drawer, in three tabs. **Talk**: the chat (section 7b's `/chat`), a composer that sends with ⌘↵, and `Interrupt`. **Work**: the Mate's work board (section 3e). **Details**: usage, current activity, facing, last turn, mode, the inbox daemon, the crews in the room and the Apps block |
+| `#crew/<project>/<crew>` | the crew drawer: state and why, current activity, step, target, usage with a `Usage details` button, the task, its branch, agents and skills, a link to the admin timeline |
+| `#cabinet/<project>` | the filing cabinet: closed tasks by age, filterable by final state, each with its final state and a `Usage details` button under it |
+| `#inbox/<project>` | the room's message box: what waits in the inbox (section 3), each with `Assign to Mate` or `Open crew`, or the `Full log · 24h` of every crew's lines (section 4b) |
+| `#add` | the add-project form: a name and an optional repo path (section 7b's `add_project`) |
+| `#board`, `#board/<date>` | the daily board: tokens, work done and incidents by day (section 3c), or one day opened up |
 | `#captain` | the captain drawer: the news every Mate sent the captain, with where each stands (section 3d) |
 
-The Mate drawer and the crew drawer each have an `Actions` block after `Current activity`: section 7b's buttons, in the console sheet's order. A button that cannot run is disabled with its reason under it. A destructive one opens a question with `Cancel`, where the focus lands, and the action's own button; only that one runs it. While an action runs every button waits, and the one running says `Running …`. The answer is the console's one line, or the service's error in its own words, and the page re-reads the floor and the buttons at once. `Diff` shows the crew's branch (section 6) under the buttons and hides it on a second press. A dashboard with no console says it is read-only instead of drawing buttons.
+The Mate drawer and the crew drawer each have an `Actions` block under their head: section 7b's buttons, in the console sheet's order, plus `Remove project…` for the Mate and `Peek` for a crew. A button that cannot run is disabled with its reason under it, and so are the console's buttons no page can run yet (`Repair binding…`, `Open in Zed`, Jev's explain on the Mate). A destructive one opens a question with `Cancel`, where the focus lands, and the action's own button; only that one runs it. While an action runs every button waits, and the one running says `Running …`. The answer is the console's one line, or the service's error in its own words, and the page re-reads the floor and the buttons at once. `Diff` shows the crew's branch (section 6) under the buttons and hides it on a second press, and `Peek` its screen. A dashboard with no console says it is read-only instead of drawing buttons.
+
+Each room has an `inbox` mailbox that opens `#inbox/<project>`, and the floor ends with a `New room` door that opens `#add`.
+The Mate drawer's head has `Full screen`, which widens it to the page. The top bar has `Mates only`, which draws each room as its Mate alone (the console's `v`), and a light/dark theme switch. All three are remembered in the browser.
 
 `Usage details` is a link to `../#/p/<project>/t/<crew>/usage` (names `encodeURIComponent`-ed) that opens the admin page in a new tab (`target="_blank"`, `rel="noopener"`); the Mate has none.
 
-The Mate drawer ends with an Apps block from `/api/plugins?project=<p>` (section 3b), read only while that drawer is open: one line per app with its name, its status chip and, only for a `configured` app with an `http(s)` `open.url`, an `Open` link to that URL in a new tab (`target="_blank"`, `rel="noopener"`).
+The Details tab ends with an Apps block from `/api/plugins?project=<p>` (section 3b), read only while that drawer is open: one line per app with its name, its status chip and, only for a `configured` app with an `http(s)` `open.url`, an `Open` link to that URL in a new tab (`target="_blank"`, `rel="noopener"`).
 A `configuration error` shows its message as text; when any app has an MCP server one line says "Login and tool status: check /mcp in the Mate's Claude pane", because the page does not know.
 A project with no apps has no block, and a failed read shows `Apps: ?` while the rest of the drawer still draws.
 It is a view, not a place to manage apps: no form, button or request beyond that GET.
@@ -804,15 +835,17 @@ It is a view, not a place to manage apps: no form, button or request beyond that
 The hallway holds a whiteboard, `Daily board`, that opens `#board`: section 3c's numbers in a wide drawer, the whole workspace or one project, over 7, 14 or 30 days (the choice is remembered in the browser).
 `Today so far` sets today against the average of the days before it in the window - tokens, tasks opened, done, dropped (discarded and didn't start), approved reviews, rework (reviews that requested changes), incidents and over budget - with the change coloured by which way is better; today is still running, so a lower number before evening is not news.
 `By day` is one row per day, newest first, with a token bar split into Mate and crews and each count's breakdown as its tooltip.
+A day opens `#board/<date>` (`/api/board/day`): that day against the average of the others, then `Tasks`, `Tokens by who` and `Incidents`, with `‹` and `›` to step a day.
 The board reads `/api/board` only while it is open, and again when an event lands.
 
-The captain's desk in the hallway (on a phone, the captain's card) is a button that opens `#captain`; under the inbox line it says how much news is unread or waiting for an answer.
+The captain's desk in the hallway (on a phone, the captain's card) is a button that opens `#captain`; it says how much news is unread or waiting for an answer. A news that arrives while the page is open shows a toast with `Open news`.
 The drawer lists every Mate's news, newest first: `Waiting on you` (unread and read-not-answered), `The Mate is on it` (answered), and `Earlier` (closed and dropped, the latest ten with `Show all`).
 Each row names its project, crew and `#id` with a status chip; opening it shows the question, context, options, when it was sent, read and answered, the captain's answer and the Mate's updates.
-It is a view: a news is answered in its Mate's REPL, and nothing here marks one seen. A project whose log cannot be read shows `<project>: news ?` with the reason as its tooltip.
+A news waiting on the captain opens with an answer form: pick an option or write one, then `Send to the Mate` (section 7b's `answer`, CON-161). Talking it over privately is the City's. A read-only dashboard says to answer in the Mate's REPL instead.
+Nothing here marks a news seen. A project whose log cannot be read shows `<project>: news ?` with the reason as its tooltip.
 
-Reads: `/api/workspace`, `/api/now`, `/api/projects/{p}` per project, `/api/news` (again on every quiet poll, because news moves without an event), and for an open drawer `/api/projects/{p}/mate` plus `/api/plugins?project=<p>`, `/api/projects/{p}/tasks/{crew}`, or `/api/board?days=<n>`.
-It long-polls `/api/events` from the lowest `last_event_id` it holds (`wait=5` with a drawer open, 20 otherwise) and re-reads the floor when anyone moved.
+Reads: `/api/workspace`, `/api/now`, `/api/projects/{p}` per project, `/api/news` and `/api/work` (again on every quiet poll, because both move without an event), one project's `/actions` to learn whether the page can act, and for an open drawer `/api/projects/{p}/actions` plus `/api/projects/{p}/mate`, `/chat` and `/api/plugins?project=<p>`, or `/api/projects/{p}/tasks/{crew}`, or `/history` for the inbox log, or `/api/board?days=<n>` and `/api/board/day`.
+It long-polls `/api/events` from the lowest `last_event_id` it holds (`wait=5` with a drawer other than the cabinet or the board open, 20 otherwise), re-reads the floor when anyone moved, and re-reads the open drawer after a quiet poll.
 A `timeline_stale` in the answer turns the live pill `stale` with `timeline <p> since <time>: <error>` until an answer without it.
 
 The typefaces are the design's - Geist, Geist Mono and Bricolage Grotesque - as latin WOFF2 subsets under `ui/office/fonts/`.
@@ -839,14 +872,14 @@ It is linked from the admin header (`Agent City`, beside `Mate Office`) and from
 
 | File | Holds |
 | --- | --- |
-| `index.html`, `city.css` | the page: title, view switch, Needs you, Go to, System, live pill, the rail, pins, the panel, the scrub bar |
+| `index.html`, `city.css` | the page: title, view switch, Needs you, Go to, System, live pill, the rail, pins, the panel, the scrub bar; it loads `../chat.js` before the module |
 | `app.js` | reads the API, keeps the city live, the panels and their buttons, pins, hover, click and keys |
 | `city.js` | the city: island, streets, City Hall, one block per project, one tent per repo, the setters `setCrews`, `setMate`, `setMerged`, `setBoard`, `setHall`, `setMailbox` |
 | `room.js` | one tent up close, playing back its history |
 | `history.js` | what a tent's agents did, read from the history endpoint |
 | `chatter.js` | the small talk mascots say now and then, by pose |
 | `agent-mascot.js`, `bubble.js`, `harnesses.js` | the AgentMascot component, as in the promo |
-| `vendor/three.js` | three.js 0.186.1 and the addons the page uses, prebuilt into one ES module; its header carries the MIT licence and the command that built it |
+| `vendor/three.js` | three.js r186 and the addons the page uses, prebuilt into one ES module; its header carries the MIT licence and the command that built it |
 
 The pages are ES modules rather than classic scripts, the one way this UI departs from section 10's letter; there is still no build step at serve time, no framework fetched and no CDN.
 `TestUIMakesNoOffOriginRequest` walks the vendored file too: the only URLs in it are the XHTML and XLink namespaces `createElementNS` and `getAttributeNS` take as identifiers, exempt beside the SVG one.
@@ -873,14 +906,16 @@ Every thing is a place, and one panel holds what it can do: docked on the right 
 
 | Place | Panel |
 | --- | --- |
-| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send with a 5-second undo, Interrupt), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
-| a crew | state, status line, harness, branch, tokens; its buttons, Diff and Peek as toggles, `Explain notice`; links to the admin timeline, usage and the Office drawer |
+| a Mate on its plaza | state, mode, tokens, context; the Mate's buttons (section 7b); tabs Chat (the REPL's conversation, send with a 5-second undo, Interrupt), Work (the work board, section 3e, a done row ticked with a 5-second undo), Inbox (what waits, with `Assign to the Mate`), Apps (`/api/plugins`), Project (`Remove project…`) |
+| a crew | state, status line, harness · model · effort, branch, tokens; its buttons, `Explain notice`; tabs Status, Peek and Diff; links to the admin timeline, usage and the Office drawer |
 | City Hall | Topics (every news, waiting first: options, an own answer with a 5-second undo, `Discuss privately` in a read-only fork of the Mate) and Projects (each one's Mate and crews, `Remove…`, `+ Add project…`) |
 | an empty park lot | the add-project form; the new project takes the next lot |
 | a block | its Mate, tents and crews |
-| a tent | its playback (below) and the crews in it |
+| a tent | its playback (below) and the crews in it, as tabs Playback and Crews here |
+| System (the top bar's chip) | whether the page and each project's timeline are current, whether actions are served, and what each auto daemon sent (section 7b's `daemon`) |
 
-Pins over the scene are buttons, reached by Tab, for only three kinds of thing: a topic waiting on the captain (`?`, on City Hall, with the count), a crew ready to merge (`⇢`), an incident (`!`); a crew's question to its Mate gets a quiet `◆` only in a manual project where nobody handed it over, and a project with no Mate a `+`. One pin per thing, the most urgent; a running action's `⟳` and a result's `✓`/`✕` win for a moment. Far off a pin keeps its glyph and drops its words. The same list is the `Needs you` rail; `n` opens the next, `/` or `g` opens Go to (every place by name; on a phone it is how a crew is reached), `h` City Hall, `Escape` closes or goes back.
+On the web only a topic needs the captain (CON-154): a news its Mate opened that the captain has not answered. An incident, a crew ready to merge or a crew asking its Mate belongs to its tent, where `Crews here` says it.
+Pins over the scene are buttons, reached by Tab: City Hall's `?` with the count of topics waiting, and `+` on a project with no Mate. One pin per thing, the most urgent; a running action's `⟳` and a result's `✓`/`✕` win for a moment. Far off a pin keeps its glyph and drops its words. The `Needs you` rail lists the topics waiting; `n` opens the next, `/` or `g` opens Go to (every place by name; on a phone it is how a crew is reached), `h` City Hall, `Escape` closes or goes back.
 Every button keeps its place and a line under it for the reason it cannot run: the API's, or the page's own (read-only, stale, replaying, another action of the same Mate or crew running). A destructive one asks first in the console's words, `Cancel` focused. A press says `Running …` until the one line comes back: `✓` and the line, `⊘ Refused, nothing changed:` for a 409, `✕ Ran and failed:` for a 422, each in the server's words. A merge carries a crate from the crew to its tent's sign.
 A selected mascot does not make small talk. A standalone dashboard shows the panels without buttons and says it is read-only.
 
@@ -894,8 +929,8 @@ The history is kept per tent while the project's rows are the same, and read ahe
 Acting is for now only: while a tent is scrubbed back every button waits with `replaying; go Live to act`, and the panel offers `Go Live` (`L`).
 `Escape` leaves the tent.
 
-Reads: `/api/workspace`, `/api/projects/{p}` per project, `/api/actions`, `/api/board?days=7`, `/api/news`, `/api/projects/{p}/history` for a tent, and for an open panel `/chat`, `/forks/{news}`, `…/diff` and `/api/plugins`; its one write is `POST /api/actions`.
+Reads: `/api/workspace`, `/api/projects/{p}` per project, `/api/actions`, `/api/board?days=7`, `/api/news`, `/api/work`, `/api/projects/{p}/history` for a tent, and for an open panel `/chat`, `/forks/{news}`, `…/diff` and `/api/plugins`; its one write is `POST /api/actions`.
 The city is drawn as soon as `/api/workspace` answers; each project's crews and signs fill in as its page arrives, and the board and the news are read beside them and never hold the city up (CON-126).
-It long-polls `/api/events?since=<last_event_id>&wait=20`; an answer with events re-reads the workspace and the pages of the projects they name, an id that went backwards (a `mate reindex`) re-reads every project, and every answer re-reads `/api/actions`, `/api/news`, the open chat or fork and, once it is five minutes old, `/api/board`. The pill says `live` or `stale` with the reason, and a failed poll retries every 3 seconds.
+It long-polls `/api/events?since=<last_event_id>&wait=20`; an answer with events re-reads the workspace and the pages of the projects they name, an id that went backwards (a `mate reindex`) re-reads every project, and every answer re-reads `/api/actions`, `/api/news`, `/api/work`, the open chat or fork and, once it is five minutes old, `/api/board`. The pill says `live` or `stale` with the reason, and a failed poll retries every 3 seconds.
 The page marks `city:drawn` and `city:tent <project>/<repo>` on the browser's performance timeline at the first frame of each.
 The scene is one light palette whatever the system theme.

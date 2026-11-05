@@ -2,8 +2,7 @@
 
 Mate does not choose an editor. Add bindings to `<workspace>/.mate/console.yaml`
 and reopen the console. Without this file, no editor key or editor tab is added.
-Deleting a binding removes its key on the next console start. Existing workspaces
-that used the built-in Fresh `e` binding need to add a binding explicitly.
+Deleting a binding removes its key on the next console start.
 
 ## Setup
 
@@ -13,8 +12,8 @@ that used the built-in Fresh `e` binding need to add a binding explicitly.
 2. Find the workspace root: the directory containing `.mate/workspace.yaml`.
    Create or edit `.mate/console.yaml` there, preserving existing bindings.
    Pick a configuration below; use an absolute executable path if needed.
-3. Reopen Mate with `mate console /path/to/workspace`, select a Crew row and
-   press the configured key. `?` lists the configured keys.
+3. Reopen Mate with `mate console /path/to/workspace`, open a project, select a
+   Crew row and press the configured key. `?` lists the configured keys.
 4. Confirm the editor opens the report or folder. If the report has not been
    written yet, use `{crew_dir}` to open the folder. A missing executable means
    the CLI needs installing on PATH or selecting by absolute path.
@@ -25,8 +24,8 @@ also teaches this setup flow and the workspace config location.
 
 ## Dashboard on the LAN
 
-The console serves the read-only dashboard on `127.0.0.1:7777`, reachable
-only from the same machine. To open it from a phone or another computer on
+The console serves the dashboard on `127.0.0.1:7777`, reachable only from
+the same machine. To open it from a phone or another computer on
 the same network, bind every interface and say that you mean it:
 
 ```yaml
@@ -36,9 +35,11 @@ dashboard:
 ```
 
 `allow_remote` is required for any address that is not loopback: the
-dashboard has no login and quotes everything typed in the console. Without
-it the console starts, says `dashboard not started` on its status line, and
-serves nothing. With it the status line shows both URLs, the loopback one
+dashboard has no login, quotes everything typed in the console, and its
+pages run console actions: start and stop a Mate, talk to it, answer or stop
+a crew, merge. Anyone who can reach the address can press them. Without
+`allow_remote` the console starts, says `dashboard not started` on its status
+line, and serves nothing. With it the status line shows both URLs, the loopback one
 and the LAN one (the machine's private IPv4, Wi-Fi on a laptop); open the
 LAN one on the phone. The port stays whatever `addr` says. The setting is
 read at console start, so reopen the console after changing it.
@@ -102,8 +103,8 @@ bindings:
 
 `terminal` is the default mode. It needs a supported host (WezTerm or Ghostty),
 opens/reuses a tab for this binding and leaves the agent pane intact. Mate owns
-the tab and its processes; quitting the console closes it. To use Fresh, change
-the command to `[fresh, "{report_path}"]`. There is no special Fresh integration.
+the tab and its processes; quitting the console closes it. Fresh is configured
+the same way, with `[fresh, "{report_path}"]`; there is no special integration.
 
 ## Fields and paths
 
@@ -138,12 +139,16 @@ not expanded. Specify an absolute path rather than `~/...`. If a shell is
 needed, name it explicitly in `command`, such as `[sh, -c, "..."]`; brace
 expressions in strings are reserved for the path variables above.
 
-Multiple bindings are supported. Reserved console keys (such as Enter, `r`,
-`s` and `q`) and duplicate keys within one scope are refused. There are no built-in application keys; `t` can be assigned to any project
-command. The same key can
-be bound once on crew rows and once on project rows. Unknown fields, path
-variables, scopes and modes are configuration errors reported before console
-startup. A missing executable is reported when its key is pressed.
+Multiple bindings are supported. A configured key works whichever pane has
+focus; with the box focused, a crew key acts on the crew of the item under
+the cursor. The console's own keys are reserved and refused: `?`, `a`, `g`,
+`G`, `j`, `k`, `l`, `m`, `n`, `o`, `q`, `r`, `s`, `v`, `w`, `y`, `ctrl+c`,
+Enter, Esc, Backspace, Tab, Shift+Tab, Up, Down, Home, End, PgUp and PgDn.
+A key bound twice in one scope is refused too. There are no built-in
+application keys, so `e` and `t` are free. The same key can be bound once on
+crew rows and once on project rows. Unknown fields, path variables, scopes
+and modes are configuration errors reported before console startup. A
+missing executable is reported when its key is pressed.
 
 ## Plugin links
 
@@ -153,5 +158,7 @@ like any configured command and opens the URL with the machine's opener
 (`open` on macOS, `xdg-open` on Linux); no terminal tab is created. Pressing
 the key on a project without that binding reports an error. A key that
 `console.yaml` binds on project rows, or that the console reserves, is refused
-before startup, naming `plugins.yaml`, the instance and the key. Without
-`plugins.yaml` nothing changes. See `docs/archive/plans/plugins-and-office-2026-10-12.md`.
+before startup, naming `plugins.yaml`, the instance and the key. Any other
+`plugins.yaml` error leaves the console running without plugin links and says
+`plugin links off: ...` on the status line. Without `plugins.yaml` nothing
+changes. See [plugins.md](plugins.md).

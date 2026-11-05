@@ -12,7 +12,7 @@ Readers take no lock at all.
 
 ## 1. What the schema adds to the spec
 
-The tables are the ones docs/mvp.md M5 lists, with one addition and one column worth naming.
+The tables are the ones docs/mvp.md M5 lists, with the additions and columns named below.
 
 `event.dedup` is the natural key of a fact and is `UNIQUE`.
 It exists because a transcript's trailing message group may still grow, so the ingest re-reads it on every pass; without a key the same fact would become a second row with a second id, and a dashboard following `event.id > ?` would replay history as news.
@@ -28,8 +28,8 @@ the state detects source replacement (including a larger replacement); a
 replacement or truncation emits a visible gap instead of silently treating the
 remaining bytes as an append.
 
-Unchanged transcripts reuse a normalized parser cache; growing Codex sources
-append a parsed tail using the adapter's cumulative-usage and prompt state.
+Unchanged transcripts reuse a normalized parser cache; growing Claude and Codex
+sources append a parsed tail using the adapter's own parser state (section 8).
 Committed file metadata
 and the ledger cursor allow ingest to skip rewriting historical turns/actions;
 status timestamps and commit sightings are still reconstructed from the cached
@@ -100,21 +100,27 @@ causality projection from scanning all native evidence once per model call.
 
 ## 2. Locator rules
 
-An agent's transcript is found by the first rule that answers, and the rule that fired is recorded on the `session` row's path and in the `ingest.unresolved` payload when none does.
-Rule 1 and the recorded path of an earlier pass (`session.recorded`) are the timeline's own; rules 2 to 4 belong to the harness, behind its `Transcript` capability (`harness.TranscriptSource.Locate`), and the timeline asks the harness the agent runs on.
+An agent's transcript is found by the first rule that answers.
+The `session` row records the path it found; when no rule answers, the reason is an `ingest.unresolved` event.
+Rule 1 and the recorded path of an earlier pass (`session.recorded`) are the timeline's own; the other rules belong to the harness, behind its `Transcript` capability (`harness.TranscriptSource.Locate`), and the timeline asks the harness the agent runs on.
 A harness whose `Transcript` capability is not verified has no rules and no reader: the agent is recorded as `transcript_unobservable` and has no turns and no tokens, never guessed ones.
 
 1. `meta.transcript` - `.meta` already names the file.
    A Mate running Claude Code has it from the Stop hook's `transcript_path` (docs/mvp.md decision 9), which is exact.
-2. `claude.projects` - `session_id=` plus Claude's own naming rule, `~/.claude/projects/<slug of cwd>/<session-id>.jsonl`.
+2. `claude.projects` - `session_id=` plus Claude's own naming rule, `<config dir>/projects/<slug of cwd>/<session-id>.jsonl`, where the config dir is the profile's `CLAUDE_CONFIG_DIR`, else `~/.claude`.
    This is what finds a Claude agent before its first Stop hook has run.
-3. `herdr.agent_session` - the runtime's `agent_session.value`, which for Codex is the rollout's session uuid, and Codex puts that uuid in the rollout's file name.
+3. `herdr.agent_session` - the runtime's `agent_session.value`, which for Codex is the rollout's session uuid, and Codex puts that uuid in the rollout's file name; the `session_id=` the meta records is tried the same way.
    Measured 2026-09-20 on Herdr 0.8.2: `agent_session` is present and correct for every Codex agent and **null for every Claude agent**, so this is a Codex rule and only a Codex rule.
-4. `codex.adopt` - `harness.AdoptCodexRollout` over the rollout directory, matching on the canonical cwd and a `session_meta` timestamp at or after the recorded launch.
+4. `codex.adopt` - `codex.AdoptCodexRollout` (`internal/harness/codex`) over the rollout directory, matching on the canonical cwd and a `session_meta` timestamp at or after the recorded launch.
    This is the fallback for a crew whose agent Herdr no longer has, and it is deliberately conservative: two crews launched in the same worktree are genuinely ambiguous, and an ambiguous match is no match.
    The recorded launch is `launched_at=`, which `crew spawn` and `mate start` take just before `agent start`.
    It is not `started_at=`: that is written once the agent is ready and has its first prompt, and Codex has opened its rollout by then (measured 2026-09-24, task 34: a rollout's first record 0.2s before `started_at`, so every rebuild after the crew was gone lost its transcript, and whether a crew was affected was a sub-second race).
    A record written before `launched_at` existed uses `started_at` less five minutes, which spawn's own timeouts bound; the exact cwd still has to match, and a crew's worktree path is its own.
+5. `pi.session_dir` - `session_id=` plus pi's naming rule, `*_<id>.jsonl` under pi's sessions root.
+6. `grok.session_dir` - `session_id=` as the one directory of that name under grok's sessions root, read through its `updates.jsonl`.
+
+A Mate's earlier sessions are read too, from their archived metas under `mate/sessions/`.
+A session that context refresh froze after a confirmed stop (`finalized=true`) is read at rest, which is the one read that flushes Claude's trailing message group (section 4, `turn.started`).
 
 A crew's binding does not move while one agent runs - a crew is never resumed (docs/mvp.md section 4b) - so once one of those rules has answered, a later pass reuses the path the `session` row already carries (`session.recorded`) instead of asking the runtime again.
 `mate crew relaunch` starts a fresh session under the same actor, so a recorded path is reused only when it belongs to the current launch: its session id matches the meta's `session_id=` when both are known, and the file was written at or after `launched_at`.
@@ -147,6 +153,8 @@ From `mate/mate.meta`.
 {"agent":"mate-shop","harness":"claude","resumed_from":"","session_id":"8414030c-5d90-4925-94cc-c94e12aae4a9"}
 ```
 
+`mate.stopped` carries only `harness`.
+
 ### `crew.spawned`
 
 From `crews/<id>.meta`, dated by `started_at`.
@@ -158,7 +166,7 @@ The actor is the Mate, the subject is the crew: hiring is something the Mate did
 
 ### `crew.finished`, `crew.failed`
 
-From `state=finished|reviewed|failed` in the same file, dated by `stopped_at`. `reviewed` (a reviewer closed after its Verdict, CON-75) is a `crew.finished` whose payload says `"state":"reviewed"`; only `failed` is `crew.failed`.
+From `state=finished|reviewed|failed` in the same file, dated by `stopped_at`. `reviewed` (a reviewer closed after its Verdict) is a `crew.finished` whose payload says `"state":"reviewed"`; only `failed` is `crew.failed`, and it carries the meta's `failed_reason=` as `reason` when there is one.
 
 ```json
 {"crew":"buybtn","state":"finished"}
@@ -166,15 +174,16 @@ From `state=finished|reviewed|failed` in the same file, dated by `stopped_at`. `
 
 ### `mode.changed`
 
-From the presence of `mate/.auto`.
+From the presence of `mate/.manual`: a project is in auto mode unless the captain holds it in manual.
 
 ```json
-{"dated_by":"flag_mtime","from":"manual","to":"auto"}
+{"dated_by":"flag_mtime","from":"auto","to":"manual"}
 ```
 
 This is an observation, not a reading of a file that records history.
-`.auto` is a flag with three different things allowed to delete it, and its removal leaves nothing behind, so a pass compares the flag with the last `mode.changed` it recorded and writes one event when they differ.
-Turning auto on is dated by the flag's mtime (`dated_by: flag_mtime`) and is exact; turning it off is dated by the pass that noticed (`dated_by: observed`) and is a lower bound.
+The hold is a flag - the console's `m` key sets and clears it, and the auto daemon clears it once the captain has been away long enough (docs/mvp.md M21) - and its removal leaves nothing behind, so a pass compares the mode with the last `mode.changed` it recorded and writes one event when they differ.
+Each mode is dated by its flag's mtime when the flag exists (`.manual` for manual, `.auto` for auto; `dated_by: flag_mtime`), which is exact; otherwise by the pass that noticed (`dated_by: observed`), which is a lower bound.
+Auto is where a project starts, so a first pass over an auto project writes nothing.
 A rebuild therefore recovers only the mode the workspace is in now, which is the honest consequence of the flag being a flag.
 
 ### `turn.started`, `turn.ended`
@@ -186,14 +195,15 @@ For Claude that is one assistant message group (one `message.id`), which is the 
 {"cache_read_tokens":57690,"cache_write_tokens":739,"context_tokens_after":58461,"harness_turn":"e6114c69-5e7a-4d34-b35d-ef6c74677ed2","input_tokens":32,"model":"claude-fable-5-1","outcome":"tool_use","output_tokens":911,"thinking_tokens":73,"tool_count":1}
 ```
 
-`turn.ended` carries the same payload plus `duration_ms`. Schema v5 (CON-75) adds `effort` to the payload and to `turn`: the harness's telemetry state when it records one (Codex, pi), else the actor's launch profile (`effort=` in `.meta`, which is a Claude turn's only source); `model` takes the same fallback when the transcript names none.
+`turn.ended` carries the same payload plus `duration_ms`. `effort` is on the payload and on `turn` (schema v5): the harness's telemetry state when it records one (Codex, pi), else the actor's launch profile (`effort=` in `.meta`, which is a Claude turn's only source); `model` takes the same fallback when the transcript names none.
 
 `context_tokens_after` is what the context held when the call returned.
 For Claude it is the message's `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`.
 For Codex it is the `token_count` record's `last_token_usage.input_tokens + cache_write_input_tokens`, because Codex's `input_tokens` already includes the cached part and is therefore the prompt size; the cumulative delta is the fallback when the record carries no `last_token_usage`.
 
-The trailing message group of a Claude transcript is never a turn while the file may still grow: `harness.ParseTranscript` withholds it deliberately, and this ingest does not flush it (see `internal/harness/transcript.go`).
+The trailing message group of a Claude transcript is never a turn while the file may still grow: `Claude.ParseTranscript` withholds it deliberately, and this ingest does not flush it (see `internal/harness/claude/transcript.go`).
 A live session's last turn is therefore pending, not lost.
+Only a frozen snapshot read at rest (section 2) is parsed with `ParseTranscriptFinal`, which emits it.
 
 ### `tool.called`, `tool.finished`
 
@@ -230,7 +240,8 @@ Two rules produce one: a gap of at least five seconds inside a turn, which is de
 
 From two sources, keyed by the full sha so a commit both find is one event.
 
-The first is `git log <default>..<branch>` of an open crew - two dots, the commits that belong to this branch alone, the same spelling `mate diff` uses for its commit list.
+The first is `git log <default>..<branch>` of a crew's branch, in the repo the crew worked in - two dots, the commits that belong to this branch alone, the same spelling `mate diff` uses for its commit list.
+A closed crew whose branch git has said is gone is not asked again while the process runs.
 
 The second is the crew's own transcript.
 A branch is short-lived: `mate merge` deletes it on its way out, so a crew that commits a few seconds before somebody merges can leave no window in which a five-second poll could read `git log` at all.
@@ -265,7 +276,7 @@ A question is answered by a `sent.log` line addressed to `crew:<id>` at or after
 The comparison truncates the question's time to the second, because `sent.log` writes RFC3339 with no fractional part and an answer typed in the same second would otherwise read as older than the question.
 A crew that asked twice without being answered is answered in the order it asked.
 
-Schema v4 (CON-75) gives `question` a `kind`: `decision` for a `needs-decision` line, as above, and `handback` for a `wait-mate` line (the watcher's `pr-merged`/`pr-closed` excepted).
+`question` has a `kind` (schema v4): `decision` for a `needs-decision` line, as above, and `handback` for a `wait-mate` line or a verb read as one, such as `pr-open` (the watcher's `pr-merged`/`pr-closed` excepted).
 A hand-back row is asked by its `status.appended` event and answered by the next `message.sent` into the crew's pane, with no `question.asked`/`question.answered` of its own, so `task.question_count` still counts decisions while `waited_ms` and the dashboard's `decision_wait` findings cover both - e0-components' 93 hours on hellovietnam were a hand-back nobody picked up.
 The holding-line rule: a line the Mate or the captain sends a crew that has no open question, when the crew has written no status line since its last answer, is that answer arriving - the earlier reply was "hold on" and the crew could do nothing with it - so the answer moves to the later line and `waited_ms` grows with it (`question.answered_event_id` then names a `message.sent`). A crew that wrote any status line in between acted on the first reply, and nothing moves.
 
@@ -278,30 +289,32 @@ Three kinds rather than one event plus two duplicates, because a line is one thi
 {"channel":"pane","crew":"buybtn","from":"mate","marked":false,"text":"Use pages/checkout-express.html.","to":"crew:buybtn"}
 ```
 
-The channel is read off the line's shape, not off the sentinel: `sent.log` holds the text with `send.Marker` already stripped, both because the daemon writes the line it built and because the Mate's `UserPromptSubmit` hook strips the marker before appending.
+The channel is read off the line's shape, not off the sentinel: `sent.log` holds the text with `send.Marker` already stripped, both because the outbox (`internal/outbox`, the one sender into a Mate's composer) writes the line it built and because the Mate's `UserPromptSubmit` hook strips the marker before appending.
 `marked` records that mate typed the line itself.
 An app line into the Mate's pane whose text is neither a digest nor a resolve is `hook` - the hook's own note that an unmarked prompt ended auto mode, which was typed into no pane at all.
 
 A digest and an `[assign]` line reach `sent.log` **twice**: once written by the sender after the composer cleared, and once by the Mate's own hook when the model read it.
 That pair is the evidence the sentinel survived to the model, and docs/mvp.md section 7 names it as the proof to look for - but it is one handover, so the second copy is recorded as the reading of the line rather than as a second handover: its channel is `hook`, its payload carries `"confirms": true`, and it narrates as `the Mate reads it`.
 The rule is that an app line to the Mate repeating the previous app line to the Mate verbatim, within ten minutes, is the hook's.
-A rejected digest is never written at all - the daemon writes `sent.log` only after a verified send - so a verbatim repeat is always the hook and never a re-offer.
+A rejected digest is never written at all - the outbox writes `sent.log` only after a verified send - so a verbatim repeat is always the hook and never a re-offer.
 Measured 2026-09-20 in `TestLiveTimelineExplainsTheAcceptance`: without this rule the story told the same `[assign]` twice, one second apart.
 
 ### `incident.opened`, `incident.resolved`
 
-From `incidents.log`, whose writer is the observer alone.
+From `incidents.log`.
+The observer writes most of it: `stale` and `runtime_lost` from its poll, and `budget`, `no_turn` and `context_high` from the ledger checks of section 10.
+The outbox files `wedged` under the crew name `mate`, and that one is about the Mate.
+`mate crew budget --extend` resolves a crew's `budget` incidents.
 
 ```json
 {"crew":"k9","incident":"stale","text":"no status line and no pane change for 3m0s; composer empty"}
 ```
 
 A `resolved` line closes the newest still-open incident of the same `(crew, kind)`, which is the only pairing the file supports.
-The daemon files its own `wedged` finding under the crew name `mate`, and that one is about the Mate.
 
 ### `merge.done`
 
-From git: the crew is closed `finished` and its branch tip is now an ancestor of the default branch.
+From git: the crew is closed `finished` and its branch tip is now an ancestor of the default branch of the repo it worked in.
 Nothing else records a merge - `mate merge` types into no pane, so `sent.log` is silent about it (docs/mvp.md section 7) - which is also why this survives a rebuild.
 
 `mate merge` deletes the branch on its way out, so by the next poll there is no branch to ask about.
@@ -319,7 +332,7 @@ The moment a harness threw the conversation away and replaced it with a summary,
 {"harness":"claude","trigger":"claude.compact_summary"}
 ```
 
-The triggers are `claude.compact_summary` (a user record carrying `isCompactSummary`), `claude.compact_boundary` (a `system` record with `subtype: compact_boundary`) and `codex.compacted` (a top-level `compacted` record).
+The triggers are `claude.compact_summary` (a user record carrying `isCompactSummary`), `claude.compact_boundary` (a `system` record with `subtype: compact_boundary`), `codex.compacted` (a top-level `compacted` record) and `pi.compaction` (a pi compaction entry).
 
 ### `health.changed`
 
@@ -358,7 +371,7 @@ An event with no cause keeps `NULL`, which is a fact and not a gap to be filled 
 
 | Event | Cause |
 | --- | --- |
-| `question.asked` | the crew's own `turn.ended`: the turn it asked in. |
+| `question.asked` | the crew's latest `turn.ended` at or before it: the turn it asked in. |
 | `digest.sent`, `assign.clicked` | the first `question.asked` the line carries; the crews it names are read out of its text, and the payload of each question event says which crew. |
 | `turn.started` of the Mate | the `message.sent` / `digest.sent` / `assign.clicked` addressed to the Mate that reached its composer. |
 | `question.answered` | the Mate turn that sent it - the turn holding the `mate send <project> <crew>` the answer came out of, within ten minutes. An answer the captain typed has no such turn and keeps `NULL`. |
@@ -390,6 +403,7 @@ The Mate and the captain are named with an article because there is one of each;
 | `tool.called` (edit) | `k3 edits landing.html` |
 | `tool.called` (shell) | `k3 runs: git add README.md && git commit -m "…"` |
 | `tool.called` (search) | `k3 searches for checkout in pages/` |
+| `tool.called` (agent) | `k3 delegates to a backend-reviewer agent`, or `k3 delegates to a subagent` |
 | `tool.finished` | `k3 finishes exec in 131ms`, or `k3's exec fails` |
 | `git.committed` | `k3 commits 0d2d20d "docs: add Buy link"` |
 | `status.appended` (working) | `k3 reports: verifying the worktree` |
@@ -398,15 +412,17 @@ The Mate and the captain are named with an article because there is one of each;
 | `message.sent` (captain → Mate) | `the captain tells the Mate: "add a Buy button"` |
 | `message.sent` (Mate → captain) | `the Mate reports to the captain: "k3 is ready"` |
 | `message.sent` (Mate → crew) | `the Mate sends k3: "A"` |
+| `message.sent` (captain → crew) | `the captain sends k3: "A"` |
 | `message.sent` (the hook's echo) | `the Mate reads it` |
+| `message.sent` (the hook's own note) | `mate notes: auto mode off: user prompt` |
 | `question.asked` | `crew k3 asks the Mate: "pick A or B"` |
-| `question.answered` | `the Mate answers k3: "A" (it waited 28.7s)` |
+| `question.answered` | `the Mate answers k3: "A" (it waited 28.7s)`, or `the captain answers k3: …` |
 | `digest.sent` | `mate walks a digest into the Mate's office: "digest: 1 item(s) — …"` |
 | `assign.clicked` | `the captain hands the Mate a question to resolve: "resolve: k3 asked: …"` |
 | `incident.opened` | `the observer flags k3: stale` |
 | `incident.resolved` | `the observer clears k3's stale` |
 | `review.started` | `the Mate starts reviewing k3` |
-| `merge.done` | `the captain merges k3 into main` |
+| `merge.done` | `the captain merges k3 into main`, or `the Mate merges k3 into main` when `by` is `mate` |
 | `context.compacted` | `the Mate's context is compacted` |
 | `health.changed` | `k3's composer goes busy` |
 | `ingest.unresolved` | `mate cannot find k3's transcript (rollout_not_adopted)` |
@@ -427,18 +443,19 @@ An actor with no transition at all reads `NULL` in all four, which is the honest
 
 ## 8. Known costs
 
-A live transcript that only grew since the last pass is tailed: its harness parses from the prior batch's `ConsumedBytes` with the prior's parser state and appends the tail to the batch it already has.
+A live Claude or Codex transcript that only grew since the last pass is tailed: its harness parses from the prior batch's `ConsumedBytes` with the prior's parser state and appends the tail to the batch it already has.
+pi and grok sessions are read whole on every change.
 For Claude that is `ParseTranscript`'s own incremental contract - the trailing message group is withheld, `ConsumedBytes` stops at its first record and `NextState` is the state at that cursor - so the group is re-read whole on the next pass and the open harness turn carries over; a resume that carried either wrongly would charge one turn's tokens to another permanently.
 Anything else is read whole: a file whose first 4 KiB changed, one that shrank, a prior batch stopped by a malformed line, and a frozen snapshot read at rest.
 `cursor` still records how far the parser trusted the file, so a withheld group is visible rather than silent.
 
-The estimate this section used to give, "a few hundred kilobytes" per live transcript, was wrong by two orders of magnitude: Claude crews reach 12-25 MB, and a Mate session 37 MB.
+Claude crews' transcripts reach 12-25 MB, and a Mate session 37 MB.
 Re-read whole, a growing pass over a 25 MB Claude transcript took about 250 ms and one over 37 MB about 355 ms (2026-10-14, Apple Silicon, one growing pass every five seconds); tailed, they take about 45 ms and 60 ms, against about 20 ms for a pass over an unchanged file.
 What a growing pass still spends is the timeline's own walk over the whole batch - usage turns, actions and their targets are derived again for every call and only then filtered to what lies past the cursor - not parsing.
 Telemetry follows the same cursor: Claude's and pi's normalised facts are emitted only from the telemetry cursor on, so a pass no longer decodes every prompt of the session again, and pi's model and thinking-level facts come from the batch its read already parsed rather than from a second parse of the file.
 
 A crew closed more than an hour ago is left unread when the timeline holds its transcript at its size and mtime on disk and its status file has no undated line; a finalized Mate session is left unread on the same check, without the hour. Git is not asked about a crew closed over an hour ago whose merge is decided: recorded, or never coming because it did not close `finished` (CON-140). The hour is the window in which a pass whose git did not answer still re-asks about the commits a transcript shows.
-Before that, a console start decoded every transcript a project ever had and asked git about every closed crew: measured 2026-10-30, mihuv2's closed crews alone were 421 MB of transcript, and a cold pass over the workspace took about 16 s against about 4 s after.
+Without these checks a console start decodes every transcript a project ever had and asks git about every closed crew: measured 2026-10-30, mihuv2's closed crews alone were 421 MB of transcript, and a cold pass over the workspace took about 16 s against about 4 s after.
 
 `mate reindex` empties the derived tables and refills them in one transaction, so a rebuild that fails halfway leaves the timeline it started with.
 An ordinary poll commits one transaction per project instead, for the opposite reason: a project whose `.meta` is half-written must not hold back the rest of the workspace.
@@ -507,7 +524,7 @@ Rows are tried in order and the first match wins.
 | `crew.failed.gone` | anywhere | `crew.failed` | | - | |
 | `crew.asleep` | at work | `incident.opened` | `stale` | `asleep(stale)` | |
 | `crew.blocked` | at work | `incident.opened` | `runtime_lost`, `wedged` | `blocked(<kind>)` | |
-| `crew.incident.other` | anywhere | `incident.opened` | | - | `budget` and `no_turn` are inbox items and not states (docs/mvp.md section 4b) |
+| `crew.incident.other` | anywhere | `incident.opened` | | - | `budget`, `no_turn` and `context_high` are inbox items and not states (docs/mvp.md section 4b) |
 | `crew.awake` | `asleep`, `blocked` | `incident.resolved` | | back where the incident found it | |
 | `crew.awake.other` | anywhere | `incident.resolved` | | - | |
 | `crew.asks` | in the building | `question.asked` | | `walking_to_ceo(question)` → `waiting_at_ceo` | the Mate |
@@ -544,7 +561,7 @@ Rows are tried in order and the first match wins.
 | `mate.opens` | anywhere | `mate.started` | | `idle` | |
 | `mate.closes` | anywhere | `mate.stopped` | | `gone` | |
 | `mate.asleep` | at work | `incident.opened` | `stale` | `asleep(stale)` | |
-| `mate.blocked` | at work | `incident.opened` | `runtime_lost`, `wedged` | `blocked(<kind>)` | the daemon files `wedged` against the Mate (docs/mvp.md task 19) |
+| `mate.blocked` | at work | `incident.opened` | `runtime_lost`, `wedged` | `blocked(<kind>)` | the outbox files `wedged` against the Mate when a line will not go in |
 | `mate.incident.other` | anywhere | `incident.opened` | | - | |
 | `mate.awake` | `asleep`, `blocked` | `incident.resolved` | | back where the incident found it | |
 | `mate.awake.other` | anywhere | `incident.resolved` | | - | |
@@ -682,8 +699,8 @@ Measured 2026-09-20 on a real rollout (`TestLiveUsageMatchesTheHarness`): the la
 
 Claude's turn is the opposite: section 4's `turn.started` example (`input_tokens: 32, cache_read_tokens: 57690, cache_write_tokens: 739`) sums to exactly `context_tokens_after: 58461` - all four buckets are disjoint, and none is a subset of another.
 
-Before this was noticed, `codexTurns` stored Codex's raw `input_tokens` delta as `turn.input_tokens` unchanged, so every sum across the four buckets (`v_task_ledger`'s token columns and cost, `v_now.tokens_today`, the budget check, `mate usage`) double-counted the cached portion of a Codex crew's usage, and would have double-billed it too for a captain who priced both `input_per_m` and `cache_read_per_m`.
-The fix is in `codexTurns` itself: it subtracts the cache-read delta from the input delta before either is stored, so `turn.input_tokens` means "billed at the input rate, not a cache rate" for both harnesses, and every view built on top of `turn` sums correctly without asking which harness a turn came from.
+Stored raw, Codex's `input_tokens` delta would make every sum across the four buckets (`v_task_ledger`'s token columns and cost, `v_now.tokens_today`, the budget check, `mate usage`) double-count the cached portion of a Codex crew's usage, and double-bill it for a captain who priced both `input_per_m` and `cache_read_per_m`.
+So `normaliseCodex` (`internal/harness/codex/transcript_source.go`) subtracts the cache-read delta from the input delta before either is stored, so `turn.input_tokens` means "billed at the input rate, not a cache rate" for both harnesses, and every view built on top of `turn` sums correctly without asking which harness a turn came from.
 `context_tokens_after` is untouched by this - it is derived straight from the raw `last_token_usage` block, not from the corrected `turn.input_tokens`.
 
 ### `mate usage`
@@ -694,23 +711,37 @@ The fix is in `codexTurns` itself: it subtracts the cache-read delta from the in
 `mate usage <project> <crew> --why` prints the dashboard Task page's `performance` projection (docs/dashboard.md) as one bounded page of text: token buckets, calls, prompts and peak context, work by kind, the loop summary, the first six findings with one evidence line and their `review` hint, the instruction files the harness loaded, and the three costliest prompts, then every `freshness.missing` line under `not measured`.
 It reads through `dashboard.Server.CrewPerformance`, the same code path as `/api/projects/<p>/tasks/<crew>`, and measures nothing itself.
 Both flags exist for the Mate's `token-review` skill, whose reader pays for every line it reads.
-Every number is humanised (`query.HumanizeTokens`, `query.HumanizeCost`: `96.3k`, `$0.12`), and a `NULL` cost or context percentage prints as `?`, never as `0` or `0%` - the same rule the console's TOKENS column and `mate state`'s `tokens:`/`ctx:` suffix follow, all three built on the same two functions so a number reads the same everywhere it appears.
+Every number is humanised (`query.HumanizeTokens`, `query.HumanizeCost`: `96.3k`, `$0.12`), and a `NULL` cost or context percentage prints as `?`, never as `0` or `0%` - the same rule `mate state`'s `tokens:`/`ctx:` suffix follows, built on the same two functions so a number reads the same in both.
 
-### The console's TOKENS column and `mate state`
+### Tokens in the console and `mate state`
 
-`query.CrewNode.Tokens` and `query.MateNode.Tokens` are `Field[TokenValue]`, filled the same way `Health` is: `query.Load` reads only `.mate/`'s files and leaves them `Absent`, and the Console's wiring (`cmd/mate/console_watch.go`'s `withTokens`, beside `withCrewHealth`) opens `.mate/mate.db` read-only afterwards and fills them from `v_task_ledger` and `v_now`.
-`internal/ui/console/list.go` draws a TOKENS column on the Mate row and every Crew row, at the same width breakpoint `colUpdated` already uses (`wideList`), so a narrow pane drops it before it drops anything a reader is more likely to need.
+The crew and Mate nodes' `Tokens` (`query.TokenValue`, a `Field` like `Health`) are filled the same way `Health` is: `query.Load` reads only `.mate/`'s files and leaves them `Absent`, and the Console's wiring (`cmd/mate/console_watch.go`'s `withTokens`, beside `withCrewHealth`) opens `.mate/mate.db` read-only afterwards and fills them from `v_task_ledger` and `v_now`.
+A Mate's context is its current session's latest turn (`db.LatestContext`), so a refreshed Mate does not borrow its old session's context.
+The console's detail pane shows them as a `tokens` field on the Mate and on a crew, and a `context` field on the Mate; an `Absent` value draws no field.
 `mate state <project> <crew>` appends ` · tokens: 96k` and, once the crew's last turn has a priced context window, ` · ctx: 62%` after `crewstate.Result.Line()` - built in `cmd/mate/state.go`, not in `internal/crewstate`, because that package is a deliberate leaf that imports nothing else in this module.
 
 ### Budget (`project.yaml`'s `budget:` block)
 
-`store.BudgetConfig` is optional and per-dimension optional: `crew_tokens`, `crew_usd` (checked per crew) and `project_usd` (checked against every crew of the project summed, filed under the crew name `mate` since no one crew is at fault).
+`store.BudgetConfig` is optional and per-dimension optional: `crew_tokens`, `crew_usd` (checked per task) and `project_usd` (checked against every crew of the project summed, filed under the crew name `mate` since no one crew is at fault).
 `internal/timeline.Ingester.CheckBudgets` runs at the end of every observer poll, after that poll's `Ingest` has written the turns a crossing would be based on, and is wired in as `watch.Deps.Budget` - a seam, the same shape as `Ingest`, so `internal/watch` still imports nothing that can read `pricing.yaml` or open the database itself.
-It opens a `budget` incident (`box.IncidentBudget`) on a crossing crew exactly once: a crew already carrying an open one is left alone even if it has since spent more, because the incident is a fact about spend that already happened, not a condition that clears - it is never resolved.
-The incident's text is `"<humanised total> tokens of <humanised limit> tokens"` or `"<humanised cost> of <humanised limit>"`, which a digest's fourth item shape reads verbatim as `<crew> over budget: <text>`.
 
-Since CON-76 (2026-10-15) a crew's token limit is its own `budget=` in `crews/<id>.meta` (`store.MetaBudget`) when it has one, else the project's `crew_tokens`. `mate crew spawn --budget <tokens>` writes it from the dispatch rule the Mate matched (`crew-dispatch.json` rules take an optional `budget`, the table a `review_budget` that `mate review` passes on; `mate crew dispatch` prints each as `--budget N` on the profile lines; the built-in table sizes a small ship at 2M, a medium one at 8M, a large one at 20M and a review at 3M), and without the flag it copies the project's `crew_tokens` so the record says what the crew was held to.
-Against that limit `CheckBudgets` files a second, earlier incident: at half of it, while the crew is open and has never written a hand-back line (`wait-mate`, `pr-open`, or any verb `box.ParseStatus` reads as wait-mate), with the same kind `budget` and the text `"50%: <used> tokens of <limit> tokens, no hand-back yet"`. `box.BudgetHalfPrefix` / `box.BudgetThreshold` are the one place that prefix is read: `CheckBudgets` uses it to file each threshold once per crew (an open half incident does not stop the full one, and a crew carrying the full one is not checked again), the digest renders the half one as `<crew> budget 50%: <text>` rather than "over budget", `mate wake` prints `budget 50% <crew>: ...` with a `next:` line (one peek; a line if the Crew is looping or polling) and `over budget <crew>: ...` with `next: tell the captain`, and the console, `mate recall` and the dashboard read it as "half the budget, no hand-back". Neither incident is ever resolved; the half one stops being filed, not shown, once the crew hands back.
+A crew's token limit is its own `budget=` in `crews/<id>.meta` (`store.MetaBudget`) when it has one, else the project's `crew_tokens`. `mate crew spawn --budget <tokens>` writes it from the dispatch rule the Mate matched (`crew-dispatch.json` rules take an optional `budget`, the table a `review_budget` that `mate review` passes on; `mate crew dispatch` prints each as `--budget N` on the profile lines; the built-in table sizes a small ship at 2M, a medium one at 8M, a large one at 20M and a review at 3M), and without the flag it copies the project's `crew_tokens` so the record says what the crew was held to.
+The spend checked is the task's: the crew, every session of it, and its reviewers. A reviewer whose task is a crew of the project is counted in that task and never checked on its own.
+
+Against the token limit there are three thresholds, all of kind `budget` (`box.IncidentBudget`), each filed once per crew:
+
+- half of it, while the crew is open and has never written a hand-back line (`wait-mate`, `pr-open`, or any verb `box.ParseStatus` reads as wait-mate): `"50%: <used> tokens of <limit> tokens, no hand-back yet"`.
+- all of it: `"<used> tokens of <limit> tokens"`, or `"<cost> of <limit>"` for `crew_usd`.
+- twice it, while the crew is open: `"budget hard ceiling: <used> tokens of <limit> tokens, over twice the budget; the app stops the crew"`.
+
+`box.BudgetHalfPrefix`, `box.BudgetHardPrefix` and `box.BudgetThreshold` are the one place those prefixes are read. `CheckBudgets` uses them to file each threshold once (an open half incident does not stop the full one, and a crew carrying the hard one is not checked again).
+The auto daemon acts on them in either mode (`internal/autopilot/budget.go`): at the full budget it types `budget reached: commit what you have, ...` into the crew's pane once, unless the crew has already handed back; at the hard ceiling it stops the crew and keeps unlanded work. The half incident is the Mate's alone.
+The digest reads them as `<crew> budget 50%: <text>`, `<crew> over budget: <text>` and `<crew> budget hard ceiling: <text>`; `mate wake` prints `budget 50% <crew>`, `over budget <crew>` and `budget hard ceiling <crew>` with a `next:` line each; the console, `mate recall` and the dashboard read the half one as "half the budget, no hand-back" and the others as "over budget".
+A budget incident is a fact about spend that already happened, so the observer never resolves one. `mate crew budget <project> <id> --extend <tokens> --reason "<why>"` does: it is the Mate's answer at a hand-back, sets the new ceiling, resolves the crew's budget incidents and re-arms every threshold. A second extension needs `--captain`.
+
+Per the 2026-09-20 decision (mvp.md section 4b), a `budget` incident is deliberately excluded from what makes a crew `blocked`: `box.BlockingIncidents` narrows `box.OpenIncidents` to `stale` and `runtime_lost` only, and every reader that feeds `crewstate.Declaration.OpenIncident` (`query.Load`, `spawn.crew_stop`'s open-crew resolution, `mate state`) goes through `BlockingIncidents`.
+`box.OpenIncidents` itself still puts a `budget` incident in the inbox, where the phrase table (`internal/ui/console/pane_box.go`'s `boxNeedPhrase`) reads it.
+`internal/autopilot.Gather` gives a `budget` incident its own `ItemBudget` kind rather than `ItemBlocked`, so the digest vocabulary itself cannot claim a budget crossing changed the crew's state; the digest's shapes are spelled once in `internal/autopilot/digest.go`'s `itemText` and in the Mate's `wake` skill.
 
 ### No turn (`no_turn`, CON-74)
 
@@ -721,12 +752,8 @@ Unlike `budget` it resolves: the poll after the ledger first records a turn for 
 
 ### Context (`workspace.yaml`'s `crew.context_high`)
 
-`CheckBudgets` also runs CON-73's context check (`internal/timeline/context.go`) on every project, budget or not: a crew that is open, whose latest status line is not a hand-back, and whose latest `turn.context_tokens_after` is above `store.Workspace.CrewContextHigh()` (`crew.context_high`, default 180000, negative off) gets one `context_high` incident (`box.IncidentContextHigh`), text `"<latest> tokens of context, over <threshold>"`, filed once per crew (an open one is left alone). It is resolved - unlike `budget` - once the crew's latest context is back under the threshold, which is what a fresh session does, or the crew is closed. The digest renders it as `<crew> context high: <text>` (`autopilot.ItemContextHigh`), `mate wake` as `context high <crew>: <text>` with a `next:` line that says not to cut the crew mid-turn and to open a fresh session at its next hand-back, and the console, `mate recall` and the dashboard as "context high". Nothing ever cuts a crew: `mate send` to a crew that has handed back opens the fresh session itself (`cmd/mate/send_fresh.go`).
+`CheckBudgets` also runs CON-73's context check (`internal/timeline/context.go`) on every project, budget or not: a crew that is open, whose latest status line is not a hand-back, and whose latest `turn.context_tokens_after` is above `store.Workspace.CrewContextHigh()` (`crew.context_high`, default 200000, negative off) gets one `context_high` incident (`box.IncidentContextHigh`), text `"<latest> tokens of context, over <threshold>"`, filed once per crew (an open one is left alone). It is resolved - unlike `budget` - once the crew's latest context is back under the threshold, which is what a fresh session does, or the crew is closed. The digest renders it as `<crew> context high: <text>` (`autopilot.ItemContextHigh`), `mate wake` as `context high <crew>: <text>` with a `next:` line that says not to cut the crew mid-turn and to open a fresh session at its next hand-back, and the console, `mate recall` and the dashboard as "context high". Nothing ever cuts a crew: `mate send` to a crew that has handed back opens the fresh session itself (`cmd/mate/send_fresh.go`).
 
 ### Sessions (`session.crew_session`, schema 6)
 
-Schema v6 (CON-73) gives each `session` row `crew_session`: the session's ordinal among its actor's sessions, by the time of its first turn (its own `started_at` when it has none yet), ties by id. The writer recomputes it for an actor whenever one of that actor's sessions is in a batch (`rankSessions`), after the turns, so it is a pure function of the rows and `mate reindex` gives every session the number it had live. It is the ledger's side of `sessions=` in `crews/<id>.meta` (1 at spawn, one more per relaunch that opens a new conversation; a resume continues the same row). `mate usage <project> <crew> --sessions` groups the crew's turns by it.
-
-Per the 2026-09-20 decision (mvp.md section 4b), a `budget` incident is deliberately excluded from what makes a crew `blocked`: `box.BlockingIncidents` narrows `box.OpenIncidents` to `stale` and `runtime_lost` only, and every caller that used to feed `OpenIncidents` into `crewstate.Declaration.OpenIncident` (`query.CrewStateOf`, `spawn.crew_stop`'s open-crew resolution, the Console's session metadata, `mate state`) now goes through `BlockingIncidents` instead.
-`box.OpenIncidents` itself is unchanged and still puts a `budget` incident in the inbox, where the phrase table (`internal/ui/console/box.go`'s `boxNeedPhrase`) reads it as `over budget`.
-`internal/autopilot.Gather` gives a `budget` incident its own `ItemBudget` kind rather than `ItemBlocked`, so the digest vocabulary itself cannot claim a budget crossing changed the crew's state; `Line`'s fourth item shape is `<crew> over budget: <total> of <limit>`, spelled once in `internal/autopilot/digest.go`'s `itemText` and in the Mate manual's section 10.
+Each `session` row carries `crew_session` (schema v6): the session's ordinal among its actor's sessions, by the time of its first turn (its own `started_at` when it has none yet), ties by id. The writer recomputes it for an actor whenever one of that actor's sessions is in a batch (`rankSessions`), after the turns, so it is a pure function of the rows and `mate reindex` gives every session the number it had live. It is the ledger's side of `sessions=` in `crews/<id>.meta` (1 at spawn, one more per relaunch that opens a new conversation; a resume continues the same conversation and the same row). `mate usage <project> <crew> --sessions` groups the crew's turns by it.

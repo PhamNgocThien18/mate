@@ -16,12 +16,12 @@ and auto daemon; this is not a launch-at-login service.
   headless Mate state is queried with a one-second bound. Silence alone never
   means an agent is stuck. No model is called to write a report.
 - Notification clicks open `/office/#captain` on this console's dashboard when it
-  started successfully. The dashboard must still be running. Open the Mate and
-  press **Ctrl+T** to check and answer news. Backlog questions from pane Mates
-  also alert, but are answered in their conversation.
+  started successfully. The dashboard must still be running. Answer the news
+  there, or in a headless Mate's REPL, where **Ctrl+T** opens the Topic page.
+  A read-only dashboard only shows news.
 - Receipts and the report clock are in `.mate/notifications.json`, serialized by
-  `.mate/notifications.json.lock`. Restarting or opening another console does
-  not resend accepted news. A new revision replaces the same news notification;
+  `.mate/notifications.json.lock`. Restarting the console does not resend
+  accepted news. A new revision replaces the same news notification;
   periodic reports share one notification ID. A failed submission is retried
   after a minute and shown on the console status line. Failed news reads suppress
   the "no news" report rather than treating unknown as empty.
@@ -44,9 +44,9 @@ Notifications are on by default on macOS. To disable for a workspace, add
 keep running without a native sender; the explicit test command reports that
 macOS is required.
 
-Validation on 2026-10-20: `mate notifications test` compiled and signed the
-companion and received an acceptance receipt from the real macOS Notification
-Center. This verifies submission, not that a banner was visually shown or a
-notification click was delivered. Automated tests cover the ten-minute clock,
-news updates and clearing, retries, unreadable sources, receipt persistence and
-concurrent consoles; those tests use a recording sender.
+`mate notifications test` has compiled and signed the companion and received
+an acceptance receipt from the real Notification Center. That proves
+submission, not that a banner was shown or a click was delivered. Automated
+tests cover the ten-minute clock, news updates and clearing, retries,
+unreadable sources, receipt persistence and concurrent consoles, with a
+recording sender.

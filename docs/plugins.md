@@ -54,8 +54,8 @@ the pointer line `- <crew-id>: <tracker-id>` in `backlog.md`, and `mate recall`
 part 4 runs `read` once per In flight pointer (`{id}` replaced, or the id
 appended; 3 s each, 10 s in all, 20 pointers at most) and prints the first
 line of its stdout, or `unknown to the tracker` on a non-zero exit. Without
-`read`, recall says the pointers were not cross-checked. `doctor` looks the
-command up the way it looks up a stdio server's.
+`read`, recall says the pointers were not cross-checked. `doctor` looks up
+`read` and `land` the way it looks up a stdio server's command.
 
 `land` is what `mate land <project> <crew>` runs once the crew's work is
 merged and the crew closed (CON-193): the tracker's own side of a landing -
@@ -68,11 +68,11 @@ landing's facts in its environment: `MATE_PROJECT`, `MATE_CREW`,
 (the images the hand-back names that exist on disk, one per line). It runs
 in the package root with 60 s to finish; its first stdout line is what
 `land` prints. A non-zero exit, or no `land` command at all, makes `land`
-say `tracker: <id> not updated ...; mark it done yourself`, and the Mate
-does what it did before. The tracker id is whatever leads the crew's
+print `tracker: <id> not updated ...`, and the Mate updates the tracker
+itself. The tracker id is whatever leads the crew's
 `task=` line (`HU-12: ...`, as crews named by the issue carry it) or the
 crew's backlog pointer. `examples/plugins/linear/bin/land` is one for
-Linear, driven by `LINEAR_API_KEY`.
+Linear, driven by `LINEAR_API_KEY` (or `~/.config/linear/api_key`).
 
 ## Install a local package in four steps
 
@@ -86,7 +86,7 @@ mate mate stop <project> && mate mate start <project>  # repeat for running Mate
 Then, in the Mate's pane, run `/mcp` and log in to `tracker-work` (only when
 the package has an MCP server), and ask the Mate for one read through its
 tools. That read, not `doctor`, is the proof the tools work.
-Measured so far: a stdio server through `claude -p`, and Linear's http server in an interactive Mate pane: one `/mcp` OAuth login serves every Mate and survives stop/start and resume ([evidence/linear-pilot-2026-10-12.md](evidence/linear-pilot-2026-10-12.md)). A Codex, pi or grok Mate is refused at start while an enabled plugin brings an MCP server.
+Measured so far: a stdio server through `claude -p`, and Linear's http server in an interactive Mate pane: one `/mcp` OAuth login serves every Mate and survives stop/start and resume ([evidence/linear-pilot-2026-10-12.md](evidence/linear-pilot-2026-10-12.md)). Claude, Codex and pi Mates take plugin MCP servers. grok cannot run a Mate.
 
 - `add` is the captain's (a Mate or Crew is refused). It writes one explicit
   workspace installation. `--set` is its opaque config; every key the package's
@@ -100,14 +100,15 @@ Measured so far: a stdio server through `claude -p`, and Linear's http server in
   `ok`/`fail` line per check: the file loads, package, manifest, each skill
   file, the stdio command (a name with `/` is resolved from the server's
   `cwd`, the package root unless the manifest sets one; a bare name on
-  `PATH`; an http server is not contacted), `open.url`, console key, project, and whether the Mate's
+  `PATH`; an http server is not contacted), the tracker's `read` and `land`
+  commands, `open.url`, console key, project, and whether the Mate's
   harness (the running Mate's, else the workspace default) can take MCP
   servers. It never logs in or calls a tool. Exit 1 on any failure.
 - `list` prints instances, packages and workspace config; no Mate needs to run.
 
 Editing `plugins.yaml` by hand is fine. A change reaches a Mate on its next
-start, and the console or Office on reopen. `enabled: false` keeps an
-instance in the file but gives nothing.
+start and the console on reopen; Office reads the file on each request.
+`enabled: false` keeps an instance in the file but gives nothing.
 
 Existing `projects:` bindings and `add --project` remain readable for backward
 compatibility. New installations omit `--project`; adding an existing instance
@@ -120,17 +121,19 @@ a single shared login across agents or harnesses.
 
 Codex 0.162.1 and pi 1.0.4 are the measured versions for the additional
 adapters ([implementation evidence](evidence/codex-pi-mcp-2026-10-13.md)).
-Both accept HTTP and stdio plugins on a Mate, fresh and resumed. pi now runs
+Both accept HTTP and stdio plugins on a Mate, fresh and resumed. pi runs
 Mate through a generated hook extension and explicitly loads Mate/plugin skills.
-Crews receive no workspace plugins. Restart Mate after changing plugins.
+Crews receive no workspace plugins; a Crew launch carrying MCP servers is
+refused. Restart Mate after changing plugins.
 
 Codex receives a whole `mcp_servers` table through `-c`; a Mate uses only the
 workspace's resolved servers, including an empty table after removal. The
-operator's config.toml is never edited. **Behavior change:** every Codex Mate,
-even a workspace with no plugins, now excludes the operator's global MCP
-servers. Move required servers into workspace plugins to expose them to Mate.
-This matches Claude's strict MCP isolation. A Crew without plugin servers
-keeps its existing launch behavior. Codex's native OAuth manager owns login.
+operator's config.toml is never edited. Every Codex Mate, even in a
+workspace with no plugins, excludes the operator's global MCP servers. Move
+required servers into workspace plugins to expose them to Mate. This matches
+Claude's strict MCP isolation (`--strict-mcp-config`). A Codex Crew gets no
+override and keeps the operator's MCP config. Codex's native OAuth manager
+owns login.
 For an HTTP instance, invoke login with the same URL/table and CODEX_HOME:
 
 ```sh

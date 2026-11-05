@@ -6,9 +6,9 @@ Mỗi board có một golden cùng tên trong `internal/ui/console/testdata/gold
 
 ## Vai trò
 
-mate là pane bên trái, khoảng 20% cửa sổ, rộng 32–48 cột.
+mate là pane bên trái, khoảng 20% cửa sổ. Host chia cho nó 40–48 cột; UI vẽ được từ 32 cột.
 Mỗi workspace chỉ chạy một console (CON-162). Console giữ khoá `.mate/console.lock`; console thứ hai báo console nào đang chạy (pid, giờ mở, tty) và hỏi `[y/N]`. Trả lời y thì gửi SIGTERM cho console cũ (Bubble Tea coi như `q`, dọn daemon, db, cột pane), quá 10 giây thì SIGKILL; trả lời khác thì thoát, không mở gì.
-Bên phải là cột agent của host (WezTerm, Ghostty), dựng lúc mở console (M13): Enter trên hàng Mate/Crew cho nó chạy `herdr agent attach <agent>`.
+Bên phải là cột agent của host (WezTerm, Ghostty), dựng lúc mở console (M13): Enter trên hàng Mate/Crew cho nó chạy `herdr agent attach <agent>`. Ngoài hai host đó không có cột: Mate chạy headless, status line ghi link Mate Office và Agent City của dashboard.
 Editor do người dùng khai báo trong `.mate/console.yaml`: phím, scope, argv và mode `terminal` (tab trong cùng cửa sổ, mở/reuse khi nhấn phím) hoặc `external` (launcher GUI như Zed/VS Code). Không có editor hay phím `e` mặc định. `{report_path}` mở report đã có, `{crew_dir}` mở folder Crew, kể cả Crew đã dừng. Enter chỉ mở agent. Cách setup: `mate console --help` hoặc [console-commands.md](console-commands.md).
 mate không vẽ terminal của agent, không PTY, không session header.
 Không có title bar, chữ "mate console", đường dẫn workspace, đồng hồ, khung cửa sổ.
@@ -69,17 +69,22 @@ Lift rule: trên hàng có nền sel, faint lên dim, dim lên fg.
 | Phím | Việc |
 | --- | --- |
 | ↑ ↓ | di chuyển (field trong detail) |
-| enter | show in next pane · mở project · bật tắt Completed |
-| e | report của crew: tab Fresh trên `report.md` trong folder crew |
-| a | sheet actions của hàng đang chọn |
-| tab · esc | pane kế · về list |
+| j k · g G · pgup pgdn | như ↑ ↓ · đầu/cuối list · nửa trang |
+| enter | show in next pane · mở project · bật tắt Completed, Handed back |
+| a | sheet actions của hàng đang chọn; trong box: assign item cho Mate |
+| o | sheet actions của Mate, khi đang ở trong project |
+| tab · shift+tab · esc | pane kế · pane trước · về list (hoặc lên một cấp) |
+| v | list gốc: Projects / chỉ các Mate |
+| w | bảng Work của Mate (hàng Mate hoặc Project): mở trong pane của Mate, sheet khi Mate không có REPL |
 | n · r · q | new project · refresh (hoặc retry stage lỗi) · quit |
 | s · m | start/resume/create Mate · đổi mode |
 | y | copy field dưới con trỏ (OSC 52) |
 | l | box: cả log / chỉ inbox |
 | ? | danh sách phím tới phím kế |
 
-Click hàng như Enter, click rule focus pane đó, click `[assign]` giao cho Mate, wheel cuộn pane dưới con trỏ.
+Phím khai báo trong `.mate/console.yaml` (ví dụ `e` mở Zed) chạy từ mọi pane. Phím ở bảng trên là của console, không khai báo được ([console-commands.md](console-commands.md)).
+
+Click hàng như Enter, click rule focus pane đó, click tên workspace trên rule của list về list Projects, click ▸ bật tắt nhóm, click `[assign]` giao cho Mate, wheel cuộn pane dưới con trỏ.
 mate không tự vẽ vùng chọn: shift+drag là của terminal.
 
 ## Chưa làm vì backend chưa có
@@ -88,7 +93,7 @@ Board vẽ vài thứ query chưa cho; frame hiện thứ snapshot có thay vì 
 
 - `last tool_call Bash · pnpm test`: query chỉ có loại event cuối (status/message/incident) và giờ.
 - `tokens 182k in · 21k out`: chỉ có tổng.
-- `▾ Answered today`: chưa có cờ "đã trả lời".
+- `▾ Answered today`: câu đã trả lời chỉ rời inbox, không có nhóm riêng.
 - `c New crew…`: console không spawn crew, Mate làm việc đó.
 - `[assign] to me · snooze 1h`: assign chỉ giao cho Mate.
 - Loading từng hàng (H3): snapshot về một lần, nên chỉ có một màn đang đọc.
