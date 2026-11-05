@@ -73,22 +73,6 @@ func cliHead(t *testing.T, repo, rev string) string {
 	return head
 }
 
-func TestDiffReadsEachCrewsOwnRepo(t *testing.T) {
-	w, _ := twoRepoCLIWorkspace(t)
-	for crew, c := range map[string]struct{ mine, other string }{"k3": {"api", "web"}, "k4": {"web", "api"}} {
-		text, err := crewDiffText(context.Background(), w, gitx.New(), "shop", crew, false)
-		if err != nil {
-			t.Fatalf("diff %s: %v", crew, err)
-		}
-		if !strings.Contains(text, "crew commit in "+c.mine) || !strings.Contains(text, c.mine+".txt") {
-			t.Errorf("diff %s does not show its commit in %s:\n%s", crew, c.mine, text)
-		}
-		if strings.Contains(text, c.other+".txt") {
-			t.Errorf("diff %s shows the %s repo's change:\n%s", crew, c.other, text)
-		}
-	}
-}
-
 func TestDashboardBranchExistsAsksTheCrewsOwnRepo(t *testing.T) {
 	w, _ := twoRepoCLIWorkspace(t)
 	deps := dashboardDeps(w)

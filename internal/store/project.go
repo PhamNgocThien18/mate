@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/nguyenngocanh94/mate/internal/memory"
 )
 
 // ErrProjectExists is returned by AddProject for a name already registered.
@@ -240,6 +242,16 @@ func (w *Workspace) AddProject(name string, cfg ProjectConfig) error {
 		next.Projects = append(next.Projects, ProjectRef{Name: name})
 		return nil
 	})
+}
+
+// EnsureProjectDoc creates `projects/<name>/PROJECT.md` from
+// memory.ProjectTemplate if it does not already exist. It never overwrites a
+// file the captain or a crew scout has since edited.
+func (w *Workspace) EnsureProjectDoc(name string) error {
+	if err := ValidateProjectName(name); err != nil {
+		return err
+	}
+	return w.seedOnce(w.ProjectDoc(name), memory.ProjectTemplate(name))
 }
 
 // RemoveProject drops a project from workspace.yaml. The state directory under

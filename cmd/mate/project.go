@@ -6,14 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/facts"
 	"github.com/nguyenngocanh94/mate/internal/github"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
-	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -50,20 +48,20 @@ func cmdProjectAdd(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	opts := projectAddOptions{BudgetUSD: *budgetUSDFlag}
+	opts := spawn.AddProjectOptions{BudgetUSD: *budgetUSDFlag}
 	if fs.NArg() == 2 {
 		repoPath := fs.Arg(1)
 		absRepo, err := filepath.Abs(repoPath)
 		if err != nil {
 			return err
 		}
-		repo, err := repoConfigFor(absRepo, repoPath, *repoNameFlag, *defaultBranchFlag)
+		repo, err := spawn.RepoConfigFor(context.Background(), gitx.New(), absRepo, repoPath, *repoNameFlag, *defaultBranchFlag)
 		if err != nil {
 			return err
 		}
 		opts.Repos = []store.RepoConfig{repo}
 	}
-	saved, err := addProject(w, name, opts)
+	saved, err := spawn.AddProject(w, name, opts)
 	if err != nil {
 		return err
 	}
@@ -86,64 +84,6 @@ func describeRepos(project string, repos []store.RepoConfig) string {
 // describeRepo is `<name>(<path>@<default-branch>)`.
 func describeRepo(r store.RepoConfig) string {
 	return fmt.Sprintf("%s(%s@%s)", r.Name, r.Path, r.DefaultBranch)
-}
-
-// projectAddOptions are the settings `mate project add` takes beyond the
-// name. The Console's new-project form passes only Repos.
-type projectAddOptions struct {
-	Repos     []store.RepoConfig // zero or more, each from repoConfigFor
-	BudgetUSD float64
-}
-
-// repoConfigFor checks a repo the one way both the CLI and the Console do
-// it - absRepo must be an existing directory that is the root of its git
-// work tree - and fills its default branch from the repo when none is
-// given. The store later proves the path is inside the workspace and owned
-// by no other project. shownRepo is the path as the caller typed it, for
-// error messages.
-func repoConfigFor(absRepo, shownRepo, name, defaultBranch string) (store.RepoConfig, error) {
-	fi, err := os.Stat(absRepo)
-	if err != nil {
-		return store.RepoConfig{}, fmt.Errorf("repo path %s: %w", shownRepo, err)
-	}
-	if !fi.IsDir() {
-		return store.RepoConfig{}, fmt.Errorf("repo path %s is not a directory", shownRepo)
-	}
-	top, err := gitTopLevel(absRepo)
-	if err != nil {
-		return store.RepoConfig{}, fmt.Errorf("repo path %s is not a git repository: %w", shownRepo, err)
-	}
-	resolvedRepo, err := filepath.EvalSymlinks(absRepo)
-	if err != nil {
-		return store.RepoConfig{}, err
-	}
-	resolvedTop, err := filepath.EvalSymlinks(top)
-	if err != nil {
-		return store.RepoConfig{}, err
-	}
-	if resolvedRepo != resolvedTop {
-		return store.RepoConfig{}, fmt.Errorf("repo path %s is not the root of its git work tree (root is %s)", shownRepo, top)
-	}
-	if defaultBranch == "" {
-		defaultBranch = detectDefaultBranch(absRepo, store.DefaultBranch)
-	}
-	return store.RepoConfig{Name: name, Path: absRepo, DefaultBranch: defaultBranch}, nil
-}
-
-// addProject registers a Project the one way both the CLI and the Console
-// do it, and seeds its PROJECT.md.
-func addProject(w *store.Workspace, name string, opts projectAddOptions) (store.ProjectConfig, error) {
-	cfg := store.ProjectConfig{Repos: opts.Repos}
-	if opts.BudgetUSD > 0 {
-		cfg.Budget = &store.BudgetConfig{ProjectUSD: opts.BudgetUSD}
-	}
-	if err := w.AddProject(name, cfg); err != nil {
-		return store.ProjectConfig{}, fmt.Errorf("project add %s: %w", name, err)
-	}
-	if err := ensureProjectDoc(w, name); err != nil {
-		return store.ProjectConfig{}, fmt.Errorf("project add %s: %w", name, err)
-	}
-	return w.LoadProject(name)
 }
 
 // ghClient is the `gh` that `mate pr watch` reads pull requests with; tests
@@ -315,27 +255,6 @@ func printTable(w io.Writer, table [][]string) {
 		}
 		fmt.Fprintln(w)
 	}
-}
-
-// ensureProjectDoc creates projects/<name>/PROJECT.md from a short template
-// if it does not already exist. It never overwrites a file the user or a
-// crew scout has since edited.
-func ensureProjectDoc(w *store.Workspace, name string) error {
-	path := w.ProjectDoc(name)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		if os.IsExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(projectDocTemplate(name))
-	return err
-}
-
-func projectDocTemplate(name string) string {
-	return memory.ProjectTemplate(name)
 }
 
 // cmdProjectFacts implements `mate project facts <project>`: what the

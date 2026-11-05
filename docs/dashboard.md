@@ -566,7 +566,7 @@ An unescaped `#` makes the browser send only the part before it and treat the re
 
 The bottom of the task page: `mate diff <project> <crew>`, verbatim.
 
-The CLI's own `crewDiffText` produces it, so the page and the terminal can never disagree about what a branch contains.
+The CLI's own `spawn.CrewDiff` produces it, so the page and the terminal can never disagree about what a branch contains.
 A branch git no longer has returns `200` with an empty `text` and a `reason`, not an error, for the same reason the CLI says it plainly: a crew whose branch was deleted is a crew whose work landed or was discarded.
 A diff that fails for any other reason answers the same way - the rest of the task page is still true, and a `500` here would take it down with the branch.
 

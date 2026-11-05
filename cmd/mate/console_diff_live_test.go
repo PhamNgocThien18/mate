@@ -32,7 +32,7 @@ import (
 //     Actions menu's `diff` entry calls - and the text that comes back names
 //     the crew's commit subject and the file it touched
 //  5. the same text is what `mate diff shop k3` prints, because both go
-//     through crewDiffText; the overlay in internal/ui/console renders it and
+//     through spawn.CrewDiff; the overlay in internal/ui/console renders it and
 //     nothing else
 //
 // The Bubble Tea Program is not run (it needs a terminal), but no part of
@@ -173,9 +173,9 @@ func TestLiveConsoleDiffShowsACrewBranch(t *testing.T) {
 
 	// --stat is the same answer in git's own summary form, and the command
 	// path is the one a Mate would run.
-	stat, err := crewDiffText(ctx, w, deps.Git, "shop", "k3", true)
+	stat, err := spawn.CrewDiff(ctx, w, deps.Git, "shop", "k3", true)
 	if err != nil {
-		t.Fatalf("crewDiffText --stat: %v", err)
+		t.Fatalf("spawn.CrewDiff --stat: %v", err)
 	}
 	t.Logf("--stat:\n%s", stat)
 	if !strings.Contains(stat, "README.md") || !strings.Contains(stat, "1 file changed") {
