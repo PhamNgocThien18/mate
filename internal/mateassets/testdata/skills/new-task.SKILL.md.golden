@@ -31,6 +31,7 @@ Read the evidence you have first: PROJECT.md, memory, and earlier Crews' reports
 When it already answers the question, relay it; no scout.
 Run `/usr/local/bin/mate learnings open shop` once: for each open prediction whose next check names this task's area, put one line `Prediction <crew> <id>: <claim> — check: <what this task should show>` in `## What we already know`, so `task-learning` closes it from this task's evidence. Carry nothing else from the learning archive; do not scan it.
 When the captain's intent is unclear, ask the smallest question that settles the intended behaviour or boundary, with the evidence and your recommendation.
+A bug the captain reports goes to a scout first, never straight to a ship, unless a scout report or the captain already names its cause. Before you spawn that scout, ask the captain as news, whatever the next-work setting: the scout you plan and what it starts from, and whether they have the steps, a recording or the device's log; spawn it on their answer.
 A diagnosis is evidence: a fix that serves a goal the captain already set is yours to dispatch, and you tell them; a fix beyond it is a proposal.
 Record the work in the captain's tracker when one is configured, otherwise in the backlog, before you dispatch it.
 
