@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 // Work is the board of what the captain asked the Mate for, and what the
@@ -209,10 +210,10 @@ func withWorkLog(path string, fn func([]Work, *os.File) error) error {
 		return err
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := platform.Lock(f); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer platform.Unlock(f) //nolint:errcheck
 	list, err := LoadWork(path)
 	if err != nil {
 		return err

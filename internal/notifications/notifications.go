@@ -11,8 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 const ReportInterval = 10 * time.Minute
@@ -51,18 +52,19 @@ type state struct {
 // after the native notification API accepts a message. The caller retries
 // failures; neither an unavailable notifier nor a restart loses a news.
 func Tick(ctx context.Context, path string, snap Snapshot, sender Sender, now time.Time) error {
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	lock, err := platform.OpenNoFollow(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil
-		}
+	locked, err := platform.TryLock(lock)
+	if err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if !locked {
+		return nil
+	}
+	defer platform.Unlock(lock)
 	s := state{Delivered: map[string]string{}, ReportAt: now}
 	b, err := os.ReadFile(path)
 	if err == nil {

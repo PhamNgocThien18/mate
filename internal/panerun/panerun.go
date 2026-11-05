@@ -28,6 +28,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/platform"
 )
 
 // Command is what a pane is asked to show: one program, run in Dir. Exit
@@ -172,7 +174,7 @@ func ownerGone(pid int, quit <-chan struct{}) <-chan struct{} {
 
 // alive reports whether pid exists: signal 0 checks without sending.
 func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
+	err := platform.Signal(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
@@ -305,7 +307,7 @@ func (s *Server) sweep() {
 		return
 	}
 	for _, pid := range left {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = platform.Signal(pid, syscall.SIGTERM)
 	}
 	deadline := time.Now().Add(StopGrace)
 	for time.Now().Before(deadline) {
@@ -315,7 +317,7 @@ func (s *Server) sweep() {
 		time.Sleep(50 * time.Millisecond)
 	}
 	for _, pid := range left {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_ = platform.Signal(pid, syscall.SIGKILL)
 	}
 }
 
