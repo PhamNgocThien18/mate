@@ -67,7 +67,8 @@ const StopGrace = 2 * time.Second
 type Terminal struct {
 	In, Out, Err *os.File
 	// Restore puts the tty back into the modes the runner started with; nil
-	// when the runner is not on a tty.
+	// when the runner is not on a tty. The clean-up after an exit calls it
+	// under the runner's lock, so it must not call back into the Server.
 	Restore func()
 }
 
@@ -87,6 +88,8 @@ type Server struct {
 	// nil when the runner has no tty.
 	Occupants func() []int
 
+	// mu guards the fields below. The clean-up after a program that exited
+	// holds it from its check to its last write to the terminal; see wait.
 	mu      sync.Mutex
 	current Command
 	child   *exec.Cmd
@@ -259,18 +262,21 @@ func (s *Server) wait(c *exec.Cmd, done chan struct{}, gen int) {
 			return
 		}
 	}
+	// The check that the program is still the column's and the clean-up
+	// after it share one hold of the lock that stop takes to retire it.
+	// Otherwise Run could start the next program in between, and this
+	// one's exit would be drawn over it and the modes it set put back
+	// (CON-217).
 	s.mu.Lock()
-	ours := s.gen == gen
-	if ours {
-		s.showing, s.current = false, Command{}
+	defer s.mu.Unlock()
+	if s.gen != gen {
+		return
 	}
-	s.mu.Unlock()
-	if ours {
-		// What it printed last - herdr's reason for refusing an attach -
-		// stays on screen; only the modes it left are undone.
-		s.restoreModes()
-		s.appendIdle(exitNote(c.Args[0], err))
-	}
+	s.showing, s.current = false, Command{}
+	// What it printed last - herdr's reason for refusing an attach -
+	// stays on screen; only the modes it left are undone.
+	s.restoreModes()
+	s.appendIdle(exitNote(c.Args[0], err))
 }
 
 func (s *Server) occupants() []int {
