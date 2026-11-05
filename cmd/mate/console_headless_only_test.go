@@ -22,9 +22,9 @@ import (
 // Whether a Mate runs headless is asked by the UI a start comes from
 // (CON-205): a console that cannot split its terminal and a dashboard page
 // cannot show a pane Mate, and a console that can split leaves the mode to
-// the last run. These tests press actions the way the console's TUI and
-// its dashboard do (consoleUIs), over the fake Herdr adapter, and read the
-// mode StartMate recorded in mate.meta.
+// project.yaml and the last run. These tests press actions the way the
+// console's TUI and its dashboard do (consoleUIs), over the fake Herdr
+// adapter, and read the mode StartMate recorded in mate.meta.
 
 // splitTerminal is a terminal the console can split. Any host will do:
 // tuiAction only asks whether there is one.
@@ -172,8 +172,9 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 // no column to show a pane Mate in, so what its TUI starts, resumes,
 // onboards or restarts runs headless, though the last run was in a pane
 // (CON-150). A console that can split asks nothing, and the last run keeps
-// its pane. Mate Office and Agent City cannot show a pane Mate either, so
-// a page's press runs headless even where its console can split (CON-205).
+// its pane (project.yaml names no mode here). Mate Office and Agent City
+// cannot show a pane Mate either, so a page's press runs headless even
+// where its console can split (CON-205).
 func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 	for _, ui := range []struct {
 		name     string
@@ -215,6 +216,57 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 				}
 				if got := mateMode(t, w); got != ui.want {
 					t.Fatalf("%s pressed in a %s: the Mate runs %s, want %s (%s)", req.Action, ui.name, got, ui.want, out)
+				}
+			})
+		}
+	}
+}
+
+// project.yaml's `mate.mode: pane` asks for the pane, but a console that
+// cannot split and a page have nowhere to show one: the Mate runs
+// headless, and the line the console's status line and the page show says
+// why (CON-220).
+func TestAHeadlessOnlyStartOverConfigPaneSaysSo(t *testing.T) {
+	for _, ui := range []struct {
+		name     string
+		terminal host.Host
+		page     bool
+	}{
+		{name: "console that cannot split", terminal: nil},
+		{name: "page", terminal: splitTerminal, page: true},
+	} {
+		for _, req := range []coreapi.ActionRequest{
+			{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"},
+		} {
+			t.Run(ui.name+"/"+string(req.Action), func(t *testing.T) {
+				w, deps, rt := headlessFixture(t)
+				paneMate(t, w, deps, rt, req.Action == coreapi.ActionRestartMate)
+				cfg, err := w.LoadProject("shop")
+				if err != nil {
+					t.Fatal(err)
+				}
+				cfg.Mate.Mode = spawn.ModePane
+				if err := w.SaveProject("shop", cfg); err != nil {
+					t.Fatal(err)
+				}
+				tui, web := consoleUIs(t, w, deps, ui.terminal)
+				var out string
+				if ui.page {
+					page := req
+					page.HeadlessOnly = true
+					out, err = web(context.Background(), page)
+				} else {
+					out, err = tui(context.Background(), req)
+				}
+				if err != nil {
+					t.Fatalf("%s: %v", req.Action, err)
+				}
+				if got := mateMode(t, w); got != spawn.ModeHeadless {
+					t.Fatalf("the Mate runs %s, want headless (%s)", got, out)
+				}
+				if !strings.Contains(out, "project.yaml's mate.mode is pane") {
+					t.Fatalf("result = %q, want it to say project.yaml's pane was overridden", out)
 				}
 			})
 		}

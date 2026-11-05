@@ -380,7 +380,10 @@ func (a *attempt) restart(ctx context.Context, current map[string]string) (bool,
 			return false, fmt.Errorf("Mate stopped with checkpoint saved; archive failed: %w", err)
 		}
 	}
-	_, err = spawn.StartMate(ctx, a.ws, a.deps.Spawn, spawn.StartRequest{Project: a.project, Harness: harness.Kind(a.meta[spawn.MetaHarness]), Fresh: true})
+	// A refresh is the same Mate in a fresh session, not the captain's next
+	// start: it keeps the mode the Mate runs in, though project.yaml's
+	// `mate.mode` would choose another now (CON-220).
+	_, err = spawn.StartMate(ctx, a.ws, a.deps.Spawn, spawn.StartRequest{Project: a.project, Harness: harness.Kind(a.meta[spawn.MetaHarness]), Fresh: true, Mode: a.meta[spawn.MetaMode]})
 	if err != nil {
 		return false, fmt.Errorf("checkpoint saved; fresh start failed: %w", err)
 	}

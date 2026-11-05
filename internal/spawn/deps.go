@@ -60,7 +60,8 @@ const (
 	MetaBudget = store.MetaBudget
 	// MetaMode is ModeHeadless for a Mate that runs as a headless host
 	// (CON-78). Absent means the harness's TUI runs in the pane. A stop
-	// keeps it, so a restart comes back in the same mode.
+	// keeps it, so a restart comes back in the same mode unless the start
+	// or project.yaml's `mate.mode` names one (headlessMode).
 	MetaMode = store.MetaMateMode
 )
 
@@ -113,8 +114,8 @@ const (
 type Deps struct {
 	// Runtime is the Herdr adapter. Tests pass runtime.NewFake().
 	Runtime runtime.Adapter
-	// DefaultMode is the Mate's mode when neither the start, the last run
-	// nor project.yaml names one. LiveDeps sets ModeHeadless (2026-10-15);
+	// DefaultMode is the Mate's mode when neither the start, project.yaml
+	// nor the last run names one. LiveDeps sets ModeHeadless (2026-10-15);
 	// empty is ModePane.
 	DefaultMode string
 	// HostStopWait bounds how long a stop lets a headless Mate finish its

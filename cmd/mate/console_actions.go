@@ -231,6 +231,10 @@ func startMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, 
 		return "", err
 	}
 	line := fmt.Sprintf("Mate %s is running on %s in pane %s", res.Agent, res.Harness, res.Pane)
+	if res.ModeNote != "" {
+		// First: the console's status line is one row (CON-220).
+		line = res.ModeNote + "; " + line
+	}
 	if res.Resumed {
 		line += "; resumed session " + res.ResumedFrom
 	}
