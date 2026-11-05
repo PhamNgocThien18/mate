@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/memory"
+	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -66,7 +67,7 @@ func checkpointFiles(w *store.Workspace, project string) (map[string]string, err
 			}
 			// Crew IDs must still be discoverable after recall. Content correctness
 			// remains the Mate's stow responsibility; hashes prove this exact receipt.
-			_, _, inFlight := splitBacklog(string(data))
+			_, _, inFlight := recall.SplitBacklog(string(data))
 			for _, crew := range crews {
 				if !crew.Closed && !slices.Contains(inFlight, crew.Crew) {
 					return nil, fmt.Errorf("checkpoint: open crew %s absent from backlog", crew.Crew)

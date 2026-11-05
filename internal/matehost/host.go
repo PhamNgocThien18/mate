@@ -89,6 +89,11 @@ type Event struct {
 	Queue []string
 	// DraftCleared is set when the console dropped the captain's draft.
 	DraftCleared bool
+	// DraftSet is set when a REPL changed the draft (State.Draft); DraftBy
+	// is that REPL's id, so it can tell its own change from another's
+	// (CON-223: two REPLs of one Mate share the draft).
+	DraftSet bool
+	DraftBy  string
 	// News is every news, oldest first.
 	News []News
 	// Note is something the REPL should tell the captain.
@@ -103,6 +108,12 @@ type Event struct {
 	Sessions []SessionInfo
 	// State is the host's state after the event.
 	State State
+	// Seq orders the events by when their state was read: emit runs after
+	// the host's lock is let go, so two goroutines' events can reach a
+	// subscriber in the other order. A client keeps the state of the
+	// highest Seq it has seen (CON-223). It starts again from 1 with a
+	// new host.
+	Seq int64
 }
 
 // Reporter tells Herdr what the host is doing (herdrReporter).
@@ -132,6 +143,8 @@ type Host struct {
 	draft    string
 	stopping bool
 	idle     chan struct{}
+	// seq numbers the events (Event.Seq).
+	seq int64
 
 	// Sessions (session.go): the open ones by news, and what they run with.
 	sessions  map[int]*session
@@ -183,8 +196,9 @@ func New(runner *Runner, opts Options) *Host {
 // HistoryPath is the history file of the Mate in mateDir.
 func HistoryPath(mateDir string) string { return filepath.Join(mateDir, HistoryName) }
 
-// Subscribe sets the one listener for events in this process: the REPL.
-// Clients of the socket subscribe there (OpSubscribe) instead.
+// Subscribe sets the one listener for events in this process. The REPL is
+// a client of the socket (OpSubscribe, CON-223); this is for tests and
+// for whatever else lives beside the host.
 func (h *Host) Subscribe(fn func(Event)) {
 	h.mu.Lock()
 	h.notify = fn
@@ -455,10 +469,17 @@ func (h *Host) Interrupt() bool {
 }
 
 // SetDraft records what the captain has typed and not sent.
-func (h *Host) SetDraft(text string) {
+func (h *Host) SetDraft(text string) { h.SetDraftBy(text, "") }
+
+// SetDraftBy is SetDraft from the REPL whose id is by. Every REPL hears of
+// it (Event.DraftSet), so one open beside it shows the same draft.
+func (h *Host) SetDraftBy(text, by string) {
 	h.mu.Lock()
 	h.draft = text
+	ev := h.eventLocked(nil)
+	ev.DraftSet, ev.DraftBy = true, by
 	h.mu.Unlock()
+	h.emit(ev)
 }
 
 // ClearDraft drops the captain's draft; the REPL picks it up as an event.
@@ -653,7 +674,8 @@ func paragraph(reply string) string {
 // eventLocked is an event carrying a copy of item (which may be nil), the
 // queue and the state.
 func (h *Host) eventLocked(item *Item) Event {
-	ev := Event{State: h.stateLocked(), News: h.news, Work: h.work, Sessions: h.sessionsLocked()}
+	h.seq++
+	ev := Event{State: h.stateLocked(), News: h.news, Work: h.work, Sessions: h.sessionsLocked(), Seq: h.seq}
 	for _, q := range h.queue {
 		text := q.Text
 		if q.News != 0 {
@@ -798,6 +820,9 @@ func (h *Host) ArchiveNews(id int) {
 	_ = newsOp(h.newsPath, newsEvent{At: h.now(), Op: opArchive, ID: id}, true)
 	h.RefreshNews()
 }
+
+// Warn tells every REPL err, as a note.
+func (h *Host) Warn(err error) { h.emitNote(err) }
 
 func (h *Host) emitNote(err error) {
 	h.mu.Lock()

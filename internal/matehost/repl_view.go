@@ -177,6 +177,9 @@ func (m Model) footer(w int) []string {
 	if m.note != "" {
 		return []string{" " + styleMuted.Render(m.note)}
 	}
+	if m.lost {
+		return []string{" " + styleDanger.Render(offlineNote)}
+	}
 	var hints []keyHint
 	switch {
 	case m.help:

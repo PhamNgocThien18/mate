@@ -1,28 +1,38 @@
-package main
+package usage
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/nguyenngocanh94/mate/internal/db"
+	"github.com/nguyenngocanh94/mate/internal/harness"
+	"github.com/nguyenngocanh94/mate/internal/harness/catalog"
+	"github.com/nguyenngocanh94/mate/internal/harness/claude"
+	"github.com/nguyenngocanh94/mate/internal/harness/codex"
+	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
 // TestUsageCharacterizationOnTheFixtureCorpus pins what `mate usage` prints
 // for the fixture corpus - internal/timeline's captured run, a Claude Code
-// Mate and a codex-cli crew - after `mate reindex` reads it, byte for byte.
+// Mate and a codex-cli crew - after a reindex reads it, byte for byte.
 // It was recorded before the transcript capability moved behind the harness
 // registry (docs/plans/harness-registry-2026-09-30.md, PR 5): that change
 // must leave these numbers, and the dashboard's on the same corpus
 // (internal/dashboard/numbers_characterization_test.go), as it found them.
+// The golden is the one cmd/mate recorded before the pages moved here
+// (CON-168), unchanged.
 func TestUsageCharacterizationOnTheFixtureCorpus(t *testing.T) {
 	// The SPAWN→CLOSE column is local time.
 	local := time.Local
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = local })
 
-	w := liveCrewWorkspace(t, "shop")
+	w := newWorkspace(t, "shop")
 	corpus := func(name string) string {
-		path, err := filepath.Abs(filepath.Join("..", "..", "internal", "timeline", "testdata", name))
+		path, err := filepath.Abs(filepath.Join("..", "timeline", "testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,9 +61,27 @@ func TestUsageCharacterizationOnTheFixtureCorpus(t *testing.T) {
 		t.Fatalf("WriteCrewMeta: %v", err)
 	}
 
-	runCLI(t, "reindex", w.Root())
-	got := "== mate usage shop\n" + runCLI(t, "usage", "shop", "--workspace", w.Root()) +
-		"== mate usage shop buybtn\n" + runCLI(t, "usage", "shop", "buybtn", "--workspace", w.Root())
+	// `mate reindex`, without Herdr and without the machine's own
+	// transcript directories: the meta names every transcript.
+	writer, err := db.Open(w)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	none := t.TempDir()
+	if err := timeline.New(w, writer, timeline.Deps{
+		Harnesses: catalog.Default(),
+		TranscriptRoots: map[harness.Kind]string{
+			claude.KindClaude: filepath.Join(none, "claude-projects"),
+			codex.KindCodex:   filepath.Join(none, "codex-sessions"),
+		},
+	}).Reindex(context.Background()); err != nil {
+		writer.Close()
+		t.Fatalf("Reindex: %v", err)
+	}
+	writer.Close()
+
+	got := "== mate usage shop\n" + writePage(t, w, Request{Project: "shop"}) +
+		"== mate usage shop buybtn\n" + writePage(t, w, Request{Project: "shop", Crew: "buybtn"})
 
 	golden := filepath.Join("testdata", "usage-fixture-corpus.golden")
 	if os.Getenv("MATE_UPDATE_GOLDEN") == "1" {

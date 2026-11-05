@@ -105,7 +105,7 @@ Tier 2: the Mate above, the task table below, the inbox beside it.
 
 `mate` is the card's block plus what the Mate has spent and what it last did.
 There is no `task` row for a Mate - its turns belong to the project and not to any one task (docs/timeline.md) - so `turns`, `tokens` and `cost` are computed from `turn` directly, with the same all-zeroes-is-not-a-price guard `v_task_ledger` uses.
-This is the same SQL `cmd/mate/usage.go`'s `mateLedgerRow` runs, and the unit tests compare the two number for number.
+This is the same SQL `internal/usage`'s `mateLedgerRow` runs, and the unit tests compare the two number for number.
 `last_turn` is `null` for a Mate that has taken no model call yet, and otherwise the full model-call object of section 4.
 The project page links to `GET /api/projects/{project}/mate`. Its `exchanges`
 are prompt-level interactions: one captain message, crew digest, or app prompt

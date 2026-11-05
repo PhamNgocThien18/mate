@@ -3,6 +3,7 @@ package matehost
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,9 +41,11 @@ func workModel(t *testing.T, w, h int) Model {
 			t.Fatal(err)
 		}
 	}
-	m.host = New(&Runner{}, Options{News: filepath.Join(dir, NewsName), Now: m.now})
-	m.host.RefreshWork()
-	m.work = m.host.eventLocked(nil).Work
+	list, err := LoadWork(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.work = list
 	return m
 }
 
@@ -97,16 +100,8 @@ func TestREPLWorkPageKeys(t *testing.T) {
 		t.Fatalf("Space on a working row: note %q", m.note)
 	}
 	press(t, &m, tea.KeyUp, tea.KeySpace)
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		list, _ := LoadWork(WorkPath(filepath.Dir(m.host.newsPath)))
-		if w, _ := findWork(list, 1); w.Status == WorkOkayed {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Space on the done row never okayed it")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if f := m.conn.(*fakeConn); !slices.Equal(f.okayed, []int{1}) || m.note != "✓ đã OK việc #1" {
+		t.Fatalf("Space on the done row okayed %v, note %q", f.okayed, m.note)
 	}
 
 	press(t, &m, "jj", tea.KeyEnter)

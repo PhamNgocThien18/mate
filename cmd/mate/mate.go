@@ -12,10 +12,10 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// cmdMate dispatches `mate mate <start|stop|status|refresh|host>`.
+// cmdMate dispatches `mate mate <start|stop|status|refresh|host|repl>`.
 func cmdMate(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return newUsageError("usage: mate mate <start|stop|status|refresh|host> <project> ...")
+		return newUsageError("usage: mate mate <start|stop|status|refresh|host|repl> <project> ...")
 	}
 	switch args[0] {
 	case "start":
@@ -28,6 +28,8 @@ func cmdMate(args []string, stdout, stderr io.Writer) error {
 		return cmdMateStatus(args[1:], stdout, stderr)
 	case "host":
 		return cmdMateHost(args[1:], stdout, stderr)
+	case "repl":
+		return cmdMateREPL(args[1:], stdout, stderr)
 	default:
 		return newUsageErrorf("unknown mate subcommand %q", args[0])
 	}

@@ -92,11 +92,12 @@ func TestREPLScreens(t *testing.T) {
 }
 
 func TestREPLComposerKeys(t *testing.T) {
-	m := NewModel(New(&Runner{}, Options{}), Config{Project: "p"}, nil)
-	m.host.queue = []message{{Source: SourceCaptain, Text: "first", Prompt: "first"}, {Source: SourceCaptain, Text: "second", Prompt: "second"}}
+	m, f := withFake(NewModel(nil, Config{Project: "p"}, nil))
+	f.queue = []string{"first", "second"}
 	press := func(k tea.KeyMsg) {
 		next, _ := m.key(k)
 		m = next.(Model)
+		drain(&m)
 	}
 	for _, r := range "xin chào" {
 		press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -111,15 +112,15 @@ func TestREPLComposerKeys(t *testing.T) {
 	if got := string(m.input); got != "xin c\ndòng " {
 		t.Fatalf("input = %q", got)
 	}
-	if m.host.State().Draft != "xin c\ndòng " {
-		t.Fatalf("draft = %q", m.host.State().Draft)
+	if draft, _ := f.state(); draft != "xin c\ndòng " {
+		t.Fatalf("draft = %q", draft)
 	}
 	press(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
 	if got := string(m.input); got != "xin \ndòng " {
 		t.Fatalf("⌥⌫ left %q", got)
 	}
 	press(tea.KeyMsg{Type: tea.KeyCtrlU})
-	if len(m.input) != 0 || m.host.State().Draft != "" {
+	if draft, _ := f.state(); len(m.input) != 0 || draft != "" {
 		t.Fatalf("^U left %q", string(m.input))
 	}
 	for _, r := range "lại" {
@@ -130,22 +131,25 @@ func TestREPLComposerKeys(t *testing.T) {
 		t.Fatalf("^C left %q", string(m.input))
 	}
 	press(tea.KeyMsg{Type: tea.KeyUp})
-	if got := string(m.input); got != "" || len(m.host.queue) != 2 {
-		t.Fatalf("↑ on an empty composer filled %q, queue %q", got, m.host.queue)
+	if _, queue := f.state(); string(m.input) != "" || len(queue) != 2 {
+		t.Fatalf("↑ on an empty composer filled %q, queue %q", string(m.input), queue)
 	}
 	press(tea.KeyMsg{Type: tea.KeyCtrlX})
 	press(tea.KeyMsg{Type: tea.KeyCtrlX})
-	if len(m.host.queue) != 0 {
-		t.Fatalf("^X left %q", m.host.queue)
+	if _, queue := f.state(); len(queue) != 0 {
+		t.Fatalf("^X left %q", queue)
+	}
+	press(tea.KeyMsg{Type: tea.KeyCtrlX})
+	if m.note != "không có tin nào đang xếp hàng" {
+		t.Fatalf("^X on an empty queue: note %q", m.note)
 	}
 }
 
 // TestREPLMouseWheel: the wheel scrolls the chat and never fills the
 // composer, which the ↑ keys a terminal makes of the wheel once did.
 func TestREPLMouseWheel(t *testing.T) {
-	m := sampleModel(80, 12)
-	m.host = New(&Runner{}, Options{})
-	m.host.queue = []message{{Source: SourceCaptain, Text: "queued", Prompt: "queued"}}
+	m, f := withFake(sampleModel(80, 12))
+	f.queue = []string{"queued"}
 	wheel := func(b tea.MouseButton) {
 		next, _ := m.Update(tea.MouseMsg{Button: b, Action: tea.MouseActionPress})
 		m = next.(Model)
@@ -160,8 +164,8 @@ func TestREPLMouseWheel(t *testing.T) {
 	m = next.(Model)
 	wheel(tea.MouseButtonWheelUp)
 	wheel(tea.MouseButtonWheelUp)
-	if m.scroll != 2*wheelLines || len(m.input) != 0 || len(m.host.queue) != 1 {
-		t.Fatalf("wheel up: scroll %d, input %q, queue %q", m.scroll, string(m.input), m.host.queue)
+	if _, queue := f.state(); m.scroll != 2*wheelLines || len(m.input) != 0 || len(queue) != 1 {
+		t.Fatalf("wheel up: scroll %d, input %q, queue %q", m.scroll, string(m.input), queue)
 	}
 	up := ansi.Strip(m.View())
 	if up == bottom || !strings.Contains(up, "đang xem tin cũ") {
