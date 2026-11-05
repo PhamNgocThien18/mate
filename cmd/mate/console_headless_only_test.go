@@ -9,14 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nguyenngocanh94/mate/internal/dashboard"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // Whether a Mate runs headless is asked by the UI a start comes from
@@ -42,23 +41,7 @@ func headlessFixture(t *testing.T) (*store.Workspace, spawn.Deps, *runtime.Fake)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(claude.ClaudeConfigDirEnv, "")
 	_, deps := consoleFixture(t, "shop")
-	root, err := os.MkdirTemp("/tmp", "ho")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(root) })
-	w, err := store.Init(root, workspaceDefaults())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := filepath.Join(w.ProjectHome("shop"), "shop")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	initGitRepo(t, repo)
-	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: repo, DefaultBranch: "main"}}}); err != nil {
-		t.Fatal(err)
-	}
+	w := tmpShopWorkspace(t)
 	// A host that never answers fails the start within the readiness
 	// timeout, rather than spinning on a sleep that ignores its context.
 	deps.Sleep = func(ctx context.Context, _ time.Duration) error {
@@ -98,6 +81,31 @@ func headlessFixture(t *testing.T) (*store.Workspace, spawn.Deps, *runtime.Fake)
 	return w, deps, rt
 }
 
+// tmpShopWorkspace is a workspace under /tmp with the Project shop and its
+// repo. A Mate's socket lives in the Mate directory, and a t.TempDir path
+// on macOS is longer than a unix socket path may be.
+func tmpShopWorkspace(t *testing.T) *store.Workspace {
+	t.Helper()
+	root, err := os.MkdirTemp("/tmp", "ho")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	w, err := store.Init(root, workspaceDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(w.ProjectHome("shop"), "shop")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := w.AddProject("shop", store.ProjectConfig{Repos: []store.RepoConfig{{Path: repo, DefaultBranch: "main"}}}); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
 // mateMode is how shop's Mate runs now, by mate.meta: headless, pane, or
 // stopped when it names no agent.
 func mateMode(t *testing.T, w *store.Workspace) string {
@@ -132,7 +140,7 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 	t.Helper()
 	ctx := context.Background()
 	tui, _ := tuiAndWebActions(w, deps, nil, splitTerminal)
-	if _, err := tui(ctx, console.ActionRequest{Action: console.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("start shop's Mate in its pane: %v", err)
 	}
 	if got := mateMode(t, w); got != spawn.ModePane {
@@ -142,7 +150,7 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 		rt.SetReadOutput(mateAgent(t, w), claudeEmptyScreen)
 		return
 	}
-	if _, err := tui(ctx, console.ActionRequest{Action: console.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
+	if _, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatalf("stop shop's Mate: %v", err)
 	}
 }
@@ -165,23 +173,28 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 		{name: "console that can split", terminal: splitTerminal, want: spawn.ModePane},
 		{name: "page", terminal: splitTerminal, page: true, want: spawn.ModeHeadless},
 	} {
-		for _, req := range []console.ActionRequest{
+		for _, req := range []coreapi.ActionRequest{
 			// The Mate-row presses that bring a Mate up, as the sheet
 			// builds them.
-			{Action: console.ActionStart, Target: "shop", TargetKind: "mate"},
-			{Action: console.ActionResume, Target: "shop", TargetKind: "mate"},
-			{Action: console.ActionOnboard, Target: "shop", TargetKind: "project-mate"},
-			{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"},
+			{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionResume, Target: "shop", TargetKind: "mate"},
+			{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate"},
+			{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"},
 		} {
 			t.Run(ui.name+"/"+string(req.Action), func(t *testing.T) {
 				w, deps, rt := headlessFixture(t)
-				paneMate(t, w, deps, rt, req.Action == console.ActionRestartMate)
+				paneMate(t, w, deps, rt, req.Action == coreapi.ActionRestartMate)
 				tui, web := tuiAndWebActions(w, deps, nil, ui.terminal)
 
 				var out string
 				var err error
 				if ui.page {
-					out, err = web(context.Background(), dashboardActionRequest(dashboard.ActionRequest{Action: string(req.Action), Project: "shop"}))
+					// A page's press is the sheet's request, which the
+					// dashboard says is HeadlessOnly (its coreRequest,
+					// pinned by internal/dashboard's tests).
+					page := req
+					page.HeadlessOnly = true
+					out, err = web(context.Background(), page)
 				} else {
 					out, err = tui(context.Background(), req)
 				}
@@ -201,7 +214,7 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	_, web := tuiAndWebActions(w, deps, nil, splitTerminal)
-	out, err := web(context.Background(), dashboardActionRequest(dashboard.ActionRequest{Action: "onboard", Project: "shop", Harness: "codex"}))
+	out, err := web(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionOnboard, Target: "shop", TargetKind: "project-mate", Harness: "codex", HeadlessOnly: true})
 	if err != nil {
 		t.Fatalf("onboard a Codex Mate from a page: %v", err)
 	}
@@ -226,11 +239,11 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	tui, web := tuiAndWebActions(w, deps, nil, splitTerminal)
 	ctx := context.Background()
 
-	out, err := tui(ctx, console.ActionRequest{Action: console.ActionRestartMate, Target: "shop", TargetKind: "project"})
+	out, err := tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})
 	if err != nil || !strings.HasPrefix(out, "held: ") {
 		t.Fatalf("the console's press = %q, %v; want it held for the unsent text", out, err)
 	}
-	out, err = web(ctx, dashboardActionRequest(dashboard.ActionRequest{Action: "restart_mate", Project: "shop"}))
+	out, err = web(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project", HeadlessOnly: true})
 	if err != nil {
 		t.Fatalf("the page's press: %v", err)
 	}

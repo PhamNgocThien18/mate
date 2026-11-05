@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -106,7 +107,7 @@ func TestCreatingAMateAsksWhichHarnessToUse(t *testing.T) {
 	if len(*got) != 1 {
 		t.Fatalf("runner calls = %d, want one", len(*got))
 	}
-	if req := (*got)[0]; req.Action != ActionOnboard || req.Harness != query.HarnessKind("codex") || req.TargetKind != "project-mate" {
+	if req := (*got)[0]; req.Action != coreapi.ActionOnboard || req.Harness != query.HarnessKind("codex") || req.TargetKind != "project-mate" {
 		t.Fatalf("request = %+v, want a project-mate onboard carrying codex", req)
 	}
 }
@@ -117,10 +118,10 @@ func TestStartAndResumeDoNotAskForAHarness(t *testing.T) {
 		name   string
 		mate   query.MateNode
 		caps   []query.ActionAvailability
-		action Action
+		action coreapi.Action
 	}{
-		{"created", actKnownMate(query.MateCreated, query.HarnessKind("claude")), actMateCaps(false, true, false), ActionStart},
-		{"stopped", actKnownMate(query.MateStopped, query.HarnessKind("claude")), actMateCaps(false, false, true), ActionResume},
+		{"created", actKnownMate(query.MateCreated, query.HarnessKind("claude")), actMateCaps(false, true, false), coreapi.ActionStart},
+		{"stopped", actKnownMate(query.MateStopped, query.HarnessKind("claude")), actMateCaps(false, false, true), coreapi.ActionResume},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, got := actRunner(t, actMateTree(tc.mate, tc.caps), "ok", nil)
@@ -167,7 +168,7 @@ func TestTheModeKeyFlipsTheProjectsMode(t *testing.T) {
 			}
 			_, _ = send(t, m, cmd())
 			want := sampleTree().Projects[0].ProjectID
-			if len(*got) != 1 || (*got)[0].Action != ActionMode || (*got)[0].Target != want || (*got)[0].TargetKind != "project" {
+			if len(*got) != 1 || (*got)[0].Action != coreapi.ActionMode || (*got)[0].Target != want || (*got)[0].TargetKind != "project" {
 				t.Fatalf("requests = %+v, want one mode flip of %s", *got, want)
 			}
 		})

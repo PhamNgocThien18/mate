@@ -5,6 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"strconv"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -17,20 +18,20 @@ import (
 
 func restartMateChoice(project string) actionChoice {
 	return actionChoice{
-		action: ActionRestartMate, enabled: true, dangerous: true,
+		action: coreapi.ActionRestartMate, enabled: true, dangerous: true,
 		desc: "Restart the Mate of " + project,
-		req: ActionRequest{
-			Action: ActionRestartMate, Target: project, TargetKind: "project",
+		req: coreapi.ActionRequest{
+			Action: coreapi.ActionRestartMate, Target: project, TargetKind: "project",
 		},
 	}
 }
 
 func clearComposerChoice(project string) actionChoice {
 	return actionChoice{
-		action: ActionClearComposer, enabled: true,
+		action: coreapi.ActionClearComposer, enabled: true,
 		desc: "Clear the Mate's composer",
-		req: ActionRequest{
-			Action: ActionClearComposer, Target: project, TargetKind: "project",
+		req: coreapi.ActionRequest{
+			Action: coreapi.ActionClearComposer, Target: project, TargetKind: "project",
 		},
 	}
 }
@@ -140,10 +141,10 @@ func (m Model) beginBoxAssign(it boxItem) (Model, tea.Cmd) {
 // why it is built here rather than in the actions sheet.
 func boxAssignChoice(project string, e query.BoxEntry) actionChoice {
 	return actionChoice{
-		action: ActionResolve, enabled: true,
+		action: coreapi.ActionResolve, enabled: true,
 		desc: "Ask the Mate to resolve " + e.Crew + "'s " + e.Verb,
-		req: ActionRequest{
-			Action: ActionResolve, Target: project, TargetKind: "project",
+		req: coreapi.ActionRequest{
+			Action: coreapi.ActionResolve, Target: project, TargetKind: "project",
 			Crew: e.Crew, Input: e.Resolve, Key: e.AssignKey,
 		},
 	}
@@ -187,7 +188,7 @@ type newsOpenedMsg struct{ err error }
 // Mate's pane shows it, and the captain answers there.
 func (m Model) openNews(project string, id int) tea.Cmd {
 	action, ctx := m.action, m.baseCtx()
-	req := ActionRequest{Action: ActionOpenNews, Target: project, TargetKind: "project", Input: strconv.Itoa(id)}
+	req := coreapi.ActionRequest{Action: coreapi.ActionOpenNews, Target: project, TargetKind: "project", Input: strconv.Itoa(id)}
 	return func() tea.Msg {
 		if action == nil {
 			return newsOpenedMsg{err: fmt.Errorf("Console actions are not wired")}

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/term"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
@@ -193,7 +194,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// console reads through its own; the dashboard opens a fresh one per
 	// read, because LoadLive re-reads workspace.yaml into the Workspace it
 	// is given and two goroutines must not do that to one value.
-	loadFrom := func(ws *store.Workspace) console.LoadFunc {
+	loadFrom := func(ws *store.Workspace) coreapi.LoadFunc {
 		return func(loadCtx context.Context) (query.Snapshot, error) {
 			bindings := append(consoleCommandBindings(commands), links.bindings()...)
 			snap, err := query.LoadLive(loadCtx, ws, consoleHarnesses(), bindings, consoleLiveness(loadCtx, ws, deps))

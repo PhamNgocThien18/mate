@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
@@ -224,8 +225,8 @@ func TestAFailedReReadKeepsTheOutcomeAndSaysTheReadFailed(t *testing.T) {
 // line: the re-read must not put the earlier outcome back under the diff.
 func TestADiffDropsAnOutcomeStillWaitingForItsReRead(t *testing.T) {
 	m := loaded(t, sampleTree(), nil)
-	m.action = func(_ context.Context, req ActionRequest) (string, error) {
-		if req.Action == ActionDiff {
+	m.action = func(_ context.Context, req coreapi.ActionRequest) (string, error) {
+		if req.Action == coreapi.ActionDiff {
 			return "diff --git a/x b/x\n+added", nil
 		}
 		return "mode is auto", nil
@@ -281,7 +282,7 @@ func TestASnapshotUnderTheActionsSheetKeepsItsEntriesAndCursor(t *testing.T) {
 	}
 	_, _ = send(t, m, cmd())
 	crew := sampleTree().Projects[0].Crews[1].CrewID
-	if len(*got) != 1 || (*got)[0].Action != ActionStop || (*got)[0].Crew != crew {
+	if len(*got) != 1 || (*got)[0].Action != coreapi.ActionStop || (*got)[0].Crew != crew {
 		t.Fatalf("requests = %+v, want the stop of %s the sheet showed", *got, crew)
 	}
 }
@@ -356,8 +357,8 @@ func TestASnapshotUnderTheHarnessPickerKeepsTheCursorAndReadsTheNewCatalog(t *te
 // an action asks Model to carry it out on the row the sheet was built for.
 func TestTheMenuAsksTheConsoleForWhatItCannotDo(t *testing.T) {
 	r := row{kind: rowCrew, id: "crew_a"}
-	stop := actionChoice{action: ActionStop, enabled: true, dangerous: true, req: ActionRequest{Action: ActionStop, Crew: "crew_a"}}
-	diff := actionChoice{action: ActionDiff, enabled: true, req: ActionRequest{Action: ActionDiff, Crew: "crew_a"}}
+	stop := actionChoice{action: coreapi.ActionStop, enabled: true, dangerous: true, req: coreapi.ActionRequest{Action: coreapi.ActionStop, Crew: "crew_a"}}
+	diff := actionChoice{action: coreapi.ActionDiff, enabled: true, req: coreapi.ActionRequest{Action: coreapi.ActionDiff, Crew: "crew_a"}}
 	sheet := actionMenu{}.openSheet(r, []menuEntry{
 		{key: "enter", label: "Show in next pane", kind: entryShow, enabled: true},
 		{key: "x", label: "Stop crew…", kind: entryAction, choice: stop, enabled: true},
@@ -399,7 +400,7 @@ func TestTheMenuAsksTheConsoleForWhatItCannotDo(t *testing.T) {
 // The menu keeps nothing of the tree: the picker's rows and the names a new
 // Project must not repeat are whatever the facts of the key say.
 func TestTheMenuReadsTheTreeOnlyFromItsFacts(t *testing.T) {
-	create := actionChoice{action: ActionOnboard, enabled: true, req: ActionRequest{Action: ActionOnboard, TargetKind: "project-mate"}}
+	create := actionChoice{action: coreapi.ActionOnboard, enabled: true, req: coreapi.ActionRequest{Action: coreapi.ActionOnboard, TargetKind: "project-mate"}}
 	claude, codex := query.HarnessKind("claude"), query.HarnessKind("codex")
 	picker := actionMenu{}.openPicker(create, 0)
 	if a, _ := picker.update(key("down"), menuFacts{harnesses: []query.HarnessKind{claude}}); a.harnessIndex != 0 {
@@ -417,7 +418,7 @@ func TestTheMenuReadsTheTreeOnlyFromItsFacts(t *testing.T) {
 		t.Fatalf("a click on the first row: sheet=%v intent=%+v, want codex, the first row of these facts", a.sheet(), do)
 	}
 
-	form := actionMenu{}.openForm(actionChoice{action: ActionOnboard, enabled: true, req: ActionRequest{Action: ActionOnboard, TargetKind: "workspace"}})
+	form := actionMenu{}.openForm(actionChoice{action: coreapi.ActionOnboard, enabled: true, req: coreapi.ActionRequest{Action: coreapi.ActionOnboard, TargetKind: "workspace"}})
 	for _, r := range "ledger" {
 		form, _ = form.update(key(string(r)), menuFacts{})
 	}
@@ -439,9 +440,9 @@ func TestTheMenuReadsTheTreeOnlyFromItsFacts(t *testing.T) {
 // from the start, finish ends it, and abandon cancels its context and names
 // it.
 func TestTheMenuRunsAndAbandonsItsAction(t *testing.T) {
-	diff := actionChoice{action: ActionDiff, enabled: true, req: ActionRequest{Action: ActionDiff, Target: "p", Crew: "crew_a"}}
+	diff := actionChoice{action: coreapi.ActionDiff, enabled: true, req: coreapi.ActionRequest{Action: coreapi.ActionDiff, Target: "p", Crew: "crew_a"}}
 	var seen context.Context
-	a, run := actionMenu{}.start(diff, func(ctx context.Context, req ActionRequest) (string, error) {
+	a, run := actionMenu{}.start(diff, func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 		seen = ctx
 		return "the patch", nil
 	}, context.Background())
@@ -470,7 +471,7 @@ func TestTheMenuRunsAndAbandonsItsAction(t *testing.T) {
 	}
 
 	started := make(chan context.Context, 1)
-	a, run = actionMenu{}.start(diff, func(ctx context.Context, _ ActionRequest) (string, error) {
+	a, run = actionMenu{}.start(diff, func(ctx context.Context, _ coreapi.ActionRequest) (string, error) {
 		started <- ctx
 		<-ctx.Done()
 		return "", ctx.Err()

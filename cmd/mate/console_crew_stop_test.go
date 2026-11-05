@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The Crew row's Stop entry closes the task the way `mate crew stop` does:
@@ -17,8 +17,8 @@ func TestConsoleStopCrewClosesTheTaskLikeTheCLI(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
-	out, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
+	out, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})
 	if err != nil {
 		t.Fatalf("stop crew action: %v", err)
@@ -45,8 +45,8 @@ func TestConsoleStopCrewRefusesUnlandedWork(t *testing.T) {
 	runGitOrFatal(t, crew.Worktree, "add", "work.txt")
 	runGitOrFatal(t, crew.Worktree, "commit", "-q", "-m", "work")
 
-	_, err := consoleAction(w, deps)(context.Background(), console.ActionRequest{
-		Action: console.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
+	_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})
 	if err == nil || !strings.Contains(err.Error(), "nothing was stopped") {
 		t.Fatalf("stop crew with unlanded work: err = %v, want the unlanded-work refusal", err)

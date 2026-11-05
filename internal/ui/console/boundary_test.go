@@ -11,11 +11,11 @@ import (
 )
 
 // forbiddenImports is the boundary doc.go states in prose and this test
-// enforces: the Console knows internal/query's read types and two
-// caller-supplied closures, and nothing else. It never opens a database and
-// never calls Herdr, so a snapshot on screen can only have come through
-// LoadFunc and an attach can only have gone through the `mate attach`
-// subprocess (G6 gate, ADR 0010).
+// enforces: the Console knows internal/query's read types,
+// internal/coreapi's contract and the closures its caller supplies, and
+// nothing else. It never opens a database and never calls Herdr, so a
+// snapshot on screen can only have come through LoadFunc and an attach can
+// only have gone through the `mate attach` subprocess (G6 gate, ADR 0010).
 //
 // Direct imports only. internal/query is the read boundary: it is a pure
 // DTO package, and whatever fills it (internal/query/load.go, over
@@ -44,6 +44,15 @@ var forbiddenImports = []string{
 	// query.BoxEntry.Assigned; it never reaches the sender itself.
 	"github.com/nguyenngocanh94/mate/internal/outbox",
 	"github.com/nguyenngocanh94/mate/internal/host",
+	// The Console asks the core for everything through internal/coreapi's
+	// contract (CON-206), and whatever implements it is the caller's: the
+	// core's engine (internal/core) and the client of its socket
+	// (internal/coreclient) are never imported here, so the Console runs
+	// the same against either. internal/dashboard is another UI of the
+	// same core, beside the Console rather than under it.
+	"github.com/nguyenngocanh94/mate/internal/core",
+	"github.com/nguyenngocanh94/mate/internal/coreclient",
+	"github.com/nguyenngocanh94/mate/internal/dashboard",
 }
 
 func TestConsoleImportsNeitherStoreNorRuntime(t *testing.T) {

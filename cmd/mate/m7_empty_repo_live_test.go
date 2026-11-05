@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // emptyRepoRequest is the captain's request exactly as it was typed into the
@@ -132,8 +132,8 @@ func TestLiveM7EmptyRepoDoesNotGuess(t *testing.T) {
 	pilot.Start(ctx)
 	defer pilot.Stop()
 
-	out, err := action(ctx, console.ActionRequest{
-		Action: console.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
+	out, err := action(ctx, coreapi.ActionRequest{
+		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("claude")})
 	if err != nil {
 		t.Fatalf("start the shop Mate: %v", err)
 	}

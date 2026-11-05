@@ -7,13 +7,15 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 )
 
 func TestNoticeIsOptInAndOpensAdvisoryWithoutChangingTree(t *testing.T) {
 	m, calls := actRunner(t, sampleTree(), "Jev suggests: quota warning\nAdvisory only", nil)
 	m = toRunningAttempt(t, m)
 	for _, e := range m.menuFor(row{kind: rowCrew, id: m.cur().selID}, true) {
-		if e.choice.action == ActionNotice {
+		if e.choice.action == coreapi.ActionNotice {
 			t.Fatal("notice offered without opt-in")
 		}
 	}
@@ -28,7 +30,7 @@ func TestNoticeIsOptInAndOpensAdvisoryWithoutChangingTree(t *testing.T) {
 		t.Fatal("action must be queued once")
 	}
 	m, _ = send(t, m, cmd())
-	if len(*calls) != 1 || (*calls)[0].Action != ActionNotice || (*calls)[0].Crew == "" || (*calls)[0].Target != m.currentProject().ProjectID {
+	if len(*calls) != 1 || (*calls)[0].Action != coreapi.ActionNotice || (*calls)[0].Crew == "" || (*calls)[0].Target != m.currentProject().ProjectID {
 		t.Fatalf("bad request: %+v", calls)
 	}
 	if !m.diff.open || !strings.Contains(m.diffTitle(), "Jev notice") || !strings.Contains(m.diff.text, "Advisory") {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/brief"
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
@@ -28,7 +29,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 // The captain's lines in the memory acceptance (docs/mvp.md task 38). Each
@@ -164,7 +164,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	if kind == codex.KindCodex {
 		harnessChoice = query.HarnessKind("codex")
 	}
-	out, err := action(ctx, console.ActionRequest{Action: console.ActionStart, Target: memoryProject, TargetKind: "mate", Harness: harnessChoice})
+	out, err := action(ctx, coreapi.ActionRequest{Action: coreapi.ActionStart, Target: memoryProject, TargetKind: "mate", Harness: harnessChoice})
 	if err != nil {
 		t.Fatalf("start the Mate: %v", err)
 	}
@@ -230,7 +230,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	t.Logf("backlog.md before the restart:\n%s", readFileOr(w.BacklogFile(memoryProject)))
 
 	restartAt := time.Now()
-	out, err = action(ctx, console.ActionRequest{Action: console.ActionRestartMate, Target: memoryProject, TargetKind: "project"})
+	out, err = action(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: memoryProject, TargetKind: "project"})
 	if err != nil {
 		t.Fatalf("restart: %v\n%s", err, pane())
 	}
@@ -509,7 +509,7 @@ func codexRolloutReplies(t *testing.T, path string) []mateReply {
 // sees nothing it has not been handed: when the hand-back sits in the
 // captain's inbox and the Mate has said nothing about it, the captain
 // presses [assign] on it once, as a captain would.
-func awaitHandbackRelay(t *testing.T, ctx context.Context, w *store.Workspace, action console.ActionFunc, voice mateVoice,
+func awaitHandbackRelay(t *testing.T, ctx context.Context, w *store.Workspace, action coreapi.ActionFunc, voice mateVoice,
 	project, crew string, within time.Duration, crewPane, matePane func() string, relays func(string) bool) string {
 	t.Helper()
 	handback := waitForBoxEntry(t, ctx, w, project, within, crewPane, func(e query.BoxEntry) bool {
@@ -546,7 +546,7 @@ func awaitHandbackRelay(t *testing.T, ctx context.Context, w *store.Workspace, a
 // captain, whichever way it gets there: asking before it spawns, or
 // spawning a ship that stops with needs-decision, which the captain hands
 // to the Mate with [assign].
-func awaitEscalation(t *testing.T, ctx context.Context, w *store.Workspace, action console.ActionFunc, voice mateVoice,
+func awaitEscalation(t *testing.T, ctx context.Context, w *store.Workspace, action coreapi.ActionFunc, voice mateVoice,
 	project string, since time.Time, within time.Duration, pane func() string) mateReply {
 	t.Helper()
 	deadline := time.Now().Add(within)

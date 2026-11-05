@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
-	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
 type noticeFunc func(context.Context, string) (notice.Result, error)
@@ -41,7 +41,7 @@ func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
 				}
 				return notice.Result{Label: "quota_warning", Confidence: .95}, nil
 			})
-			req := console.ActionRequest{Action: console.ActionNotice, Target: "shop", TargetKind: target}
+			req := coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: target}
 			if target == "crew" {
 				req.Crew = "k3"
 			}
@@ -71,11 +71,11 @@ func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
 		return notice.Result{}, errors.New("unavailable")
 	})
 	action := consoleNoticeAction(f.ws, f.deps, c, f.action)
-	_, err := action(context.Background(), console.ActionRequest{Action: console.ActionNotice, Target: "shop", TargetKind: "workspace"})
+	_, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "workspace"})
 	if err == nil || count != 0 {
 		t.Fatal("invalid target reached classifier")
 	}
-	_, err = action(context.Background(), console.ActionRequest{Action: console.ActionNotice, Target: "shop", TargetKind: "mate"})
+	_, err = action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
 	if err == nil || count != 1 {
 		t.Fatal("API failure hidden")
 	}

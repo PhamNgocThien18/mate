@@ -99,13 +99,14 @@ func TestCityPressesGoToTheConsole(t *testing.T) {
 	rec := &actRecorder{}
 	ts := cityServer(t, f, rec, true)
 
-	// assign carries the server's own resolve line, never the page's.
-	status, e, ok := post(t, ts, `{"action":"assign","project":"`+fixtureProject+`","crew":"`+fixtureCrew+`","key":"crews/k3.status@120"}`, nil)
-	if status != 200 || ok.Line != "did assign" {
+	// assign carries the server's own resolve line, never the page's: it
+	// is the console's resolve.
+	status, e, ok := post(t, ts, `{"action":"assign","project":"`+fixtureProject+`","crew":"`+fixtureCrew+`","key":"crews/k3.status@120","line":"rm -rf /","text":"rm -rf /"}`, nil)
+	if status != 200 || ok.Line != "did resolve" {
 		t.Fatalf("assign = %d %+v", status, e)
 	}
-	if got := rec.got[len(rec.got)-1]; got.Line != "resolve: k3 asks Stripe or bank?" {
-		t.Errorf("assign line = %q", got.Line)
+	if got := rec.got[len(rec.got)-1]; got.Input != "resolve: k3 asks Stripe or bank?" || got.Key != "crews/k3.status@120" || got.Crew != fixtureCrew {
+		t.Errorf("assign request = %+v", got)
 	}
 	if status, e, _ := post(t, ts, `{"action":"assign","project":"`+fixtureProject+`","crew":"`+fixtureCrew+`","key":"crews/k3.status@40"}`, nil); status != 409 || !strings.Contains(e.Error, "already has it") {
 		t.Errorf("handed assign = %d %+v", status, e)
@@ -134,10 +135,10 @@ func TestCityPressesGoToTheConsole(t *testing.T) {
 		t.Errorf("add bad name = %d %+v", status, e)
 	}
 	status, e, ok = post(t, ts, `{"action":"add_project","project":"landing","repo":"../landing"}`, nil)
-	if status != 200 || ok.Line != "did add_project" {
+	if status != 200 || ok.Line != "did onboard" {
 		t.Fatalf("add = %d %+v", status, e)
 	}
-	if got := rec.got[len(rec.got)-1]; got.Project != "landing" || got.Repo != "../landing" {
+	if got := rec.got[len(rec.got)-1]; got.TargetKind != "workspace" || got.Input != "landing" || got.Repo != "../landing" {
 		t.Errorf("add request = %+v", got)
 	}
 	if status, e, _ := post(t, ts, `{"action":"peek","project":"`+fixtureProject+`","crew":"`+fixtureCrew+`"}`, nil); status != 200 {
