@@ -12,6 +12,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/learnings"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/wake"
 )
 
 // overBudgetFriction is a log in mihuv2's shape (2026-11-04): one entry
@@ -60,7 +61,7 @@ func harnessReviewNews(t *testing.T, w *store.Workspace) []matehost.News {
 
 func wakeAt(t *testing.T, w *store.Workspace, now time.Time, advance bool) string {
 	t.Helper()
-	text, err := wake(context.Background(), w, gitx.New(), "shop", now, advance)
+	text, err := wake.Render(context.Background(), w, wake.Deps{Git: gitx.New(), Friction: frictionCheck}, "shop", now, advance)
 	if err != nil {
 		t.Fatalf("wake: %v", err)
 	}
