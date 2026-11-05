@@ -10,6 +10,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/diagnostics"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 type exchangeMessage struct {
@@ -275,44 +276,28 @@ func exchangeAt(groups []MateExchange, at string) int {
 }
 
 func (s *Server) exchangeMessages(ctx context.Context, project, mateID string) ([]exchangeMessage, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT e.id,e.at,e.kind,m.channel,m.from_actor_id,m.to_actor_id,m.text,e.ref_path,e.ref_offset
-		  FROM message m JOIN event e ON e.id=m.event_id
-		 WHERE e.project=? AND (m.from_actor_id=? OR m.to_actor_id=?)
-		 ORDER BY e.at,e.id`, project, mateID, mateID)
+	rows, err := read.ActorMessages(ctx, s.db.SQL(), project, mateID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []exchangeMessage{}
-	for rows.Next() {
-		var m exchangeMessage
-		if err := rows.Scan(&m.id, &m.at, &m.kind, &m.channel, &m.from, &m.to, &m.text,
-			&m.ref.Path, &m.ref.Offset); err != nil {
-			return nil, err
-		}
-		out = append(out, m)
+	for _, r := range rows {
+		out = append(out, exchangeMessage{id: r.EventID, at: r.At, kind: r.Kind, channel: r.Channel,
+			from: r.From, to: r.To, text: r.Text, ref: Ref{Path: r.RefPath, Offset: r.RefOffset}})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Server) exchangeActivities(ctx context.Context, project, mateID string) ([]MateActivity, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT at,kind,payload FROM event
-		 WHERE project=? AND actor_id=? AND kind IN (?,?,?,?,?)
-		 ORDER BY at,id`, project, mateID, timeline.KindCrewSpawned,
+	rows, err := read.ActorEventsOfKinds(ctx, s.db.SQL(), project, mateID, timeline.KindCrewSpawned,
 		timeline.KindCrewFinished, timeline.KindCrewFailed, timeline.KindMergeDone,
 		timeline.KindReviewStarted)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []MateActivity{}
-	for rows.Next() {
-		var at, kind, payload string
-		if err := rows.Scan(&at, &kind, &payload); err != nil {
-			return nil, err
-		}
+	for _, e := range rows {
+		at, kind, payload := e.At, e.Kind, e.Payload
 		var p struct {
 			Crew   string `json:"crew"`
 			Task   string `json:"task"`
@@ -340,5 +325,5 @@ func (s *Server) exchangeActivities(ctx context.Context, project, mateID string)
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	return out, nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // cmdUsage is `mate usage <project> [crew] [--top <n>] [--why] [--workspace
@@ -161,37 +161,13 @@ func printLedger(ctx context.Context, handle *db.DB, w *store.Workspace, stdout 
 		profileByID[s.Crew] = s
 	}
 
-	dbRows, err := handle.SQL().QueryContext(ctx, `
-		SELECT crew, turns, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-		       cost, context_pct, context_tokens_last, question_count, waited_ms, spawned_at, closed_at,
-		       COALESCE(last_model, ''),
-		       COALESCE((SELECT u.effort FROM turn u WHERE u.actor_id = l.crew_actor_id
-		                  ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1), ''),
-		       (SELECT CAST(ROUND(AVG(u.context_tokens_after)) AS INTEGER) FROM turn u
-		         WHERE u.actor_id = l.crew_actor_id AND u.context_tokens_after > 0),
-		       (SELECT MAX(u.context_tokens_after) FROM turn u
-		         WHERE u.actor_id = l.crew_actor_id AND u.context_tokens_after > 0),
-		       (SELECT COALESCE(SUM(u.context_tokens_after), 0) FROM turn u
-		         WHERE u.actor_id = l.crew_actor_id AND u.context_tokens_after > 0),
-		       (SELECT COUNT(*) FROM turn u
-		         WHERE u.actor_id = l.crew_actor_id AND u.context_tokens_after > 0)
-		  FROM v_task_ledger l WHERE project = ? ORDER BY spawned_at`, project)
+	ledger, err := read.UsageTasks(ctx, handle.SQL(), project)
 	if err != nil {
 		return err
 	}
-	defer dbRows.Close()
-	for dbRows.Next() {
-		var crew string
-		var turns, in, cacheRead, cacheWrite, out, asked, waited, ctxSum, ctxCalls int64
-		var cost, ctxPct sql.NullFloat64
-		var ctxTokens, ctxAvg, ctxMax sql.NullInt64
-		var spawnedAt, closedAt sql.NullString
-		var model, effort string
-		if err := dbRows.Scan(&crew, &turns, &in, &cacheRead, &cacheWrite, &out,
-			&cost, &ctxPct, &ctxTokens, &asked, &waited, &spawnedAt, &closedAt,
-			&model, &effort, &ctxAvg, &ctxMax, &ctxSum, &ctxCalls); err != nil {
-			return err
-		}
+	for _, t := range ledger {
+		crew, model, effort := t.Crew, t.Model, t.Effort
+		cacheRead, cacheWrite := t.CacheRead, t.CacheWrite
 		if model == "" {
 			model = profileByID[crew].Model
 		}
@@ -199,15 +175,12 @@ func printLedger(ctx context.Context, handle *db.DB, w *store.Workspace, stdout 
 			effort = profileByID[crew].Effort
 		}
 		rows = append(rows, ledgerRow{
-			ID: crew, State: stateByID[crew], Harness: harnessByID[crew], Model: model, Effort: effort, Turns: turns,
-			CtxAvg: ctxAvg, CtxMax: ctxMax, CtxSum: ctxSum, CtxCalls: ctxCalls,
-			In: in, Cached: cacheRead + cacheWrite, Out: out, Total: in + cacheRead + cacheWrite + out,
-			Cost: cost, CtxPct: ctxPct, Context: ctxTokens, CacheRead: cacheRead, CacheWrite: cacheWrite, Asked: asked, WaitedMs: waited,
-			Span: spanWord(spawnedAt, closedAt),
+			ID: crew, State: stateByID[crew], Harness: harnessByID[crew], Model: model, Effort: effort, Turns: t.Turns,
+			CtxAvg: t.ContextAvg, CtxMax: t.ContextMax, CtxSum: t.ContextSum, CtxCalls: t.ContextCalls,
+			In: t.Input, Cached: cacheRead + cacheWrite, Out: t.Output, Total: t.Input + cacheRead + cacheWrite + t.Output,
+			Cost: t.Cost, CtxPct: t.ContextPct, Context: t.ContextTokens, CacheRead: cacheRead, CacheWrite: cacheWrite, Asked: t.Questions, WaitedMs: t.WaitedMs,
+			Span: spanWord(t.SpawnedAt, t.ClosedAt),
 		})
-	}
-	if err := dbRows.Err(); err != nil {
-		return err
 	}
 	reviewersOf, reviewOf, err := w.ReviewLinks(project)
 	if err != nil {
@@ -388,44 +361,30 @@ func mateLedgerRow(ctx context.Context, handle *db.DB, w *store.Workspace, proje
 	row := ledgerRow{ID: "mate", State: "-", Span: "-"}
 	actorID := timeline.MateActorID(project)
 
-	if err := handle.SQL().QueryRowContext(ctx, `
-		SELECT COALESCE(model, ''), COALESCE(effort, '') FROM turn WHERE actor_id = ?
-		 ORDER BY started_at DESC, ordinal DESC LIMIT 1`, actorID).
-		Scan(&row.Model, &row.Effort); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	model, effort, err := read.LastModel(ctx, handle.SQL(), actorID)
+	if err != nil {
 		return row, err
 	}
+	row.Model, row.Effort = model, effort
 
-	var cacheRead, cacheWrite int64
-	if err := handle.SQL().QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0),
-		       COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(output_tokens),0)
-		  FROM turn WHERE actor_id = ?`, actorID).
-		Scan(&row.Turns, &row.In, &cacheRead, &cacheWrite, &row.Out); err != nil {
+	totals, err := read.ActorTotals(ctx, handle.SQL(), actorID)
+	if err != nil {
 		return row, err
 	}
-	row.Cached = cacheRead + cacheWrite
-	row.CacheRead, row.CacheWrite = cacheRead, cacheWrite
+	row.Turns, row.In, row.Out = totals.Turns, totals.Input, totals.Output
+	row.Cached = totals.CacheRead + totals.CacheWrite
+	row.CacheRead, row.CacheWrite = totals.CacheRead, totals.CacheWrite
 	row.Total = row.In + row.Cached + row.Out
 
-	if err := handle.SQL().QueryRowContext(ctx, `
-		SELECT SUM(
-			u.input_tokens       * COALESCE(p.input_per_m, 0) / 1000000.0 +
-			u.cache_read_tokens  * COALESCE(p.cache_read_per_m, 0) / 1000000.0 +
-			u.cache_write_tokens * COALESCE(p.cache_write_per_m, 0) / 1000000.0 +
-			u.output_tokens      * COALESCE(p.output_per_m, 0) / 1000000.0)
-		  FROM turn u JOIN pricing p ON p.model = u.model
-		 WHERE u.actor_id = ?
-		   AND (p.input_per_m > 0 OR p.cache_read_per_m > 0 OR p.cache_write_per_m > 0 OR p.output_per_m > 0)`,
-		actorID).Scan(&row.Cost); err != nil {
+	if row.Cost, err = read.ActorCost(ctx, handle.SQL(), actorID); err != nil {
 		return row, err
 	}
 
-	if err := handle.SQL().QueryRowContext(ctx, `
-		SELECT CAST(ROUND(AVG(context_tokens_after)) AS INTEGER), MAX(context_tokens_after)
-		  FROM turn WHERE actor_id = ? AND context_tokens_after > 0`, actorID).
-		Scan(&row.CtxAvg, &row.CtxMax); err != nil {
+	stats, err := read.ActorContext(ctx, handle.SQL(), actorID)
+	if err != nil {
 		return row, err
 	}
+	row.CtxAvg, row.CtxMax = stats.Avg, stats.Max
 
 	if usage, ok, err := handle.LatestContext(ctx, actorID, ""); err != nil {
 		return row, err
@@ -605,41 +564,29 @@ func waitedWord(ms int64) string {
 // call, in the order they happened.
 func printCrewTurns(ctx context.Context, handle *db.DB, stdout io.Writer, project, crew string) error {
 	actorID := timeline.CrewActorID(project, crew)
-	rows, err := handle.SQL().QueryContext(ctx, `
-		SELECT ordinal, started_at, ended_at, model, effort, input_tokens, cache_read_tokens,
-		       cache_write_tokens, output_tokens, context_tokens_after, outcome
-		  FROM turn WHERE actor_id = ? ORDER BY started_at, ordinal`, actorID)
+	turns, err := read.Turns(ctx, handle.SQL(), actorID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TURN\tSTARTED\tMODEL\tEFFORT\tIN\tCACHED\tOUT\tTOTAL\tCTX\tDURATION\tOUTCOME")
 	n := 0
-	for rows.Next() {
-		var ordinal int
-		var startedAt sql.NullString
-		var endedAt, model, effort, outcome sql.NullString
-		var in, cacheRead, cacheWrite, out, ctxAfter int64
-		if err := rows.Scan(&ordinal, &startedAt, &endedAt, &model, &effort, &in, &cacheRead, &cacheWrite,
-			&out, &ctxAfter, &outcome); err != nil {
-			return err
-		}
+	for _, t := range turns {
+		ordinal, startedAt, endedAt := t.Ordinal, t.StartedAt, t.EndedAt
+		model, effort, outcome := t.Model, t.Effort, t.Outcome
+		in, cacheRead, cacheWrite, out, ctxAfter := t.Input, t.CacheRead, t.CacheWrite, t.Output, t.ContextAfter
 		started := db.ParseTime(startedAt.String)
 		var dur time.Duration
 		if endedAt.Valid {
 			dur = db.ParseTime(endedAt.String).Sub(started)
 		}
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			ordinal+1, started.Local().Format("15:04:05"), dashIfEmpty(model.String), dashIfEmpty(effort.String),
+			ordinal+1, started.Local().Format("15:04:05"), dashIfEmpty(model), dashIfEmpty(effort),
 			query.HumanizeTokens(in), query.HumanizeTokens(cacheRead+cacheWrite), query.HumanizeTokens(out),
 			query.HumanizeTokens(in+cacheRead+cacheWrite+out), query.HumanizeTokens(ctxAfter),
-			dur.Round(time.Millisecond), dashIfEmpty(outcome.String))
+			dur.Round(time.Millisecond), dashIfEmpty(outcome))
 		n++
-	}
-	if err := rows.Err(); err != nil {
-		return err
 	}
 	_ = tw.Flush()
 	if n == 0 {
@@ -655,29 +602,18 @@ func printCrewTurns(ctx context.Context, handle *db.DB, stdout io.Writer, projec
 // is the tokens after `pr-open` against the tokens before it.
 func printCrewSessions(ctx context.Context, handle *db.DB, stdout io.Writer, project, crew string) error {
 	actorID := timeline.CrewActorID(project, crew)
-	rows, err := handle.SQL().QueryContext(ctx, `
-		SELECT s.crew_session, COUNT(*),
-		       COALESCE(SUM(u.input_tokens), 0), COALESCE(SUM(u.cache_read_tokens + u.cache_write_tokens), 0),
-		       COALESCE(SUM(u.output_tokens), 0), COALESCE(MAX(u.context_tokens_after), 0),
-		       MIN(u.started_at), MAX(COALESCE(u.ended_at, u.started_at))
-		  FROM turn u JOIN session s ON s.id = u.session_id
-		 WHERE u.actor_id = ?
-		 GROUP BY s.id ORDER BY MIN(u.started_at), s.id`, actorID)
+	sessions, err := read.Sessions(ctx, handle.SQL(), actorID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "SESSION\tTURNS\tIN\tCACHED\tOUT\tTOTAL\tCTX-MAX\tSTARTED\tENDED")
 	n := 0
 	var grand int64
-	for rows.Next() {
-		var ordinal, turns, in, cached, out, ctxMax int64
-		var startedAt, endedAt sql.NullString
-		if err := rows.Scan(&ordinal, &turns, &in, &cached, &out, &ctxMax, &startedAt, &endedAt); err != nil {
-			return err
-		}
+	for _, s := range sessions {
+		ordinal, turns, in, cached, out, ctxMax := s.CrewSession, s.Turns, s.Input, s.Cached, s.Output, s.ContextMax
+		startedAt, endedAt := s.StartedAt, s.EndedAt
 		total := in + cached + out
 		grand += total
 		fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
@@ -685,9 +621,6 @@ func printCrewSessions(ctx context.Context, handle *db.DB, stdout io.Writer, pro
 			query.HumanizeTokens(total), query.HumanizeTokens(ctxMax),
 			clockWord(startedAt), clockWord(endedAt))
 		n++
-	}
-	if err := rows.Err(); err != nil {
-		return err
 	}
 	_ = tw.Flush()
 	if n == 0 {

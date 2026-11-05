@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/diagnostics"
 	"github.com/nguyenngocanh94/mate/internal/telemetry"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // CrewPerformance is the Task page's ledger row, model calls and diagnostics
@@ -60,52 +60,29 @@ func (s *Server) actorPerformance(ctx context.Context, actorID string, closed bo
 	for _, q := range questions {
 		in.Decisions = append(in.Decisions, diagnostics.Decision{ID: q.ID, Kind: q.Kind, Text: q.Text, AskedAt: q.AskedAt, AnsweredAt: q.AnsweredAt, EventID: q.AskedEventID})
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT a.id,COALESCE(a.turn_id,''),COALESCE(t.session_id,''),a.tool,a.target,a.summary,
-		       a.at,a.ended_at,a.duration_ms,a.ok,COALESCE(e.ref_path,''),COALESCE(e.ref_offset,0)
-		  FROM action a LEFT JOIN turn t ON t.id=a.turn_id LEFT JOIN event e ON e.id=a.event_id
-		 WHERE a.actor_id=? AND a.tool <> 'thinking' ORDER BY a.at,a.id`, actorID)
+	actions, err := read.ActorActions(ctx, s.db.SQL(), actorID)
 	if err != nil {
 		return diagnostics.Performance{}, err
 	}
-	for rows.Next() {
-		var a diagnostics.Action
-		var ended sql.NullString
-		var dur sql.NullInt64
-		var ok sql.NullBool
-		if err = rows.Scan(&a.ID, &a.CallID, &a.SessionID, &a.Tool, &a.Target, &a.Summary, &a.StartedAt, &ended, &dur, &ok, &a.Ref.Path, &a.Ref.Offset); err != nil {
-			rows.Close()
-			return diagnostics.Performance{}, err
-		}
-		a.EndedAt = ended.String
-		if dur.Valid {
-			n := dur.Int64
+	for _, r := range actions {
+		a := diagnostics.Action{ID: r.ID, CallID: r.TurnID, SessionID: r.SessionID, Tool: r.Tool, Target: r.Target,
+			Summary: r.Summary, StartedAt: r.At, EndedAt: r.EndedAt, Ref: diagnostics.Ref{Path: r.RefPath, Offset: r.RefOffset}}
+		if r.DurationMs.Valid {
+			n := r.DurationMs.Int64
 			a.DurationMs = &n
 		}
-		if ok.Valid {
-			v := ok.Bool
+		if r.OK.Valid {
+			v := r.OK.Bool
 			a.OK = &v
 		}
 		in.Actions = append(in.Actions, a)
 	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		return diagnostics.Performance{}, err
-	}
-	if err = rows.Close(); err != nil {
-		return diagnostics.Performance{}, err
-	}
-	rows, err = s.db.SQL().QueryContext(ctx, `SELECT kind,payload,ref_path,ref_offset FROM event WHERE actor_id=? AND kind LIKE 'telemetry.%' ORDER BY id`, actorID)
+	events, err := read.TelemetryEvents(ctx, s.db.SQL(), actorID)
 	if err != nil {
 		return diagnostics.Performance{}, err
 	}
-	for rows.Next() {
-		var kind, raw, path string
-		var offset int64
-		if err = rows.Scan(&kind, &raw, &path, &offset); err != nil {
-			rows.Close()
-			return diagnostics.Performance{}, err
-		}
+	for _, e := range events {
+		kind, raw, path, offset := e.Kind, e.Payload, e.RefPath, e.RefOffset
 		if kind == "telemetry.profile" {
 			var profile map[string]any
 			if err = json.Unmarshal([]byte(raw), &profile); err != nil {
@@ -129,32 +106,20 @@ func (s *Server) actorPerformance(ctx context.Context, actorID string, closed bo
 		}
 		in.Facts = append(in.Facts, f)
 	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		return diagnostics.Performance{}, err
-	}
-	if err = rows.Close(); err != nil {
-		return diagnostics.Performance{}, err
-	}
 	// Old read-only databases legitimately predate the telemetry cursor.
 	// Their coverage stays unknown; opening the dashboard never migrates it.
-	var table int
-	if err = s.db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='telemetry_cursor'`).Scan(&table); err != nil {
+	cursor, ok, err := read.TelemetryCursorOf(ctx, s.db.SQL(), actorID)
+	if err != nil {
 		return diagnostics.Performance{}, err
 	}
-	if table > 0 {
-		var observed, recordingErr sql.NullString
-		err = s.db.SQL().QueryRowContext(ctx, `SELECT MAX(observed_at),MAX(NULLIF(error,'')) FROM telemetry_cursor WHERE actor_id=?`, actorID).Scan(&observed, &recordingErr)
-		if err != nil {
-			return diagnostics.Performance{}, err
-		}
-		in.LastIngestedAt = observed.String
-		if recordingErr.Valid {
-			in.RecordingError = recordingErr.String
+	if ok {
+		in.LastIngestedAt = cursor.ObservedAt
+		if cursor.Error.Valid {
+			in.RecordingError = cursor.Error.String
 		}
 	}
-	var worktree string
-	if err = s.db.SQL().QueryRowContext(ctx, `SELECT worktree FROM task WHERE crew_actor_id=?`, actorID).Scan(&worktree); err != nil && err != sql.ErrNoRows {
+	worktree, err := read.TaskWorktree(ctx, s.db.SQL(), actorID)
+	if err != nil {
 		return diagnostics.Performance{}, err
 	}
 	return diagnostics.Project(in, diagnostics.Options{Now: now, Closed: closed, Worktree: worktree}), nil

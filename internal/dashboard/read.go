@@ -15,6 +15,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // errNotFound is a 404 with a sentence: an unknown project or an unknown
@@ -39,11 +40,7 @@ func notFound(format string, a ...any) error {
 // wrong in the cheap direction, and one that missed it would be wrong in
 // the expensive one.
 func (s *Server) lastEventID(ctx context.Context) (int64, error) {
-	var id sql.NullInt64
-	if err := s.db.SQL().QueryRowContext(ctx, `SELECT MAX(id) FROM event`).Scan(&id); err != nil {
-		return 0, err
-	}
-	return id.Int64, nil
+	return read.LastEventID(ctx, s.db.SQL())
 }
 
 // sceneRows reads `v_now` for one project, keyed by actor id.
@@ -51,44 +48,23 @@ func (s *Server) lastEventID(ctx context.Context) (int64, error) {
 // It does not go through scene.Now: that helper is `mate events --scene`'s
 // and selects the eight columns the snapshot line prints, which do not
 // include `context_pct` (added to the view by schema v2 for task 27). The
-// page needs it on every row, so this reads the view directly and joins
-// `actor` for the target's display name the same way scene.Now does.
+// page needs it on every row, so read.NowRows reads the view directly and
+// joins `actor` for the target's display name the same way scene.Now does.
 func (s *Server) sceneRows(ctx context.Context, project string) (map[string]SceneRow, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT n.actor_id, n.actor_name, n.actor_kind, n.project, n.state, n.since,
-		       t.name, n.detail, n.tokens_today,
-                   (SELECT CASE WHEN p.context_window > 0 THEN 100.0 * u.context_tokens_after / p.context_window END
-                    FROM turn u LEFT JOIN pricing p ON p.model=u.model WHERE u.actor_id=n.actor_id ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1),
-		       (SELECT u.context_tokens_after FROM turn u WHERE u.actor_id = n.actor_id ORDER BY u.started_at DESC, u.ordinal DESC LIMIT 1)
-		  FROM v_now n LEFT JOIN actor t ON t.id = n.target_actor_id
-		 WHERE n.project = ?`, project)
+	rows, err := read.NowRows(ctx, s.db.SQL(), project)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := map[string]SceneRow{}
-	for rows.Next() {
-		var r SceneRow
-		var state, since, target, detail sql.NullString
-		var pct sql.NullFloat64
-		var ctxTokens sql.NullInt64
-		if err := rows.Scan(&r.ActorID, &r.Actor, &r.ActorKind, &r.Project,
-			&state, &since, &target, &detail, &r.TokensToday, &pct, &ctxTokens); err != nil {
-			return nil, err
-		}
-		r.State, r.Since, r.Target, r.Detail = state.String, since.String, target.String, detail.String
-		r.ContextPct = nullFloat(pct)
-		if ctxTokens.Valid {
-			n := ctxTokens.Int64
-			r.ContextTokens = &n
+	for _, n := range rows {
+		r := SceneRow{ActorID: n.ActorID, Actor: n.ActorName, ActorKind: n.ActorKind, Project: n.Project,
+			State: n.State, Since: n.Since, Target: n.Target, Detail: n.Detail, TokensToday: n.TokensToday}
+		r.ContextPct = nullFloat(n.ContextPct)
+		if n.ContextTokens.Valid {
+			v := n.ContextTokens.Int64
+			r.ContextTokens = &v
 		}
 		out[r.ActorID] = r
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if meta, err := s.ws.ReadMateMeta(project); err == nil && meta["session_id"] != "" {
 		id := timeline.MateActorID(project)
@@ -119,19 +95,11 @@ type actorFacts struct {
 func (a actorFacts) running() bool { return a.firstSeen != "" && a.goneAt == "" }
 
 func (s *Server) actorFacts(ctx context.Context, actorID string) (actorFacts, bool, error) {
-	var out actorFacts
-	var harness, firstSeen, goneAt sql.NullString
-	err := s.db.SQL().QueryRowContext(ctx,
-		`SELECT harness, first_seen, gone_at FROM actor WHERE id = ?`, actorID).
-		Scan(&harness, &firstSeen, &goneAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, false, nil
+	a, ok, err := read.ActorOf(ctx, s.db.SQL(), actorID)
+	if err != nil || !ok {
+		return actorFacts{}, false, err
 	}
-	if err != nil {
-		return out, false, err
-	}
-	out.harness, out.firstSeen, out.goneAt = harness.String, firstSeen.String, goneAt.String
-	return out, true, nil
+	return actorFacts{harness: a.Harness, firstSeen: a.FirstSeen, goneAt: a.GoneAt}, true, nil
 }
 
 // actorTotals is one actor's turn count, token buckets and cost, computed
@@ -139,35 +107,22 @@ func (s *Server) actorFacts(ctx context.Context, actorID string) (actorFacts, bo
 // pricing row of all zeroes is not a price (docs/timeline.md section 10).
 // There is no task row for a Mate, so `v_task_ledger` cannot answer for
 // one and this does, from `turn` directly. It is the same SQL
-// cmd/mate/usage.go's mateLedgerRow runs, and the unit tests compare the
-// two number for number.
+// cmd/mate/usage.go's mateLedgerRow runs (read.ActorTotals and
+// read.ActorCost), and the unit tests compare the two number for number.
 func (s *Server) actorTotals(ctx context.Context, actorID string) (int64, Tokens, *float64, error) {
-	var turns int64
-	var tk Tokens
-	if err := s.db.SQL().QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_read_tokens),0),
-		       COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(output_tokens),0),
-		       COALESCE(SUM(thinking_tokens),0)
-		  FROM turn WHERE actor_id = ?`, actorID).
-		Scan(&turns, &tk.Input, &tk.CacheRead, &tk.CacheWrite, &tk.Output, &tk.Thinking); err != nil {
-		return 0, tk, nil, err
+	totals, err := read.ActorTotals(ctx, s.db.SQL(), actorID)
+	if err != nil {
+		return 0, Tokens{}, nil, err
 	}
+	tk := Tokens{Input: totals.Input, CacheRead: totals.CacheRead, CacheWrite: totals.CacheWrite,
+		Output: totals.Output, Thinking: totals.Thinking}
 	tk.Total = tk.Input + tk.CacheRead + tk.CacheWrite + tk.Output
 
-	var cost sql.NullFloat64
-	if err := s.db.SQL().QueryRowContext(ctx, `
-		SELECT SUM(
-			u.input_tokens       * COALESCE(p.input_per_m, 0) / 1000000.0 +
-			u.cache_read_tokens  * COALESCE(p.cache_read_per_m, 0) / 1000000.0 +
-			u.cache_write_tokens * COALESCE(p.cache_write_per_m, 0) / 1000000.0 +
-			u.output_tokens      * COALESCE(p.output_per_m, 0) / 1000000.0)
-		  FROM turn u JOIN pricing p ON p.model = u.model
-		 WHERE u.actor_id = ?
-		   AND (p.input_per_m > 0 OR p.cache_read_per_m > 0 OR p.cache_write_per_m > 0 OR p.output_per_m > 0)`,
-		actorID).Scan(&cost); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	cost, err := read.ActorCost(ctx, s.db.SQL(), actorID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, tk, nil, err
 	}
-	return turns, tk, nullFloat(cost), nil
+	return totals.Turns, tk, nullFloat(cost), nil
 }
 
 // toolCount sums `turn.tool_count` for an actor. `v_task_ledger` has no
@@ -175,34 +130,13 @@ func (s *Server) actorTotals(ctx context.Context, actorID string) (int64, Tokens
 // call"), so it is read off `turn`, the same table the view's own token
 // sums come from.
 func (s *Server) toolCount(ctx context.Context, actorID string) (int64, error) {
-	var n int64
-	err := s.db.SQL().QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(tool_count),0) FROM turn WHERE actor_id = ?`, actorID).Scan(&n)
-	return n, err
+	return read.ToolCount(ctx, s.db.SQL(), actorID)
 }
 
 // toolCounts is toolCount for every actor of a project in one query, for
 // the task table, which would otherwise ask once per crew.
 func (s *Server) toolCounts(ctx context.Context, project string) (map[string]int64, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT t.actor_id, COALESCE(SUM(t.tool_count),0)
-		  FROM turn t JOIN actor a ON a.id = t.actor_id
-		 WHERE a.project = ?
-		 GROUP BY t.actor_id`, project)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var id string
-		var n int64
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
-		}
-		out[id] = n
-	}
-	return out, rows.Err()
+	return read.ToolCounts(ctx, s.db.SQL(), project)
 }
 
 // tasks reads `v_task_ledger` for a project, oldest spawn first, and hangs
@@ -221,46 +155,29 @@ func (s *Server) taskRows(ctx context.Context, project string, now time.Time, on
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT crew_actor_id, crew, text, branch, spawned_at, closed_at, close_state,
-		       question_count, handback_count, turns,
-		       input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, thinking_tokens,
-		       context_tokens_last, last_model, context_pct, waited_ms, cost, merged_at
-		  FROM v_task_ledger WHERE project = ? ORDER BY spawned_at, crew`, project)
+	rows, err := read.Tasks(ctx, s.db.SQL(), project)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	out := []Task{}
 	var ids []string
-	for rows.Next() {
-		var t Task
-		var actorID string
-		var branch, spawnedAt, closedAt, closeState, lastModel, mergedAt sql.NullString
-		var ctxLast sql.NullInt64
-		var pct, cost sql.NullFloat64
-		if err := rows.Scan(&actorID, &t.Crew, &t.Text, &branch, &spawnedAt, &closedAt, &closeState,
-			&t.QuestionCount, &t.HandbackCount, &t.Turns,
-			&t.Tokens.Input, &t.Tokens.CacheRead, &t.Tokens.CacheWrite, &t.Tokens.Output, &t.Tokens.Thinking,
-			&ctxLast, &lastModel, &pct, &t.WaitedMs, &cost, &mergedAt); err != nil {
-			return nil, err
-		}
-		t.Branch, t.SpawnedAt, t.ClosedAt = branch.String, spawnedAt.String, closedAt.String
-		t.CloseState, t.LastModel, t.MergedAt = closeState.String, lastModel.String, mergedAt.String
+	for _, r := range rows {
+		t := Task{Crew: r.Crew, Text: r.Text, Branch: r.Branch, SpawnedAt: r.SpawnedAt, ClosedAt: r.ClosedAt,
+			CloseState: r.CloseState, LastModel: r.LastModel, MergedAt: r.MergedAt,
+			QuestionCount: r.QuestionCount, HandbackCount: r.HandbackCount, Turns: r.Turns,
+			Tokens: Tokens{Input: r.Input, CacheRead: r.CacheRead, CacheWrite: r.CacheWrite,
+				Output: r.Output, Thinking: r.Thinking},
+			ContextTokensLast: r.ContextTokensLast, WaitedMs: r.WaitedMs}
 		t.Closed = t.CloseState != "" || t.ClosedAt != ""
-		t.ContextTokensLast = ctxLast.Int64
-		t.ContextPct, t.Cost = nullFloat(pct), nullFloat(cost)
+		t.ContextPct, t.Cost = nullFloat(r.ContextPct), nullFloat(r.Cost)
 		t.Tokens.Total = t.Tokens.Input + t.Tokens.CacheRead + t.Tokens.CacheWrite + t.Tokens.Output
 		t.AgeMs = ageMs(t.SpawnedAt, t.ClosedAt, now)
-		if sc, ok := scenes[actorID]; ok {
+		if sc, ok := scenes[r.CrewActorID]; ok {
 			t.State, t.Since, t.Target, t.Detail = sc.State, sc.Since, sc.Target, sc.Detail
 		}
 		out = append(out, t)
-		ids = append(ids, actorID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		ids = append(ids, r.CrewActorID)
 	}
 	agents, err := s.agentsUsed(ctx, project)
 	if err != nil {
@@ -350,11 +267,11 @@ type agentIndex struct {
 	first map[string]map[string]map[string]string // project → actor → agent → first at
 }
 
-func (x *agentIndex) used(ctx context.Context, q *sql.DB, project string) (map[string][]string, error) {
+func (x *agentIndex) used(ctx context.Context, q read.Querier, project string) (map[string][]string, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	var top int64
-	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM event`).Scan(&top); err != nil {
+	top, err := read.LastEventID(ctx, q)
+	if err != nil {
 		return nil, err
 	}
 	// A smaller highest id is a `mate reindex` under us: read it all again.
@@ -362,22 +279,12 @@ func (x *agentIndex) used(ctx context.Context, q *sql.DB, project string) (map[s
 		x.seen, x.first = 0, map[string]map[string]map[string]string{}
 	}
 	if top > x.seen {
-		// `+kind` keeps the planner on the id range rather than the kind
-		// index, which would read every tool call ever recorded again.
-		rows, err := q.QueryContext(ctx, `
-			SELECT project, actor_id, json_extract(payload, '$.agent'), at
-			  FROM event
-			 WHERE id > ? AND id <= ? AND +kind = ? AND payload LIKE '%"agent":%'
-			   AND json_extract(payload, '$.agent') IS NOT NULL`, x.seen, top, timeline.KindToolCalled)
+		used, err := read.ToolAgents(ctx, q, x.seen, top, timeline.KindToolCalled)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var p, actor, agent, at string
-			if err := rows.Scan(&p, &actor, &agent, &at); err != nil {
-				return nil, err
-			}
+		for _, u := range used {
+			p, actor, agent, at := u.Project, u.ActorID, u.Agent, u.At
 			if x.first[p] == nil {
 				x.first[p] = map[string]map[string]string{}
 			}
@@ -387,9 +294,6 @@ func (x *agentIndex) used(ctx context.Context, q *sql.DB, project string) (map[s
 			if was, ok := x.first[p][actor][agent]; !ok || at < was {
 				x.first[p][actor][agent] = at
 			}
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
 		}
 		x.seen = top
 	}
@@ -456,46 +360,26 @@ func (s *Server) task(ctx context.Context, project, crew string, now time.Time) 
 // `turn` records only `trigger_event_id`, and a page that showed a bare id
 // would be showing the reader a number they cannot read.
 func (s *Server) turns(ctx context.Context, actorID string) ([]Turn, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT u.id, u.session_id, u.harness_turn_ref, u.ordinal,
-		       u.started_at, u.ended_at, u.trigger_event_id, e.kind,
-		       u.outcome, u.model, u.effort, u.input_tokens, u.cache_read_tokens, u.cache_write_tokens,
-		       u.output_tokens, u.thinking_tokens, u.context_tokens_after, u.tool_count,
-		       u.ref_path, u.ref_offset,
-		       CASE WHEN p.context_window > 0
-		            THEN 100.0 * u.context_tokens_after / p.context_window ELSE NULL END
-		  FROM turn u
-		  LEFT JOIN event e ON e.id = u.trigger_event_id
-		  LEFT JOIN pricing p ON p.model = u.model
-		 WHERE u.actor_id = ?
-		 ORDER BY u.started_at, u.ordinal`, actorID)
+	rows, err := read.Turns(ctx, s.db.SQL(), actorID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	out := []Turn{}
-	for rows.Next() {
-		var t Turn
-		var startedAt, endedAt, triggerKind, outcome, model, effort sql.NullString
-		var trigger sql.NullInt64
-		var pct sql.NullFloat64
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.HarnessTurnRef, &t.Ordinal,
-			&startedAt, &endedAt, &trigger, &triggerKind,
-			&outcome, &model, &effort, &t.Tokens.Input, &t.Tokens.CacheRead, &t.Tokens.CacheWrite,
-			&t.Tokens.Output, &t.Tokens.Thinking, &t.ContextAfter, &t.ToolCount,
-			&t.Ref.Path, &t.Ref.Offset, &pct); err != nil {
-			return nil, err
-		}
-		t.StartedAt, t.EndedAt = startedAt.String, endedAt.String
-		t.TriggerEventID, t.TriggerKind = trigger.Int64, triggerKind.String
-		t.Outcome, t.Model, t.Effort = outcome.String, model.String, effort.String
+	for _, r := range rows {
+		t := Turn{ID: r.ID, SessionID: r.SessionID, HarnessTurnRef: r.HarnessTurnRef, Ordinal: r.Ordinal,
+			StartedAt: r.StartedAt.String, EndedAt: r.EndedAt.String,
+			TriggerEventID: r.TriggerEventID, TriggerKind: r.TriggerKind,
+			Outcome: r.Outcome, Model: r.Model, Effort: r.Effort,
+			Tokens: Tokens{Input: r.Input, CacheRead: r.CacheRead, CacheWrite: r.CacheWrite,
+				Output: r.Output, Thinking: r.Thinking},
+			ContextAfter: r.ContextAfter, ToolCount: r.ToolCount, Ref: Ref{Path: r.RefPath, Offset: r.RefOffset}}
 		t.Tokens.Total = t.Tokens.Input + t.Tokens.CacheRead + t.Tokens.CacheWrite + t.Tokens.Output
 		t.DurationMs = spanMs(t.StartedAt, t.EndedAt)
-		t.ContextPct = nullFloat(pct)
+		t.ContextPct = nullFloat(r.ContextPct)
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // turnByID is one turn of one actor. The actor is part of the lookup, not
@@ -520,38 +404,26 @@ func (s *Server) turnByID(ctx context.Context, actorID, turnID string) (Turn, er
 // the locator on `event` - so the ref comes from the `tool.called` event the
 // row was written beside, through `action.event_id`.
 func (s *Server) actions(ctx context.Context, turnID string) ([]Action, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT a.id, a.at, a.ended_at, a.tool, a.target, a.summary, a.duration_ms, a.ok,
-		       a.event_id, COALESCE(e.ref_path,''), COALESCE(e.ref_offset,0)
-		  FROM action a LEFT JOIN event e ON e.id = a.event_id
-		 WHERE a.turn_id = ? ORDER BY a.at, a.id`, turnID)
+	rows, err := read.TurnActions(ctx, s.db.SQL(), turnID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	out := []Action{}
-	for rows.Next() {
-		var a Action
-		var endedAt sql.NullString
-		var dur, eventID sql.NullInt64
-		var ok sql.NullBool
-		if err := rows.Scan(&a.ID, &a.At, &endedAt, &a.Tool, &a.Target, &a.Summary,
-			&dur, &ok, &eventID, &a.Ref.Path, &a.Ref.Offset); err != nil {
-			return nil, err
-		}
-		a.EndedAt, a.EventID = endedAt.String, eventID.Int64
-		if dur.Valid {
-			v := dur.Int64
+	for _, r := range rows {
+		a := Action{ID: r.ID, At: r.At, EndedAt: r.EndedAt, Tool: r.Tool, Target: r.Target, Summary: r.Summary,
+			EventID: r.EventID, Ref: Ref{Path: r.RefPath, Offset: r.RefOffset}}
+		if r.DurationMs.Valid {
+			v := r.DurationMs.Int64
 			a.DurationMs = &v
 		}
-		if ok.Valid {
-			v := ok.Bool
+		if r.OK.Valid {
+			v := r.OK.Bool
 			a.OK = &v
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // turnEvents are the `v_story` rows recorded inside one turn - the same
@@ -572,36 +444,24 @@ func (s *Server) turnEvents(ctx context.Context, project, turnID string) ([]time
 // crew itself wrote, with the verb and the text the ingest already split
 // out of the payload (docs/timeline.md section 4).
 func (s *Server) statusLines(ctx context.Context, actorID string) ([]StatusLine, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT actor_id, id, at, turn_id, payload, ref_path, ref_offset
-		  FROM event WHERE actor_id = ? AND kind = ? ORDER BY at, id`,
-		actorID, timeline.KindStatusAppend)
+	rows, err := read.ActorEventsOfKind(ctx, s.db.SQL(), actorID, timeline.KindStatusAppend)
 	if err != nil {
 		return nil, err
 	}
 	out := []StatusLine{}
-	return out, scanStatusLines(rows, func(_ string, line StatusLine) { out = append(out, line) })
+	for _, e := range rows {
+		out = append(out, statusLine(e))
+	}
+	return out, nil
 }
 
-// scanStatusLines reads rows of (actor_id, id, at, turn_id, payload,
-// ref_path, ref_offset) into status lines, handing each to add with its
-// actor, and closes rows.
-func scanStatusLines(rows *sql.Rows, add func(actorID string, line StatusLine)) error {
-	defer rows.Close()
-	for rows.Next() {
-		var actorID string
-		var line StatusLine
-		var turnID, payload sql.NullString
-		if err := rows.Scan(&actorID, &line.EventID, &line.At, &turnID, &payload,
-			&line.Ref.Path, &line.Ref.Offset); err != nil {
-			return err
-		}
-		line.TurnID = turnID.String
-		ev := timeline.StoryEvent{Payload: []byte(payloadOrEmpty(payload))}
-		line.Verb, line.Text, line.Line = ev.Field("verb"), ev.Field("text"), ev.Field("line")
-		add(actorID, line)
-	}
-	return rows.Err()
+// statusLine is a `status.appended` event as a status line, with the verb
+// and the text the ingest split out of its payload.
+func statusLine(e read.Event) StatusLine {
+	line := StatusLine{EventID: e.ID, At: e.At, TurnID: e.TurnID, Ref: Ref{Path: e.RefPath, Offset: e.RefOffset}}
+	ev := timeline.StoryEvent{Payload: []byte(payloadOrEmpty(e.Payload))}
+	line.Verb, line.Text, line.Line = ev.Field("verb"), ev.Field("text"), ev.Field("line")
+	return line
 }
 
 // questions are what the crew stopped and asked, with the answer joined on.
@@ -618,48 +478,30 @@ func scanStatusLines(rows *sql.Rows, add func(actorID string, line StatusLine)) 
 // `message` keeps the page showing the line as sent even if the payload
 // were ever trimmed.
 func (s *Server) questions(ctx context.Context, actorID string) ([]Question, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, questionSelect+`
-		 WHERE q.crew_actor_id = ? ORDER BY q.asked_at, q.id`, actorID)
+	rows, err := read.CrewQuestions(ctx, s.db.SQL(), actorID)
 	if err != nil {
 		return nil, err
 	}
 	out := []Question{}
-	return out, scanQuestions(rows, func(_ string, q Question) { out = append(out, q) })
+	for _, r := range rows {
+		out = append(out, question(r))
+	}
+	return out, nil
 }
 
-const questionSelect = `
-		SELECT q.crew_actor_id, q.id, q.kind, q.asked_event_id, q.asked_at, q.text, q.answered_event_id, q.answered_at,
-		       a.name, m.text, e.payload, q.waited_ms
-		  FROM question q
-		  LEFT JOIN actor a ON a.id = q.answered_by_actor_id
-		  LEFT JOIN message m ON m.event_id = q.answered_event_id
-		  LEFT JOIN event e ON e.id = q.answered_event_id`
-
-// scanQuestions reads rows of questionSelect, handing each question to add
-// with the crew that asked it, and closes rows.
-func scanQuestions(rows *sql.Rows, add func(crewActorID string, q Question)) error {
-	defer rows.Close()
-	for rows.Next() {
-		var crewActorID string
-		var q Question
-		var answeredEvent, waited sql.NullInt64
-		var answeredAt, answeredBy, answer, payload sql.NullString
-		if err := rows.Scan(&crewActorID, &q.ID, &q.Kind, &q.AskedEventID, &q.AskedAt, &q.Text,
-			&answeredEvent, &answeredAt, &answeredBy, &answer, &payload, &waited); err != nil {
-			return err
-		}
-		q.AnsweredEventID, q.AnsweredAt = answeredEvent.Int64, answeredAt.String
-		q.AnsweredBy, q.Answer = answeredBy.String, answer.String
-		if q.Answer == "" && answeredEvent.Valid {
-			q.Answer = timeline.StoryEvent{Payload: []byte(payloadOrEmpty(payload))}.Field("text")
-		}
-		if waited.Valid {
-			v := waited.Int64
-			q.WaitedMs = &v
-		}
-		add(crewActorID, q)
+// question is a question row as the page shows it: the answer is the line
+// as sent, else the answering event's own text.
+func question(r read.Question) Question {
+	q := Question{ID: r.ID, Kind: r.Kind, AskedEventID: r.AskedEventID, AskedAt: r.AskedAt, Text: r.Text,
+		AnsweredEventID: r.AnsweredEventID.Int64, AnsweredAt: r.AnsweredAt, AnsweredBy: r.AnsweredBy, Answer: r.Answer}
+	if q.Answer == "" && r.AnsweredEventID.Valid {
+		q.Answer = timeline.StoryEvent{Payload: []byte(payloadOrEmpty(r.Payload))}.Field("text")
 	}
-	return rows.Err()
+	if r.WaitedMs.Valid {
+		v := r.WaitedMs.Int64
+		q.WaitedMs = &v
+	}
+	return q
 }
 
 // history is the status lines and decisions of every crew in a project
@@ -676,38 +518,25 @@ func (s *Server) history(ctx context.Context, project, since string) (map[string
 		}
 		return out[crew]
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT actor_id, id, at, turn_id, payload, ref_path, ref_offset
-		  FROM event WHERE project = ? AND at >= ? AND +kind = ? AND actor_id LIKE ? ESCAPE '\'
-		 ORDER BY at, id`,
-		project, since, timeline.KindStatusAppend, likePrefix(prefix))
+	lines, err := read.ProjectEventsOfKind(ctx, s.db.SQL(), project, since, timeline.KindStatusAppend, prefix)
 	if err != nil {
 		return nil, err
 	}
-	if err := scanStatusLines(rows, func(actorID string, line StatusLine) {
-		h := of(actorID)
-		h.StatusLines = append(h.StatusLines, line)
-	}); err != nil {
-		return nil, err
+	for _, e := range lines {
+		h := of(e.ActorID)
+		h.StatusLines = append(h.StatusLines, statusLine(e))
 	}
-	rows, err = s.db.SQL().QueryContext(ctx, questionSelect+`
-		 WHERE q.crew_actor_id LIKE ? ESCAPE '\' AND q.asked_at >= ? ORDER BY q.asked_at, q.id`,
-		likePrefix(prefix), since)
+	questions, err := read.QuestionsSince(ctx, s.db.SQL(), prefix, since)
 	if err != nil {
 		return nil, err
 	}
-	err = scanQuestions(rows, func(actorID string, q Question) {
-		if q.Kind == "" || q.Kind == timeline.QuestionDecision {
-			h := of(actorID)
+	for _, r := range questions {
+		if q := question(r); q.Kind == "" || q.Kind == timeline.QuestionDecision {
+			h := of(r.CrewActorID)
 			h.Questions = append(h.Questions, q)
 		}
-	})
-	return out, err
-}
-
-// likePrefix is a LIKE pattern matching strings that start with prefix.
-func likePrefix(prefix string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix) + "%"
+	}
+	return out, nil
 }
 
 // inbox is the project's waiting decisions, through query.LoadBox - the
@@ -782,11 +611,11 @@ func nullFloat(v sql.NullFloat64) *float64 {
 	return &out
 }
 
-func payloadOrEmpty(v sql.NullString) string {
-	if !v.Valid || v.String == "" {
+func payloadOrEmpty(v string) string {
+	if v == "" {
 		return "{}"
 	}
-	return v.String
+	return v
 }
 
 // spanMs is ended-started in milliseconds, 0 when either end is missing -

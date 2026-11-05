@@ -9,6 +9,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // handleBoardDay is GET /api/board/day?date=YYYY-MM-DD: one day of the
@@ -41,21 +42,13 @@ func (s *Server) handleBoardDay(ctx context.Context, r *http.Request, env envelo
 
 	// The day's turns, by actor: the Actors list, and each task's share.
 	actors := map[string]*BoardActor{}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT a.id, a.project, a.kind, a.name, COALESCE(t.started_at, t.ended_at),
-		       t.input_tokens, t.cache_read_tokens, t.cache_write_tokens, t.output_tokens, t.thinking_tokens
-		  FROM turn t JOIN actor a ON a.id = t.actor_id
-		 WHERE COALESCE(t.started_at, t.ended_at) >= ? AND COALESCE(t.started_at, t.ended_at) < ?`, since, until)
+	turns, err := read.TurnTokensBetween(ctx, s.db.SQL(), since, until)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, project, kind, name, at string
-		var tk Tokens
-		if err := rows.Scan(&id, &project, &kind, &name, &at, &tk.Input, &tk.CacheRead, &tk.CacheWrite, &tk.Output, &tk.Thinking); err != nil {
-			return nil, err
-		}
+	for _, t := range turns {
+		id, project, kind, name, at := t.ActorID, t.Project, t.Kind, t.Name, t.At
+		tk := Tokens{Input: t.Input, CacheRead: t.CacheRead, CacheWrite: t.CacheWrite, Output: t.Output, Thinking: t.Thinking}
 		if !onDay(at) || (kind != timeline.ActorMate && kind != timeline.ActorCrew) {
 			continue
 		}
@@ -70,9 +63,6 @@ func (s *Server) handleBoardDay(ctx context.Context, r *http.Request, env envelo
 		}
 		a.Turns++
 		a.Tokens = addTokens(a.Tokens, tk)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	known := map[string]bool{}
@@ -118,20 +108,13 @@ func (s *Server) handleBoardDay(ctx context.Context, r *http.Request, env envelo
 		return a.SpawnedAt < b.SpawnedAt
 	})
 
-	incidents, err := s.db.SQL().QueryContext(ctx, `
-		SELECT i.project, i.kind, COALESCE(a.kind, ''), COALESCE(a.name, ''), i.opened_at, COALESCE(i.resolved_at, '')
-		  FROM incident i LEFT JOIN actor a ON a.id = i.actor_id
-		 WHERE i.opened_at >= ? AND i.opened_at < ?
-		 ORDER BY i.opened_at, i.id`, since, until)
+	incidents, err := read.Incidents(ctx, s.db.SQL(), since, until)
 	if err != nil {
 		return nil, err
 	}
-	defer incidents.Close()
-	for incidents.Next() {
-		var in BoardIncident
-		if err := incidents.Scan(&in.Project, &in.Kind, &in.ActorKind, &in.Name, &in.OpenedAt, &in.ResolvedAt); err != nil {
-			return nil, err
-		}
+	for _, r := range incidents {
+		in := BoardIncident{Project: r.Project, Kind: r.Kind, ActorKind: r.ActorKind, Name: r.ActorName,
+			OpenedAt: r.OpenedAt, ResolvedAt: r.ResolvedAt}
 		if !known[in.Project] || !onDay(in.OpenedAt) {
 			continue
 		}
@@ -139,9 +122,6 @@ func (s *Server) handleBoardDay(ctx context.Context, r *http.Request, env envelo
 			in.Name = ""
 		}
 		out.Incidents = append(out.Incidents, in)
-	}
-	if err := incidents.Err(); err != nil {
-		return nil, err
 	}
 	return out, nil
 }

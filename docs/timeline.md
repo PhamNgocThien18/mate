@@ -9,6 +9,7 @@ Two rebuilds of the same sources produce byte-identical `v_story` output, `event
 
 The observer inside the console is the single writer: it calls `Ingest` at the end of every poll, and `internal/db` holds an advisory lock on `mate.db.lock` so a second writer is refused rather than interleaved.
 Readers take no lock at all.
+A reader outside `internal/db` and `internal/timeline` goes through `internal/timeline/read`, which holds every query the dashboard, `internal/core` and `cmd/mate` run against this schema (CON-166): a column that changes is changed there, not in each reader.
 
 ## 1. What the schema adds to the spec
 

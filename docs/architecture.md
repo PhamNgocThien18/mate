@@ -23,14 +23,14 @@ Seven layers, lowest first. Every package with a non-test `.go` file under
 test-only packages of rule 3. The Packages column is authoritative: a
 package not listed has no layer yet, and a subpackage does not inherit its
 parent's layer (`harness` is read, `harness/claude` integration;
-`timeline/scene` is read, `timeline` service). The "What belongs" column
+`timeline/scene` and `timeline/read` are read, `timeline` service). The "What belongs" column
 describes the layer; it does not decide it.
 
 | Layer | What belongs | Packages |
 | -- | -- | -- |
 | 1 leaf (lá) | Types, rules, formats and OS shims that import no other layer | `assets`, `brief`, `capability`, `config`, `consolecmd`, `crewstate`, `memory`, `names`, `observability`, `platform`, `process`, `telemetry` |
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
-| 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `diagnostics`, `dispatch`, `harness`, `runtime` |
+| 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `timeline/read`, `diagnostics`, `dispatch`, `harness`, `runtime` |
 | 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost` |
 | 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `dashboard`, `core` |
 | 6 UI (giao diện) | What the captain looks at | `ui/console` (Go); Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` |
@@ -76,7 +76,8 @@ Packages that mix layers, until their issue splits them:
 
 `dashboard` is in service, not UI: it is the Office/City HTTP server the
 engine runs (`internal/core/dashboard.go`), so `core` imports it, and it
-reads `store`, `db`, `timeline` and `matehost` itself. The UI is the web
+reads `store`, `db`, `timeline` and `matehost` itself; its SQL is in
+`timeline/read` (CON-166). The UI is the web
 pages it serves. Since CON-165 it no longer imports `spawn`
 (`store.Workspace.CrewIsScout`).
 
@@ -171,7 +172,7 @@ true yet.
 | `plugins.yaml` | `plugin` | `mate plugin` | `spawn` at Mate start, console, dashboard |
 | `crew-dispatch.json` | `dispatch` | the captain | `mate crew dispatch` |
 | `console.lock` | `store` | the console (flock) | a second console, which asks to replace it |
-| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, refresh |
+| `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, `mate recall`, refresh; every query outside `db` and `timeline` is in `timeline/read` |
 | `notifications.json` | `notifications` | the engine's notification loop (`internal/core/notify.go`) | the same loop (flock on `notifications.json.lock`) |
 | `projects/<p>/project.yaml`, `PROJECT.md` | `store` | `mate project …`; the Mate (`PROJECT.md`) | spawn, query, `mate recall` |
 | `projects/<p>/sent.log` | `store` | outbox, `mate send`, hook, refresh, autopilot, the console | box, timeline |

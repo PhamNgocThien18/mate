@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +26,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 )
 
 // cmdRecall implements `mate recall <project> [--live] [--part N[,N...]] [--max-bytes N]`
@@ -854,87 +854,44 @@ func recallTimeline(ctx context.Context, w *store.Workspace, project string, now
 	return recallPart{8, title, b.String()}, true
 }
 
-func timelineHints(ctx context.Context, q *sql.DB, project, since string, b *strings.Builder) error {
-	var pct sql.NullFloat64
-	err := q.QueryRowContext(ctx, `SELECT n.context_pct FROM v_now n WHERE n.project = ? AND n.actor_kind = 'mate' LIMIT 1`, project).Scan(&pct)
+func timelineHints(ctx context.Context, q read.Querier, project, since string, b *strings.Builder) error {
+	pct, err := read.MateContextPct(ctx, q, project)
 	switch {
-	case errors.Is(err, sql.ErrNoRows) || (err == nil && !pct.Valid):
-		b.WriteString("Mate context: not measured yet\n")
 	case err != nil:
 		return err
+	case !pct.Valid:
+		b.WriteString("Mate context: not measured yet\n")
 	default:
 		fmt.Fprintf(b, "Mate context: %.0f%% of the window after your latest turn\n", pct.Float64)
 	}
 
-	rows, err := q.QueryContext(ctx, `
-		SELECT e.at, c.name, m.text
-		  FROM message m
-		  JOIN event e ON e.id = m.event_id
-		  JOIN actor f ON f.id = m.from_actor_id
-		  JOIN actor c ON c.id = m.to_actor_id
-		  LEFT JOIN task t ON t.crew_actor_id = c.id
-		 WHERE e.project = ? AND f.kind = 'mate' AND c.kind = 'crew' AND e.at >= ?
-		   AND (t.spawned_at IS NULL OR t.spawned_at = '' OR e.at > t.spawned_at)
-		 ORDER BY e.at DESC LIMIT ?`, project, since, recallHintLimit)
+	sent, err := read.SentToCrewsSince(ctx, q, project, since, recallHintLimit)
 	if err != nil {
 		return err
 	}
-	corrections, err := hintRows(rows)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(b, "lines you sent crews after their spawn, last %d days: %d\n", recallHintDays, len(corrections))
-	for _, r := range corrections {
-		fmt.Fprintf(b, "- %s to %s: %s\n", r.at, r.who, strconv.Quote(recallClip(r.text, 160)))
+	fmt.Fprintf(b, "lines you sent crews after their spawn, last %d days: %d\n", recallHintDays, len(sent))
+	for _, r := range sent {
+		fmt.Fprintf(b, "- %s to %s: %s\n", recallHintTime(r.At), r.Crew, strconv.Quote(recallClip(r.Text, 160)))
 	}
 
-	rows, err = q.QueryContext(ctx, `
-		SELECT q.asked_at, c.name, q.text, COALESCE(q.answered_at, '')
-		  FROM question q
-		  JOIN actor c ON c.id = q.crew_actor_id
-		 WHERE c.project = ? AND q.asked_at >= ?
-		 ORDER BY q.asked_at DESC LIMIT ?`, project, since, recallHintLimit)
+	asked, err := read.AskedSince(ctx, q, project, since, recallHintLimit)
 	if err != nil {
 		return err
 	}
-	questions, err := hintRows(rows)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(b, "questions crews asked, last %d days: %d\n", recallHintDays, len(questions))
-	for _, r := range questions {
+	fmt.Fprintf(b, "questions crews asked, last %d days: %d\n", recallHintDays, len(asked))
+	for _, r := range asked {
 		state := "answered"
-		if r.extra == "" {
+		if r.AnsweredAt == "" {
 			state = "unanswered"
 		}
-		fmt.Fprintf(b, "- %s %s (%s): %s\n", r.at, r.who, state, strconv.Quote(recallClip(r.text, 160)))
+		fmt.Fprintf(b, "- %s %s (%s): %s\n", recallHintTime(r.AskedAt), r.Crew, state, strconv.Quote(recallClip(r.Text, 160)))
 	}
 	return nil
 }
 
-type hintRow struct{ at, who, text, extra string }
-
-func hintRows(rows *sql.Rows) ([]hintRow, error) {
-	defer rows.Close()
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	var out []hintRow
-	for rows.Next() {
-		var r hintRow
-		var at string
-		dest := []any{&at, &r.who, &r.text}
-		if len(cols) > 3 {
-			dest = append(dest, &r.extra)
-		}
-		if err := rows.Scan(dest...); err != nil {
-			return nil, err
-		}
-		r.at = db.ParseTime(at).Local().Format(recallTimeLayout)
-		out = append(out, r)
-	}
-	return out, rows.Err()
+// recallHintTime is a stored time as the local clock the hints print.
+func recallHintTime(at string) string {
+	return db.ParseTime(at).Local().Format(recallTimeLayout)
 }
 
 // recallClip flattens s to one line and bounds it to n runes.

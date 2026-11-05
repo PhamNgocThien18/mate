@@ -12,6 +12,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
+	"github.com/nguyenngocanh94/mate/internal/timeline/read"
 	"github.com/nguyenngocanh94/mate/internal/timeline/scene"
 )
 
@@ -287,17 +288,11 @@ func cmdReindex(args []string, stdout, stderr io.Writer) error {
 
 func reportReindex(ctx context.Context, w *store.Workspace, handle *db.DB, stdout io.Writer) error {
 	for _, ref := range w.Projects() {
-		var events, turns, actions int
-		row := handle.SQL().QueryRowContext(ctx,
-			`SELECT
-			   (SELECT COUNT(*) FROM event WHERE project = ?),
-			   (SELECT COUNT(*) FROM turn t JOIN actor a ON a.id = t.actor_id WHERE a.project = ?),
-			   (SELECT COUNT(*) FROM action c JOIN actor a ON a.id = c.actor_id WHERE a.project = ?)`,
-			ref.Name, ref.Name, ref.Name)
-		if err := row.Scan(&events, &turns, &actions); err != nil {
+		c, err := read.ProjectCounts(ctx, handle.SQL(), ref.Name)
+		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "%s: %d event(s), %d turn(s), %d action(s)\n", ref.Name, events, turns, actions)
+		fmt.Fprintf(stdout, "%s: %d event(s), %d turn(s), %d action(s)\n", ref.Name, c.Events, c.Turns, c.Actions)
 	}
 	fmt.Fprintf(stdout, "timeline rebuilt at %s\n", handle.Path())
 	return nil
