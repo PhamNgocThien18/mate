@@ -54,7 +54,7 @@ check: check-fmt vet vet-linux test
 # vet-linux compiles every package, tests included, for both Linux
 # architectures. check-linux only runs the host's architecture. ./... does
 # not reach a nested module, so each module directory is listed here.
-VET_LINUX_MODULES = .
+VET_LINUX_MODULES = . scripts/ptysmoke
 
 vet-linux:
 	@set -e; for dir in $(VET_LINUX_MODULES); do for arch in amd64 arm64; do \
