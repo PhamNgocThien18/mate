@@ -17,6 +17,13 @@ import (
 // windows type-checks both builds. js and wasip1 cannot start the go tool,
 // hence the constraint above.
 func TestEveryBuildCompiles(t *testing.T) {
+	// go test caches this result by the files the darwin test binary is
+	// built from and the files this process opens, never by what go vet
+	// reads. Reading the package directory puts every file of it, those
+	// only another build compiles included, in that cache key.
+	if _, err := os.ReadDir("."); err != nil {
+		t.Fatal(err)
+	}
 	for _, target := range []string{"linux/amd64", "illumos/amd64", "windows/amd64"} {
 		goos, goarch, _ := strings.Cut(target, "/")
 		vet := exec.Command("go", "vet", ".")
