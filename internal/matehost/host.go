@@ -139,6 +139,15 @@ type Host struct {
 	allow     []string
 	mateBin   string
 	topicsDir string
+
+	// Socket subscribers (subscribe.go). subMu is taken before mu, never
+	// after it.
+	subMu           sync.Mutex
+	subs            map[*lineStream]struct{}
+	subsClosed      bool
+	subWG           sync.WaitGroup
+	subQueue        int
+	subWriteTimeout time.Duration
 }
 
 // Options configure a Host.
@@ -162,7 +171,8 @@ type Options struct {
 // New makes a host for runner.
 func New(runner *Runner, opts Options) *Host {
 	h := &Host{runner: runner, history: opts.History, newsPath: opts.News, reporter: opts.Reporter, now: opts.Now, idle: make(chan struct{}),
-		sessions: map[int]*session{}, forks: opts.Forks, allow: opts.Allow, mateBin: opts.MateBin, topicsDir: opts.Topics}
+		sessions: map[int]*session{}, forks: opts.Forks, allow: opts.Allow, mateBin: opts.MateBin, topicsDir: opts.Topics,
+		subs: map[*lineStream]struct{}{}, subQueue: subscribeQueue, subWriteTimeout: subscribeWriteTimeout}
 	if h.now == nil {
 		h.now = time.Now
 	}
@@ -173,7 +183,8 @@ func New(runner *Runner, opts Options) *Host {
 // HistoryPath is the history file of the Mate in mateDir.
 func HistoryPath(mateDir string) string { return filepath.Join(mateDir, HistoryName) }
 
-// Subscribe sets the one listener for events; the REPL.
+// Subscribe sets the one listener for events in this process: the REPL.
+// Clients of the socket subscribe there (OpSubscribe) instead.
 func (h *Host) Subscribe(fn func(Event)) {
 	h.mu.Lock()
 	h.notify = fn
@@ -321,27 +332,30 @@ func (h *Host) wait(run *Run, item *Item) {
 			h.emit(out)
 		}
 	})
+	// The finished item is a copy: the running one stays as it was while
+	// it is still h.cur, which a subscriber's first event reads under mu.
 	h.mu.Lock()
 	result := strings.TrimSpace(reply.Text)
-	silent := item.Source == SourceApp && Silent(result) && reply.Err == nil
-	item.Reply = finalReply(strings.TrimSpace(item.Reply), result)
+	done := *item
+	done.Tools = append([]ToolRecord(nil), item.Tools...)
+	done.Reply = finalReply(strings.TrimSpace(item.Reply), result)
 	if reply.DurationMS > 0 {
-		item.MS = reply.DurationMS
+		done.MS = reply.DurationMS
 	} else {
-		item.MS = h.now().Sub(item.At).Milliseconds()
+		done.MS = h.now().Sub(item.At).Milliseconds()
 	}
-	item.Tokens = reply.Tokens
+	done.Tokens = reply.Tokens
 	h.mu.Unlock()
-	item.Interrupted = reply.Interrupted
-	item.Silent = silent
+	done.Interrupted = reply.Interrupted
+	done.Silent = item.Source == SourceApp && Silent(result) && reply.Err == nil
 	if reply.Err != nil {
-		item.Error = reply.Err.Error()
+		done.Error = reply.Err.Error()
 	} else if reply.IsError && result != "" {
-		item.Error = result
+		done.Error = result
 	}
-	item.Done = true
-	h.settleNews(item)
-	h.appendHistory(*item)
+	done.Done = true
+	h.settleNews(&done)
+	h.appendHistory(done)
 
 	h.mu.Lock()
 	h.run, h.cur = nil, nil
@@ -350,7 +364,7 @@ func (h *Host) wait(run *Run, item *Item) {
 		next, h.queue = &h.queue[0], h.queue[1:]
 	}
 	close(h.idle)
-	ev := h.eventLocked(item)
+	ev := h.eventLocked(&done)
 	h.mu.Unlock()
 	if next == nil {
 		h.report("idle")
@@ -799,10 +813,13 @@ func (h *Host) newsSnapshot() []News {
 	return h.news
 }
 
+// emit tells the REPL and every socket subscriber. Subscribers are handed
+// the event without waiting for them (publish).
 func (h *Host) emit(ev Event) {
 	h.mu.Lock()
 	fn := h.notify
 	h.mu.Unlock()
+	h.publish(ev)
 	if fn != nil {
 		fn(ev)
 	}
