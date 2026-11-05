@@ -188,7 +188,8 @@ type Options struct {
 	Allow   []string
 	MateBin string
 	// After starts the timer of a held item (hold.go); nil is
-	// time.AfterFunc. Tests give their own clock.
+	// time.AfterFunc. Tests give their own clock. It is called under the
+	// host's lock, so it must not run fn before it returns.
 	After func(d time.Duration, fn func()) (stop func() bool)
 }
 

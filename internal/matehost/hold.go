@@ -97,14 +97,6 @@ func (h *Host) Okay(id int) (Held, error) {
 	if err := checkOkay(WorkPath(filepath.Dir(h.newsPath)), id); err != nil {
 		return Held{}, err
 	}
-	h.mu.Lock()
-	for _, it := range h.held {
-		if it.Kind == HeldOkay && it.Work == id {
-			h.mu.Unlock()
-			return it.Held, nil
-		}
-	}
-	h.mu.Unlock()
 	return h.hold(Held{Kind: HeldOkay, Work: id})
 }
 
@@ -126,11 +118,19 @@ func (h *Host) Undo(id int) (Held, error) {
 	return it.Held, nil
 }
 
+// hold puts it on hold. A tick on a row already held is that held item:
+// the check and the hold are under one lock, so two ticks hold one.
 func (h *Host) hold(it Held) (Held, error) {
 	h.mu.Lock()
 	if h.stopping {
 		h.mu.Unlock()
 		return Held{}, ErrStopping
+	}
+	for _, o := range h.held {
+		if it.Kind == HeldOkay && o.Kind == HeldOkay && o.Work == it.Work {
+			h.mu.Unlock()
+			return o.Held, nil
+		}
 	}
 	h.heldSeq++
 	it.ID, it.At = h.heldSeq, h.now()
