@@ -17,6 +17,15 @@ import (
 // ErrNotWorkspace is returned by Open for a directory with no `.mate/`.
 var ErrNotWorkspace = errors.New("store: not a mate workspace")
 
+// ErrEmptyWorkspaceFile is LoadConfig's refusal of a workspace.yaml that is
+// empty: no document in it at all (zero bytes, or only whitespace or
+// comments), `{}`, or a null document. Such a file reads as a workspace with
+// no projects on layout 1, and the next save through the handle would write
+// that over the file (CON-218). mate writes the file whole, so an empty one was emptied
+// from outside: by an editor that truncates it before writing, a shell
+// redirect, or such a write that hit a full disk.
+var ErrEmptyWorkspaceFile = errors.New("store: workspace.yaml is empty")
+
 // Defaults are the harnesses a project uses when it does not say otherwise.
 // They are what workspace.yaml records and nothing more: an empty field
 // means the workspace names none, and the binary's harness registry decides
@@ -392,8 +401,9 @@ func (w *Workspace) Project(name string) (ProjectRef, bool) {
 	return ProjectRef{}, false
 }
 
-// LoadConfig re-reads workspace.yaml from disk. A file that is missing or does
-// not parse is an error, and the configuration loaded before stays.
+// LoadConfig re-reads workspace.yaml from disk. A file that is missing, does
+// not parse or is empty (ErrEmptyWorkspaceFile) is an error, and the
+// configuration loaded before stays.
 func (w *Workspace) LoadConfig() error {
 	w.cfgMu.Lock()
 	defer w.cfgMu.Unlock()
@@ -404,8 +414,15 @@ func (w *Workspace) LoadConfig() error {
 		}
 		return err
 	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("store: %s: %w", w.WorkspaceFile(), err)
+	}
+	if emptyDocument(&doc) {
+		return fmt.Errorf("%w: %s", ErrEmptyWorkspaceFile, w.WorkspaceFile())
+	}
 	var cfg WorkspaceConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := doc.Decode(&cfg); err != nil {
 		return fmt.Errorf("store: %s: %w", w.WorkspaceFile(), err)
 	}
 	if cfg.Session == "" {
@@ -413,6 +430,27 @@ func (w *Workspace) LoadConfig() error {
 	}
 	w.cfg.Store(&cfg)
 	return nil
+}
+
+// emptyDocument reports a parsed workspace.yaml that is empty: no document in
+// it at all (zero bytes, or only whitespace or comments), `{}`, or a null
+// document (`---`, `~`). A list or a string at the top is not empty; Decode
+// refuses it, as before.
+func emptyDocument(doc *yaml.Node) bool {
+	top := doc
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		top = doc.Content[0]
+	}
+	switch top.Kind {
+	case 0, yaml.DocumentNode:
+		// yaml.v3 leaves the node zero for a file with no document in it.
+		return true
+	case yaml.MappingNode:
+		return len(top.Content) == 0
+	case yaml.ScalarNode:
+		return top.ShortTag() == "!!null"
+	}
+	return false
 }
 
 // SaveConfig writes workspace.yaml atomically.
