@@ -314,12 +314,12 @@ func mateLedgerRow(ctx context.Context, handle *db.DB, w *store.Workspace, proje
 	}
 	row.CtxAvg, row.CtxMax = stats.Avg, stats.Max
 
-	if usage, ok, err := handle.LatestContext(ctx, actorID, ""); err != nil {
+	if latest, ok, err := handle.LatestContext(ctx, actorID, ""); err != nil {
 		return row, err
 	} else if ok {
-		row.Context = sql.NullInt64{Int64: usage.Tokens, Valid: true}
-		if usage.Pct != nil {
-			row.CtxPct = sql.NullFloat64{Float64: *usage.Pct, Valid: true}
+		row.Context = sql.NullInt64{Int64: latest.Tokens, Valid: true}
+		if latest.Pct != nil {
+			row.CtxPct = sql.NullFloat64{Float64: *latest.Pct, Valid: true}
 		}
 	}
 	if row.Model == "" || row.Effort == "" {

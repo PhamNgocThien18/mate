@@ -16,9 +16,10 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
-// These are cmd/mate's test helpers (liveCrewWorkspace, usageWorkspace,
-// seedActorTurnAndPricing, runCLI), which the tests here ran on before the
-// usage pages moved out of cmd/mate (CON-168).
+// newWorkspace, usageWorkspace and seedActorTurnAndPricing are cmd/mate's
+// liveCrewWorkspace, usageWorkspace and seedActorTurnAndPricing, which the
+// tests here ran on before the usage pages moved out of cmd/mate
+// (CON-168); writePage stands where `runCLI(t, "usage", ...)` stood.
 
 // newWorkspace builds a workspace with one registered git project, the way
 // `mate init` and `mate project add` leave it.

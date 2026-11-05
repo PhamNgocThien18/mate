@@ -90,7 +90,9 @@ pages it serves. Since CON-165 it no longer imports `spawn`
 only reads the flags. It is in service because `--why` reads through
 `dashboard.Server`, so that page and the Task page cannot disagree, and the
 ledger reads the crews through `spawn`. Its reads of `mate.db` are in
-`timeline/read`; it holds no SQL.
+`timeline/read`; it holds no SQL. Because `usage` imports `dashboard`,
+`dashboard` cannot import `usage`: the Office's usage page reusing the
+ledger needs `--why` split out of `usage` first.
 
 ## 2. Processes and how they talk
 

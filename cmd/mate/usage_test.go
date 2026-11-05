@@ -53,25 +53,46 @@ func usageWorkspace(t *testing.T) *store.Workspace {
 	return w
 }
 
-// Each form of the command reaches its own page: the first line names it.
+// Each form of the command reaches its own page: the first line names it,
+// and --top reaches the ledger as a cut (a second task makes one).
 func TestUsageHandsEachFormToItsPage(t *testing.T) {
 	w := usageWorkspace(t)
+	handle, err := db.Open(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedActorTurnAndPricing(t, handle, timeline.CrewActorID("shop", "k1"), "shop", "crew", "unpriced-model", 10_000, 0, 0, 500, 200_000)
+	handle.Close()
 	for name, tc := range map[string]struct {
-		args  []string
-		first string
+		args        []string
+		first, also string
 	}{
-		"ledger":   {[]string{"usage", "shop"}, "ID "},
-		"top":      {[]string{"usage", "shop", "--top", "1"}, "ID "},
-		"turns":    {[]string{"usage", "shop", "k3"}, "TURN "},
-		"sessions": {[]string{"usage", "shop", "k3", "--sessions"}, "SESSION "},
-		"why":      {[]string{"usage", "shop", "k3", "--why"}, "usage why shop k3"},
+		"ledger":   {[]string{"usage", "shop"}, "ID ", "k1"},
+		"top":      {[]string{"usage", "shop", "--top", "1"}, "ID ", "showing the mate and the 1 largest of 2 task(s)"},
+		"turns":    {[]string{"usage", "shop", "k3"}, "TURN ", ""},
+		"sessions": {[]string{"usage", "shop", "k3", "--sessions"}, "SESSION ", ""},
+		"why":      {[]string{"usage", "shop", "k3", "--why"}, "usage why shop k3", ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			out := runCLI(t, append(tc.args, "--workspace", w.Root())...)
-			if !strings.HasPrefix(out, tc.first) {
-				t.Fatalf("mate %s printed, want a first line starting %q:\n%s", strings.Join(tc.args, " "), tc.first, out)
+			if !strings.HasPrefix(out, tc.first) || !strings.Contains(out, tc.also) {
+				t.Fatalf("mate %s printed, want a first line starting %q and %q:\n%s", strings.Join(tc.args, " "), tc.first, tc.also, out)
 			}
 		})
+	}
+}
+
+// A workspace whose console never ran has no mate.db: the command says so
+// and prints nothing.
+func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
+	w := liveCrewWorkspace(t, "shop")
+	var stdout, stderr strings.Builder
+	err := run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "no timeline at") || !strings.Contains(err.Error(), "mate reindex") {
+		t.Fatalf("want the no-timeline error, got %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("a failed usage printed:\n%s", stdout.String())
 	}
 }
 

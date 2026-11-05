@@ -17,7 +17,7 @@ import (
 // capability moved behind the harness registry
 // (docs/plans/harness-registry-2026-09-30.md, PR 5): that change must leave
 // every number here, and `mate usage`'s on the same corpus
-// (cmd/mate/usage_characterization_test.go), as it found them.
+// (internal/usage/characterization_test.go), as it found them.
 func TestFixtureNumbersCharacterization(t *testing.T) {
 	f := newFixture(t)
 	// generated_at is the wall clock of the request, not a number the
