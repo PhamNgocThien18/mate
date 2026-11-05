@@ -30,7 +30,7 @@ import (
 //
 // Only the files listed below may have any, and each only the uses its
 // entry names. Any other use fails the test, and so does a use an entry
-// names that its file no longer has, so the lists only get shorter. What a
+// names that its file no longer has, so the list only gets shorter. What a
 // file needs from the system belongs in this package; a file joins
 // platformAdapters only when it is an adapter bound to one system or one
 // tool, or the code that picks among such adapters by system.
@@ -65,12 +65,6 @@ var platformAdapters = []platformEntry{
 	},
 }
 
-// platformDebt are files that choose by operating system themselves; CON-185
-// moves that choice out of them and removes their entries.
-var platformDebt = []platformEntry{
-	{file: "cmd/mate/notifications.go", uses: []string{"runtime.GOOS"}, reason: "CON-185: turns notifications off outside darwin"},
-}
-
 const ratchetFile = "internal/platform/ratchet_test.go"
 
 type platformUse struct {
@@ -83,9 +77,8 @@ func (u platformUse) String() string { return fmt.Sprintf("%s:%d: %s", u.file, u
 
 func TestOSCallsStayInPlatform(t *testing.T) {
 	root := moduleRoot(t)
-	entries := append(append([]platformEntry{}, platformAdapters...), platformDebt...)
 	allowed := map[string]platformEntry{}
-	for _, e := range entries {
+	for _, e := range platformAdapters {
 		if _, twice := allowed[e.file]; twice {
 			t.Errorf("%s is listed twice in %s", e.file, ratchetFile)
 		}
@@ -111,7 +104,7 @@ func TestOSCallsStayInPlatform(t *testing.T) {
 	}
 
 	var inventory strings.Builder
-	for _, e := range entries {
+	for _, e := range platformAdapters {
 		var uses []string
 		for _, use := range e.uses {
 			uses = append(uses, fmt.Sprintf("%s (%d)", use, seen[e.file][use]))

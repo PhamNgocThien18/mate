@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/matehost"
+	"github.com/nguyenngocanh94/mate/internal/notifications"
+	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
 func TestNotificationSnapshotUsesOwedNewsAcrossProjects(t *testing.T) {
@@ -67,5 +70,87 @@ func TestNotificationSnapshotNewsReadFailureIsNotNoNews(t *testing.T) {
 	}
 	if snap.Complete {
 		t.Fatal("unreadable news was reported as no news")
+	}
+}
+
+// senderFunc is a notifications.Sender for tests.
+type senderFunc func(context.Context, notifications.Message) error
+
+func (f senderFunc) Send(ctx context.Context, m notifications.Message) error { return f(ctx, m) }
+
+// A console on a machine that cannot notify (notifications.Supported is
+// false, as on Linux without notify-send) has no sender and runs no
+// notification loop; with a sender, the loop sends the news waiting for the
+// captain through it.
+func TestConsoleNotificationLoopNeedsASender(t *testing.T) {
+	// No sender: it returns before it opens anything, so even a root that
+	// is no workspace is no error, and no loop runs.
+	stop, status, err := startNotificationLoop(context.Background(), t.TempDir(), "", nil)
+	if err != nil {
+		t.Fatalf("no sender: %v", err)
+	}
+	stop()
+	if line := status(); line != "" {
+		t.Fatalf("no sender, status line %q", line)
+	}
+
+	ws, _ := consoleFixture(t, "shop")
+	path := matehost.NewsPath(ws.MateDir("shop"))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := matehost.OpenNews(path, matehost.News{Title: "cần key", Question: "cấp key?"}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	sent := make(chan notifications.Message, 1)
+	stop, _, err = startNotificationLoop(context.Background(), ws.Root(), "http://127.0.0.1:7777/", senderFunc(func(_ context.Context, m notifications.Message) error {
+		select {
+		case sent <- m:
+		default:
+		}
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	select {
+	case m := <-sent:
+		if !strings.Contains(m.Title, "shop") || !strings.Contains(m.Body, "cần key") || m.URL != "http://127.0.0.1:7777/office/#captain" {
+			t.Fatalf("sent %+v", m)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the loop sent no notification for the news waiting")
+	}
+}
+
+// The console starts its notification loop exactly where
+// notifications.Supported says this machine can notify: always on macOS, on
+// Linux when notify-send is on PATH. A loop that starts opens the workspace
+// first, so on a root that is no workspace it is refused with
+// ErrNotWorkspace; one that does not start is no error.
+func TestConsoleNotificationsFollowSupported(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	starts := func() bool {
+		t.Helper()
+		stop, _, err := startConsoleNotifications(context.Background(), t.TempDir(), "")
+		if err == nil {
+			stop()
+			return false
+		}
+		if !errors.Is(err, store.ErrNotWorkspace) {
+			t.Fatalf("console notifications: %v", err)
+		}
+		return true
+	}
+	if got, want := starts(), notifications.Supported(); got != want {
+		t.Fatalf("no notify-send on PATH: loop started %v, Supported() %v", got, want)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "notify-send"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := starts(), notifications.Supported(); got != want {
+		t.Fatalf("notify-send on PATH: loop started %v, Supported() %v", got, want)
 	}
 }
