@@ -64,6 +64,45 @@ func TestOneEngineHoldsCoreLockAtATime(t *testing.T) {
 	again.Unlock()
 }
 
+// A probe (CoreRunning, ConsoleRunning) takes a shared lock for an
+// instant; an engine or a console taking its lock at that instant must not
+// be refused for it, with nobody holding the lock.
+func TestAProbeNeverRefusesAFreeLock(t *testing.T) {
+	w := newWorkspace(t)
+	if l, err := w.LockCore(store.CoreHolder{PID: 1}); err != nil {
+		t.Fatal(err)
+	} else {
+		l.Unlock()
+	}
+	stop := make(chan struct{})
+	probed := make(chan struct{})
+	go func() {
+		defer close(probed)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_, _, _ = w.CoreRunning()
+				_, _, _ = w.ConsoleRunning()
+			}
+		}
+	}()
+	defer func() { close(stop); <-probed }()
+	for i := 0; i < 300; i++ {
+		l, err := w.LockCore(store.CoreHolder{PID: 2})
+		if err != nil {
+			t.Fatalf("LockCore #%d with nobody holding it: %v", i, err)
+		}
+		l.Unlock()
+		unlock, err := w.LockConsole(store.ConsoleHolder{PID: 2})
+		if err != nil {
+			t.Fatalf("LockConsole #%d with nobody holding it: %v", i, err)
+		}
+		unlock()
+	}
+}
+
 // ConsoleRunning tells a console holding its lock now, and whether it is
 // one that takes core.lock (core_lock) or one built before CON-211.
 func TestConsoleRunningSaysWhetherTheConsoleTakesCoreLock(t *testing.T) {

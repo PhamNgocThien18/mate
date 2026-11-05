@@ -117,8 +117,13 @@ type Options struct {
 
 	// Owner is who runs the engine, as core.lock records it: OwnerCore for
 	// `mate core run`, OwnerConsole (the zero value) for a console running
-	// the engine itself until CON-214.
+	// the engine itself until CON-214. Unused with Claim.
 	Owner string
+	// Claim is core.lock taken ahead (Lock) by a caller that must hold it
+	// before it builds the parts; the engine owns it from New on, and
+	// releases it when it stops, a failed Start included. Nil makes Start
+	// take the lock itself.
+	Claim *Claim
 	// ConsolePresent says whether a console is open on the workspace (CON-203,
 	// decided 2026-11-05): a Manual project gets nothing typed into its Mate
 	// by the outbox loop while it says false; an Auto project gets its
@@ -163,10 +168,10 @@ type Engine struct {
 	// stopWait is StopWait; a test shortens it.
 	stopWait time.Duration
 
-	// coreLock is the workspace's core.lock while the engine runs, and
-	// holder what it says; Start takes it first and Stop releases it last.
-	coreLock *store.CoreLock
-	holder   store.CoreHolder
+	// claim is the workspace's core.lock while the engine runs; Start
+	// takes it first (or the one Options.Claim handed in) and Stop
+	// releases it last.
+	claim *Claim
 
 	// ctx is the engine's own: the shared snapshot computations run under
 	// it. cancel ends it when the engine stops, and so does the end of the
@@ -365,11 +370,11 @@ func (e *Engine) stop() {
 	if late := awaitAll(waits, e.stopWait); len(late) > 0 {
 		line := fmt.Sprintf("mate core: %s had not stopped %s after the stop began", strings.Join(late, ", "), e.stopWait)
 		switch {
-		case e.o.Timeline != nil && e.coreLock != nil:
+		case e.o.Timeline != nil && e.claim != nil:
 			line += "; mate.db and core.lock are left for the process exit to release"
 		case e.o.Timeline != nil:
 			line += "; mate.db is left open for the process exit to release"
-		case e.coreLock != nil:
+		case e.claim != nil:
 			line += "; core.lock is left for the process exit to release"
 		}
 		fmt.Fprintln(e.stderr(), line)
@@ -382,9 +387,11 @@ func (e *Engine) stop() {
 	}
 	// Last: once it is released another engine may start, and nothing of
 	// this one is left to run beside it.
-	if e.coreLock != nil {
-		e.coreLock.Unlock()
-		e.coreLock = nil
+	e.claim.Release()
+	if e.claim == nil {
+		// A Start that never came: the claim handed in is still the
+		// engine's to release.
+		e.o.Claim.Release()
 	}
 }
 

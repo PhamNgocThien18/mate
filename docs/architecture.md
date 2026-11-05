@@ -119,7 +119,9 @@ In the console or in `mate core run`, `core.Engine`
 `cmd/mate/console_auto.go`) first takes `.mate/core.lock` (CON-211): one
 engine per workspace, wherever it runs; a second one gets
 `core.RunningError` naming the holder's pid and owner (`core` or
-`console`) and starts nothing. A core then binds `.mate/core.sock` (0600;
+`console`) and starts nothing. The console and `mate core run` take it
+(`core.Lock`) before `engineOptions` builds the parts, whose observer opens
+`mate.db`, and hand it in as `Options.Claim`. A core then binds `.mate/core.sock` (0600;
 a socket left by a dead core is removed, a path too long or a filesystem
 with no unix sockets stops it). It then starts, in order: the re-read
 of `workspace.yaml` every 2 s (`internal/core/reload.go`); the observer

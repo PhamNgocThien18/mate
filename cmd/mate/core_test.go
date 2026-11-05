@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,6 +171,11 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 			}
 			if _, err := os.Stat(w.CoreSocket()); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("a refused core left a socket: %v", err)
+			}
+			// Refused before its parts were built: it never opened the
+			// timeline another engine writes.
+			if _, err := os.Stat(filepath.Join(w.StateDir(), "mate.db")); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("a refused core opened mate.db: %v", err)
 			}
 		})
 	}

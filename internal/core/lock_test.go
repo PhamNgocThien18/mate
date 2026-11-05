@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/recovery"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -234,6 +235,41 @@ func TestCoreRunsOnTheSocketWhenTheTCPPortIsBusy(t *testing.T) {
 	h, _, _ := w.CoreRunning()
 	if h.TCPError == "" || h.URL != "" || h.Socket != w.CoreSocket() {
 		t.Fatalf("core.lock = %+v, want the TCP error recorded", h)
+	}
+}
+
+// A claim taken ahead (core.Lock, as the console and `mate core run` take
+// it before they build the parts) is the engine's from New on: it is not
+// taken twice, and it is released when the engine stops, even one that
+// never started.
+func TestAClaimTakenAheadIsTheEngines(t *testing.T) {
+	w := shopWorkspace(t)
+	claim, err := Lock(w, OwnerCore, time.Now())
+	if err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+	if _, err := Lock(w, OwnerConsole, time.Now()); err == nil {
+		t.Fatal("a second Lock while the claim is held succeeded")
+	}
+	e := New(Options{Workspace: w, Claim: claim, Stderr: io.Discard})
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatalf("Start over its claim: %v", err)
+	}
+	if h, held, _ := w.CoreRunning(); !held || h.Owner != OwnerCore {
+		t.Fatalf("core.lock = %+v, held %v; want the claim's", h, held)
+	}
+	e.Stop()
+	if _, held, _ := w.CoreRunning(); held {
+		t.Fatal("core.lock held after Stop")
+	}
+
+	unstarted, err := Lock(w, OwnerConsole, time.Now())
+	if err != nil {
+		t.Fatalf("Lock after Stop: %v", err)
+	}
+	New(Options{Workspace: w, Claim: unstarted}).Stop()
+	if _, held, _ := w.CoreRunning(); held {
+		t.Fatal("core.lock held after an engine that never started stopped")
 	}
 }
 

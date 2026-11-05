@@ -44,7 +44,7 @@ func (w *Workspace) LockConsole(holder ConsoleHolder) (unlock func(), err error)
 	if err != nil {
 		return nil, err
 	}
-	ok, err := tryLockFile(f, true)
+	ok, err := tryHolderLock(f)
 	if err != nil {
 		f.Close()
 		return nil, err

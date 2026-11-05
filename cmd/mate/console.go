@@ -104,6 +104,8 @@ Full reference: docs/console-commands.md in the Mate source repository.
 `
 
 func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
+	// The build core.lock records is the file this process started from.
+	core.Build()
 	ws, err := store.Open(dir)
 	if err != nil {
 		return err
@@ -167,11 +169,18 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// the observer has made sure the database exists; like the notifications
 	// it is a convenience, and a failure is said on the status line and never
 	// stops the console.
+	// One engine per workspace (CON-211): core.lock before the parts, whose
+	// observer opens mate.db as it is built.
+	claim, err := core.Lock(ws, core.OwnerConsole, time.Now())
+	if err != nil {
+		return consoleEngineRefusal(err)
+	}
 	opts, err := engineOptions(ws, deps, func() bool { return true })
 	if err != nil {
+		claim.Release()
 		return err
 	}
-	opts.Owner = core.OwnerConsole
+	opts.Claim = claim
 	// Every action, the console's and the pages', goes in through the
 	// engine's Act, which runs the chat itself and the rest through these
 	// (CON-209), one at a time on each target.

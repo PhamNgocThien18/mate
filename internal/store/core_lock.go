@@ -79,7 +79,7 @@ func (w *Workspace) LockCore(holder CoreHolder) (*CoreLock, error) {
 	if err != nil {
 		return nil, err
 	}
-	ok, err := tryLockFile(f, true)
+	ok, err := tryHolderLock(f)
 	if err != nil {
 		f.Close()
 		return nil, err
@@ -159,6 +159,9 @@ func readHeldRecord(path string, holder any) {
 
 // lockHeld asks whether another open file holds an exclusive lock on path,
 // by taking a shared one for an instant. A missing file is held by nobody.
+// That instant refuses an exclusive try made at the same moment, which is
+// why LockCore and LockConsole try again before they say the lock is held
+// (tryHolderLock).
 func lockHeld(path string) (bool, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -176,6 +179,22 @@ func lockHeld(path string) (bool, error) {
 		_ = unlockFile(f)
 	}
 	return !ok, nil
+}
+
+// tryHolderLock takes the exclusive lock of console.lock or core.lock
+// without waiting on a holder, but tries again for a few milliseconds
+// first: a probe (lockHeld) holds a shared lock for an instant, and a
+// console or an engine refused for that instant would ask to kill a
+// process that is not there, or say "already running" with nothing
+// running.
+func tryHolderLock(f *os.File) (bool, error) {
+	for try := 0; ; try++ {
+		ok, err := tryLockFile(f, true)
+		if ok || err != nil || try == 4 {
+			return ok, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // writeHolder replaces the content of a held lock file with holder's JSON.

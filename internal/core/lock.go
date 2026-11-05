@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/config"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -40,48 +41,83 @@ func (e *RunningError) Error() string {
 	return fmt.Sprintf("core: %s already runs the engine on this workspace", who)
 }
 
-// lock takes the workspace's core.lock for this engine, saying who runs it
-// and which build.
-func (e *Engine) lock() error {
-	owner := e.o.Owner
+// Claim is the workspace's core.lock, held by this process for an engine
+// it is about to build. The console and `mate core run` take it before
+// they build the engine's parts (Options.Claim): the observer opens
+// mate.db as it is built, and an engine built while another one was still
+// letting go of mate.db would run without the timeline for its whole life.
+type Claim struct {
+	ws     *store.Workspace
+	lock   *store.CoreLock
+	holder store.CoreHolder
+}
+
+// Lock takes ws's core.lock for an engine owned by owner (OwnerCore or
+// OwnerConsole), recording this process and its build. While another
+// engine holds it the answer is a *RunningError naming that engine.
+func Lock(ws *store.Workspace, owner string, now time.Time) (*Claim, error) {
 	if owner == "" {
 		owner = OwnerConsole
 	}
 	binary, build := Build()
-	e.holder = store.CoreHolder{
+	holder := store.CoreHolder{
 		PID:     os.Getpid(),
 		Owner:   owner,
-		Started: e.now(),
+		Started: now,
 		Version: config.Version,
 		Binary:  binary,
 		Build:   build,
 	}
-	lock, err := e.o.Workspace.LockCore(e.holder)
+	lock, err := ws.LockCore(holder)
 	if errors.Is(err, store.ErrCoreRunning) {
-		h, _, _ := e.o.Workspace.CoreRunning()
-		return &RunningError{Holder: h}
+		h, _, _ := ws.CoreRunning()
+		return nil, &RunningError{Holder: h}
 	}
 	if err != nil {
-		return fmt.Errorf("core: taking %s: %w", e.o.Workspace.CoreLockFile(), err)
+		return nil, fmt.Errorf("core: taking %s: %w", ws.CoreLockFile(), err)
 	}
-	e.coreLock = lock
+	return &Claim{ws: ws, lock: lock, holder: holder}, nil
+}
+
+// Release lets core.lock go, for a claim no engine was built over; an
+// engine releases its own when it stops.
+func (c *Claim) Release() {
+	if c != nil && c.lock != nil {
+		c.lock.Unlock()
+		c.lock = nil
+	}
+}
+
+// lock is the engine's claim on core.lock: the one Options.Claim handed
+// in, or one taken now.
+func (e *Engine) lock() error {
+	if e.o.Claim != nil {
+		e.claim = e.o.Claim
+		return nil
+	}
+	claim, err := Lock(e.o.Workspace, e.o.Owner, e.now())
+	if err != nil {
+		return err
+	}
+	e.claim = claim
 	return nil
 }
 
 // recordServing writes into core.lock where the dashboard serves, or why
 // it does not over TCP, once Start knows.
 func (e *Engine) recordServing() {
-	if e.coreLock == nil || e.dashboard == nil {
+	c := e.claim
+	if c == nil || c.lock == nil || e.dashboard == nil {
 		return
 	}
 	s := e.dashboard.read()
-	e.holder.Socket, e.holder.URL, e.holder.LANURL = s.Socket, s.URL, s.LANURL
-	e.holder.TCPError = ""
+	c.holder.Socket, c.holder.URL, c.holder.LANURL = s.Socket, s.URL, s.LANURL
+	c.holder.TCPError = ""
 	if s.Err != nil {
-		e.holder.TCPError = s.Err.Error()
+		c.holder.TCPError = s.Err.Error()
 	}
-	if err := e.coreLock.Write(e.holder); err != nil {
-		fmt.Fprintf(e.stderr(), "mate core: recording where it serves in %s: %v\n", e.o.Workspace.CoreLockFile(), err)
+	if err := c.lock.Write(c.holder); err != nil {
+		fmt.Fprintf(e.stderr(), "mate core: recording where it serves in %s: %v\n", c.ws.CoreLockFile(), err)
 	}
 }
 
@@ -101,7 +137,9 @@ var build struct {
 // Build is the path of this process's executable and the sha256 of that
 // file, read once per process: what core.lock records so a newer install
 // can be told from the binary a running engine started from. Either is
-// empty when it cannot be read.
+// empty when it cannot be read. The console and `mate core run` call it
+// first thing, so the sum is of the file the process started from, not of
+// one installed over it while the console waited at a prompt.
 func Build() (binary, sum string) {
 	build.once.Do(func() {
 		exe, err := os.Executable()

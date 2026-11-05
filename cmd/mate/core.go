@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/notifications"
@@ -41,6 +42,8 @@ func cmdCore(args []string, stdout, stderr io.Writer) error {
 // recovery, Office/City, notifications - with no console, in the
 // foreground, until SIGINT, SIGTERM or SIGHUP.
 func cmdCoreRun(args []string, stdout, stderr io.Writer) error {
+	// The build core.lock records is the file this process started from.
+	core.Build()
 	fs := flag.NewFlagSet("core run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	workspace := fs.String("workspace", "", "workspace directory")
@@ -110,11 +113,19 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 		fmt.Fprintf(stderr, "mate core: %v\n", noticeErr)
 	}
 
+	// core.lock before the parts: the observer opens mate.db as it is
+	// built, and an engine built while another one still held mate.db
+	// would run without the timeline for its whole life.
+	claim, err := core.Lock(ws, core.OwnerCore, time.Now())
+	if err != nil {
+		return coreEngineRefusal(err)
+	}
 	opts, err := engineOptions(ws, deps, func() bool { return false })
 	if err != nil {
+		claim.Release()
 		return err
 	}
-	opts.Owner = core.OwnerCore
+	opts.Claim = claim
 	opts.Act = engineActions(ws, deps, noticeClient)
 	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
 	opts.Dashboard.Socket = ws.CoreSocket()
