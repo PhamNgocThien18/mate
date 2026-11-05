@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +114,19 @@ type Options struct {
 	// Stderr is where Stop names the parts that had not stopped within its
 	// bound; os.Stderr when nil.
 	Stderr io.Writer
+
+	// Owner is who runs the engine, as core.lock records it: OwnerCore for
+	// `mate core run`, OwnerConsole (the zero value) for a console running
+	// the engine itself until CON-214.
+	Owner string
+	// ConsolePresent says whether a console is open on the workspace (CON-203,
+	// decided 2026-11-05): a Manual project gets nothing typed into its Mate
+	// by the outbox loop while it says false; an Auto project gets its
+	// deliveries either way. The caller hands the same function to the
+	// outbox sender it builds (cmd/mate's engineOptions); the engine reports
+	// it (Engine.ConsolePresent). A console's engine says true; `mate core
+	// run` says false until clients can connect (CON-212). Nil is true.
+	ConsolePresent func() bool
 }
 
 // StopWait is how long Stop waits for everything it has cancelled: the
@@ -150,6 +162,11 @@ type Engine struct {
 	now       func() time.Time
 	// stopWait is StopWait; a test shortens it.
 	stopWait time.Duration
+
+	// coreLock is the workspace's core.lock while the engine runs, and
+	// holder what it says; Start takes it first and Stop releases it last.
+	coreLock *store.CoreLock
+	holder   store.CoreHolder
 
 	// ctx is the engine's own: the shared snapshot computations run under
 	// it. cancel ends it when the engine stops, and so does the end of the
@@ -213,13 +230,18 @@ func New(o Options) *Engine {
 	return e
 }
 
-// Start starts the loops in order under ctx, the caller's: cancelling it
-// ends them too, though Stop needs nothing of it. When a part fails to
-// start, Start stops the ones it had started as Stop does - within
-// StopWait, closing the timeline once they have all stopped - and returns
-// that part's error unchanged; the engine is then stopped. The
-// dashboard and the notifications never fail it: what keeps either from
-// starting is said by Dashboard and Notifications.
+// Start first takes the workspace's `.mate/core.lock` (CON-211) and is
+// refused with a *RunningError while another engine holds it, in `mate
+// core` or in a console; it then starts the loops in order under ctx, the
+// caller's: cancelling it ends them too, though Stop needs nothing of it.
+// Once they run it records in core.lock where the dashboard serves. When a
+// part fails to start, Start stops the ones it had started as Stop does -
+// within StopWait, closing the timeline and releasing core.lock once they
+// have all stopped - and returns that part's error unchanged; the engine
+// is then stopped. The notifications never fail it, nor does the dashboard
+// over TCP: what keeps either from starting is said by Dashboard and
+// Notifications. A socket asked for (DashboardOptions.Socket) that cannot
+// be served does.
 func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -228,6 +250,23 @@ func (e *Engine) Start(ctx context.Context) error {
 		return errStarted
 	case stopped:
 		return errStopped
+	}
+	// One workspace runs one engine, in `mate core` or in a console
+	// (CON-211): the lock comes before any part, so a refused engine has
+	// started nothing.
+	if e.o.Workspace != nil {
+		if err := e.lock(); err != nil {
+			e.stop()
+			return err
+		}
+	}
+	// The socket of `mate core` next, before anything acts: a core that
+	// cannot be reached on it does not run.
+	if e.dashboard != nil {
+		if err := e.dashboard.bindSocket(); err != nil {
+			e.stop()
+			return err
+		}
 	}
 	e.unhook = context.AfterFunc(ctx, e.cancel)
 	runCtx, cancelRun := context.WithCancel(ctx)
@@ -240,6 +279,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.running = append(e.running, p)
 	}
 	e.state = started
+	e.recordServing()
 	return nil
 }
 
@@ -278,10 +318,12 @@ func (e *Engine) parts() []part {
 // while something else is still stopping. It waits for all of them
 // together, StopWait at most; the server gives its requests 5 seconds of
 // that (dashboard.Server.Serve). Once they have all stopped it closes the
-// timeline. Past the bound it names on Stderr what has not stopped and
-// returns, leaving mate.db open: what still runs may write it, and the
-// process exit releases its lock. A restart cancelled halfway is put right
-// by the next recovery, as when the console was killed halfway before.
+// timeline, then releases core.lock. Past the bound it names on Stderr what
+// has not stopped and returns, leaving mate.db open and core.lock held:
+// what still runs may write the one and must not run beside another
+// engine, and the process exit releases both. A restart cancelled halfway
+// is put right by the next recovery, as when the console was killed
+// halfway before.
 //
 // After Stop no snapshot is handed out or computed (a FreshSnapshot already
 // running is its reader's to wait for). It is safe to call more than once:
@@ -312,20 +354,25 @@ func (e *Engine) stop() {
 		waits = append(waits, stopping{p.name, inBackground(p.Stop)})
 	}
 	e.running = nil
+	if e.dashboard != nil {
+		// A socket bound for a dashboard that never started.
+		e.dashboard.release()
+	}
 	waits = append(waits, stopping{"snapshot", inBackground(e.snaps.close)})
 	for _, a := range actions {
 		waits = append(waits, stopping{a.name, a.done})
 	}
 	if late := awaitAll(waits, e.stopWait); len(late) > 0 {
-		w := e.o.Stderr
-		if w == nil {
-			w = os.Stderr
-		}
 		line := fmt.Sprintf("mate core: %s had not stopped %s after the stop began", strings.Join(late, ", "), e.stopWait)
-		if e.o.Timeline != nil {
+		switch {
+		case e.o.Timeline != nil && e.coreLock != nil:
+			line += "; mate.db and core.lock are left for the process exit to release"
+		case e.o.Timeline != nil:
 			line += "; mate.db is left open for the process exit to release"
+		case e.coreLock != nil:
+			line += "; core.lock is left for the process exit to release"
 		}
-		fmt.Fprintln(w, line)
+		fmt.Fprintln(e.stderr(), line)
 		return
 	}
 	if e.o.Timeline != nil {
@@ -333,6 +380,21 @@ func (e *Engine) stop() {
 		// tell about a database that would not close at exit.
 		_ = e.o.Timeline.Close()
 	}
+	// Last: once it is released another engine may start, and nothing of
+	// this one is left to run beside it.
+	if e.coreLock != nil {
+		e.coreLock.Unlock()
+		e.coreLock = nil
+	}
+}
+
+// ConsolePresent is Options.ConsolePresent's answer: whether a console is
+// open on the workspace. True when the caller gave no such function.
+func (e *Engine) ConsolePresent() bool {
+	if e.o.ConsolePresent == nil {
+		return true
+	}
+	return e.o.ConsolePresent()
 }
 
 // stopping is something Stop waits for: done closes once it has stopped.
@@ -406,6 +468,21 @@ func (e *Engine) Recovery() Recovery {
 func (e *Engine) Dashboard() (string, error) {
 	if e.dashboard == nil {
 		return "", nil
+	}
+	s := e.dashboard.read()
+	url := s.URL
+	if s.LANURL != "" {
+		url += " " + s.LANURL
+	}
+	return url, s.Err
+}
+
+// Serving is where the dashboard serves, once Start has returned: over
+// TCP, and on the socket of `mate core`. It is zero for an engine that
+// serves no dashboard.
+func (e *Engine) Serving() Serving {
+	if e.dashboard == nil {
+		return Serving{}
 	}
 	return e.dashboard.read()
 }

@@ -167,10 +167,11 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	// the observer has made sure the database exists; like the notifications
 	// it is a convenience, and a failure is said on the status line and never
 	// stops the console.
-	opts, err := engineOptions(ws, deps)
+	opts, err := engineOptions(ws, deps, func() bool { return true })
 	if err != nil {
 		return err
 	}
+	opts.Owner = core.OwnerConsole
 	// Every action, the console's and the pages', goes in through the
 	// engine's Act, which runs the chat itself and the rest through these
 	// (CON-209), one at a time on each target.
@@ -181,7 +182,7 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 	opts.Stderr = stderr
 	engine := core.New(opts)
 	if err := engine.Start(ctx); err != nil {
-		return err
+		return consoleEngineRefusal(err)
 	}
 	defer engine.Stop()
 

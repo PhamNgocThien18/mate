@@ -112,7 +112,7 @@ func TestTableKeepsEveryCommandAndItsHandler(t *testing.T) {
 		"report": cmdReport, "diff": cmdDiff, "gc": cmdGC, "merge": cmdMerge,
 		"land": cmdLand, "backlog": cmdBacklog, "pr": cmdPR, "events": cmdEvents,
 		"reindex": cmdReindex, "usage": cmdUsage, "dashboard": cmdDashboard,
-		"console": cmdConsoleLaunch, "pane": cmdPane, "migrate": cmdMigrate,
+		"console": cmdConsoleLaunch, "core": cmdCore, "pane": cmdPane, "migrate": cmdMigrate,
 		"plugin": cmdPlugin,
 	}
 	var names []string

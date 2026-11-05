@@ -154,21 +154,25 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 	}
 }
 
-// Only the console names the herdr its runtime runs: the one findTool
-// resolves, also one the console's PATH cannot reach - here in XDG_BIN_HOME,
-// where herdr's installer can put it. Every other command builds on
-// baseDeps() as before CON-189; its runtime looks for herdr on PATH only, so
-// it never reaches that one.
+// Only what runs the engine - the console and `mate core run` (CON-211) -
+// names the herdr its runtime runs: the one findTool resolves, also one the
+// console's PATH cannot reach - here in XDG_BIN_HOME, where herdr's
+// installer can put it. Every other command builds on baseDeps() as before
+// CON-189; its runtime looks for herdr on PATH only, so it never reaches
+// that one.
 func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	const consoleCall = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
+	engineHosts := map[string]bool{"runConsole": true, "cmdCoreRun": true}
 	calls := callsTo(t, "baseDeps")
-	if got := calls["runConsole"]; !slices.Equal(got, []string{consoleCall}) {
-		t.Errorf("runConsole calls %q, want only %s", got, consoleCall)
+	for fn := range engineHosts {
+		if got := calls[fn]; !slices.Equal(got, []string{consoleCall}) {
+			t.Errorf("%s calls %q, want only %s", fn, got, consoleCall)
+		}
 	}
 	for fn, list := range calls {
 		for _, call := range list {
-			if fn != "runConsole" && call != "baseDeps()" {
-				t.Errorf("%s calls %s; only the console names a herdr", fn, call)
+			if !engineHosts[fn] && call != "baseDeps()" {
+				t.Errorf("%s calls %s; only the console and mate core name a herdr", fn, call)
 			}
 		}
 	}

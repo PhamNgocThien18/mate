@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
@@ -149,6 +152,34 @@ func Listen(opts Options) (net.Listener, error) {
 		}
 	}
 	return net.Listen("tcp", addr)
+}
+
+// maxSocketPath is the longest path a unix socket binds: 103 bytes on
+// macOS, 107 on Linux (matehost's and panerun's rule).
+var maxSocketPath = len(syscall.RawSockaddrUnix{}.Path) - 1
+
+// ListenUnix binds a unix socket at path that only this user can connect
+// to (0600), for Serve to answer the same routes on as over TCP: `mate
+// core`'s socket (CON-211). Whatever is at path is removed first, so the
+// caller must hold what makes path its own (core.lock): a socket left by a
+// process that died would otherwise refuse the bind. Closing the listener
+// removes the socket file.
+func ListenUnix(path string) (net.Listener, error) {
+	if len(path) > maxSocketPath {
+		return nil, fmt.Errorf("dashboard: socket path %s is %d bytes; a unix socket path holds at most %d", path, len(path), maxSocketPath)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("dashboard: removing the old socket %s: %w", path, err)
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard: cannot create the socket %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("dashboard: socket %s: %w", path, err)
+	}
+	return ln, nil
 }
 
 // requireLoopback is the refusal of docs/mvp.md M6's "chỉ đọc, local": a

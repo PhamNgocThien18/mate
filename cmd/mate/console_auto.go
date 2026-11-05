@@ -25,19 +25,21 @@ import (
 // workspace (CON-207): the observer with the timeline it records, the outbox
 // sender and the auto daemon, and recovery; and what its snapshot asks Herdr
 // through (CON-208). The console runs them under an engine for as long as
-// it is open, adding the dashboard and the notifications; `mate core` is to
-// run the same ones (CON-211). The builders stay in this package, beside
+// it is open, and `mate core run` for as long as it runs (CON-211); each
+// adds the dashboard and the notifications. consolePresent is
+// core.Options.ConsolePresent, which the outbox loop asks before it types
+// into a Manual project's Mate. The builders stay in this package, beside
 // the commands that build the same parts for one shot of their own
 // (spawn.MateOutbox, consoleSessionRef, mateRefresher).
 //
 // Each loop opens its own *store.Workspace over ws's directory, for the
 // reason consoleWatcher gives; recovery repairs ws itself, and the snapshot
 // and the dashboard read it.
-func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
-	// The observer of mvp.md section 4b runs for as long as the workspace is
-	// open, and only then: it lives in this process, so quitting the console
-	// means nobody is watching the crews and no new incident is opened. What
-	// it already wrote stays in `incidents.log`.
+func engineOptions(ws *store.Workspace, deps spawn.Deps, consolePresent func() bool) (core.Options, error) {
+	// The observer of mvp.md section 4b runs for as long as the engine does,
+	// and only then: it lives in this process, so when it ends nobody is
+	// watching the crews and no new incident is opened. What it already
+	// wrote stays in `incidents.log`.
 	//
 	// It is also the single writer of `.mate/mate.db` (mvp.md M5): the
 	// timeline is recorded at the end of each of its polls, and the database
@@ -47,11 +49,12 @@ func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
 		return core.Options{}, err
 	}
 	// The auto daemon of mvp.md section 5 runs beside it, and like it only
-	// while the workspace is open: a closed console sends nothing, which is
-	// the honest shape of a feature whose whole point is that it types into
-	// somebody's composer. It sends only for the projects whose `mate/.auto`
-	// exists, and it re-reads that flag every tick.
-	delivery, err := consolePilot(ws.Root(), deps)
+	// while the engine runs. It sends only for the projects in auto mode (no
+	// `mate/.manual`), and it re-reads that every tick. With no console open
+	// an Auto project still gets its digests, refreshes and queued lines;
+	// a Manual one gets nothing typed by the outbox loop until a console is
+	// back (consolePresent, CON-203 decided 2026-11-05).
+	delivery, err := engineDelivery(ws.Root(), deps, consolePresent)
 	if err != nil {
 		if timelineDB != nil {
 			_ = timelineDB.Close()
@@ -73,8 +76,9 @@ func engineOptions(ws *store.Workspace, deps spawn.Deps) (core.Options, error) {
 		},
 		// The snapshot every UI reads asks the same Herdr which agents are
 		// up, and carries the harnesses this binary launches (CON-208).
-		Spawn:     deps,
-		Harnesses: consoleHarnesses(),
+		Spawn:          deps,
+		Harnesses:      consoleHarnesses(),
+		ConsolePresent: consolePresent,
 	}
 	// No handle - another process writes the timeline - is no timeline to
 	// close, which a nil *db.DB in the interface would not say.
@@ -125,6 +129,15 @@ func (d *consoleDelivery) Snapshot() map[string]autopilot.Status { return d.pilo
 // themselves are coordinated by the outbox's own lock and by flock on the
 // append-only logs.
 func consolePilot(dir string, deps spawn.Deps) (*consoleDelivery, error) {
+	return engineDelivery(dir, deps, nil)
+}
+
+// engineDelivery is consolePilot whose sender loop asks consolePresent
+// before it types into a Manual project's Mate (outbox.Deps.ConsolePresent;
+// nil is a console always open). The daemon's own outbox, which makes the
+// one immediate attempt after it queues a digest, is not gated: a digest
+// is only ever queued for an Auto project.
+func engineDelivery(dir string, deps spawn.Deps, consolePresent func() bool) (*consoleDelivery, error) {
 	senderWS, err := store.Open(dir)
 	if err != nil {
 		return nil, err
@@ -133,8 +146,10 @@ func consolePilot(dir string, deps spawn.Deps) (*consoleDelivery, error) {
 	if err != nil {
 		return nil, err
 	}
+	od := spawn.MateOutboxDeps(senderWS, deps)
+	od.ConsolePresent = consolePresent
 	return &consoleDelivery{
-		sender: spawn.MateOutbox(senderWS, deps),
+		sender: outbox.New(senderWS, od),
 		pilot:  consoleAutoPilot(pilotWS, deps),
 	}, nil
 }

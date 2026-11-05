@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -239,8 +240,9 @@ func storyQuery(project, since string) (timeline.StoryQuery, error) {
 // cmdReindex is `mate reindex [<workspace>]`: drop every derived table and
 // rebuild the whole timeline from the files and the transcripts.
 //
-// It takes the writer's lock, so it refuses while a console is open on the
-// same workspace - which is the honest answer, because two writers rebuilding
+// It takes the writer's lock, so it refuses while an engine runs on the
+// same workspace, in `mate core` or a console, and names that process -
+// which is the honest answer, because two writers rebuilding
 // the same database would interleave.
 func cmdReindex(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("reindex", flag.ContinueOnError)
@@ -266,6 +268,13 @@ func cmdReindex(args []string, stdout, stderr io.Writer) error {
 	}
 
 	handle, err := db.Open(w)
+	if errors.Is(err, db.ErrLocked) {
+		// The engine, in `mate core` or a console, writes mate.db for as
+		// long as it runs (CON-211); say which process to stop.
+		if refusal := engineHolderRefusal(w); refusal != nil {
+			return refusal
+		}
+	}
 	if err != nil {
 		return err
 	}
