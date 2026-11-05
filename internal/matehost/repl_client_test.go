@@ -452,7 +452,77 @@ func TestREPLGivesBackAMessageTheHostRefused(t *testing.T) {
 
 type refusingConn struct{ *fakeConn }
 
-func (refusingConn) Submit(context.Context, string) error { return ErrStopping }
+// The draft the host keeps is the chat's: what the captain writes in a
+// topic stays out of it, and another REPL's draft heard while the chat is
+// not shown is there when it is.
+func TestREPLSharesOnlyTheChatsDraft(t *testing.T) {
+	m, f := withFake(newsModel(100, 30))
+	press(t, &m, "chat dở", tea.KeyCtrlT, tea.KeyEnter, tea.KeyTab, "trả lời #3")
+	if draft, _ := f.state(); draft != "chat dở" {
+		t.Fatalf("typing in a topic made the draft %q", draft)
+	}
+	// The fake tells no draft back; the host has told back all of them.
+	m.draftHeard = m.draftSent
+	m.applyEvent(Event{News: m.news, DraftSet: true, DraftBy: "khác", State: State{Draft: "từ REPL kia"}})
+	if string(m.input) != "trả lời #3" {
+		t.Fatalf("another REPL's draft went into the topic's composer: %q", string(m.input))
+	}
+	press(t, &m, tea.KeyEsc)
+	if m.mode != viewChat || string(m.input) != "từ REPL kia" {
+		t.Fatalf("back in the chat: mode %v, composer %q", m.mode, string(m.input))
+	}
+}
+
+// An event whose state was read before the one shown leaves the state
+// shown; a turn it finished still shows.
+func TestREPLKeepsTheNewestState(t *testing.T) {
+	m, _ := withFake(NewModel(nil, Config{Project: "p"}, nil))
+	at := time.Now()
+	m.applyEvent(Event{Seq: 5, Item: &Item{At: at, Source: SourceCaptain, Text: "xong", Reply: "ok", Done: true}})
+	m.applyEvent(Event{Seq: 4, State: State{Busy: true}, Item: &Item{At: at, Source: SourceCaptain, Text: "xong"}})
+	if m.state.Busy || m.running != nil {
+		t.Fatalf("an older event made the Mate busy again: state %+v, running %+v", m.state, m.running)
+	}
+	m.applyEvent(Event{Seq: 3, Item: &Item{At: at.Add(-time.Minute), Source: SourceCaptain, Text: "trước", Done: true}})
+	if !hasText(m.items, "trước") || !hasText(m.items, "xong") {
+		t.Fatalf("items = %+v", m.items)
+	}
+}
+
+// An answer whose undo delay ends with the host away is not lost: it goes
+// back to its frame, and so does one the host could not be reached for.
+func TestREPLGivesBackAnAnswerTheHostNeverGot(t *testing.T) {
+	m, _ := withFake(newsModel(100, 30))
+	clock := m.now()
+	m.now = func() time.Time { return clock }
+	press(t, &m, tea.KeyCtrlT, tea.KeyEnter, tea.KeyTab, "dùng a", tea.KeyEnter)
+	if m.pending == nil {
+		t.Fatal("no answer pending")
+	}
+	m.linked = false
+	clock = clock.Add(undoDelay + time.Second)
+	m.tickNews()
+	if m.pending != nil || m.drafts[3] != "dùng a" || !strings.Contains(m.note, "#3") {
+		t.Fatalf("offline flush: pending %+v, draft %q, note %q", m.pending, m.drafts[3], m.note)
+	}
+
+	m.linked = true
+	m.drafts[3] = ""
+	m.conn = unreachableConn{m.conn.(*fakeConn)}
+	m.pending = &pendingAnswer{id: 3, text: "dùng b", at: clock}
+	clock = clock.Add(undoDelay + time.Second)
+	m.tickNews()
+	drain(&m)
+	if m.drafts[3] != "dùng b" || !strings.Contains(m.note, "không nối được với Mate") {
+		t.Fatalf("failed answer: draft %q, note %q", m.drafts[3], m.note)
+	}
+}
+
+type unreachableConn struct{ *fakeConn }
+
+func (unreachableConn) AnswerNews(context.Context, int, string) error { return unreachable }
+
+func (refusingConn) Submit(context.Context, string) error { return refused(ErrStopping) }
 
 // A REPL opened before its host waits for it, saying so, and connects once
 // it is there.

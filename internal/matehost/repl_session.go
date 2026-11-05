@@ -46,7 +46,7 @@ func (m *Model) openSession(id int) {
 		return
 	}
 	m.call(func(ctx context.Context, c Conn) tea.Msg {
-		return replyMsg{op: opOpenSession, id: id, err: c.OpenSession(ctx, id)}
+		return replyMsg{op: callOpenSession, id: id, err: c.OpenSession(ctx, id)}
 	})
 }
 
@@ -54,7 +54,7 @@ func (m *Model) openSession(id int) {
 // after this answer: the view waits for it (sessionShown).
 func (m *Model) sessionOpened(r replyMsg) {
 	if r.err != nil {
-		m.note = r.err.Error()
+		m.note = failure(r.err)
 		return
 	}
 	m.selID = r.id
@@ -68,17 +68,16 @@ func (m *Model) sessionOpened(r replyMsg) {
 }
 
 // sessionAsked takes the host's answer to a question to session r.id:
-// asked, the composer that held it is emptied; refused, it stays.
+// refused, the question goes back to the composer it was sent from, as
+// it stayed there when the host was called in the REPL's own process.
 func (m *Model) sessionAsked(r replyMsg) {
-	if r.err != nil {
-		m.note = r.err.Error()
+	if r.err == nil {
 		return
 	}
-	if m.mode != viewSession || m.openID != r.id || strings.TrimSpace(string(m.input)) != r.text {
-		return
+	m.note = failure(r.err)
+	if m.mode == viewSession && m.openID == r.id && len(m.input) == 0 {
+		m.setInput([]rune(r.text))
 	}
-	m.setInput(nil)
-	m.scroll, m.editProposal = 0, false
 }
 
 func (m Model) closeSession(id int) {
@@ -103,7 +102,7 @@ func (m Model) sessionKey(k tea.KeyMsg) (Model, bool) {
 			m.note = "đang ngắt lượt của session…"
 			m.call(func(ctx context.Context, c Conn) tea.Msg {
 				ok, err := c.InterruptSession(ctx, id)
-				return replyMsg{op: opInterruptSession, id: id, ok: ok, err: err}
+				return replyMsg{op: callInterruptSession, id: id, ok: ok, err: err}
 			})
 		case len(m.input) > 0:
 			m.setInput(nil)
@@ -116,8 +115,13 @@ func (m Model) sessionKey(k tea.KeyMsg) (Model, bool) {
 		if text == "" {
 			return m, true
 		}
+		m.setInput(nil)
+		m.scroll, m.editProposal = 0, false
 		m.call(func(ctx context.Context, c Conn) tea.Msg {
-			return replyMsg{op: opAskSession, id: id, text: text, err: c.AskSession(ctx, id, text)}
+			if err := c.AskSession(ctx, id, text); err != nil {
+				return replyMsg{op: callAskSession, id: id, text: text, err: err}
+			}
+			return nil
 		})
 	case tea.KeyCtrlS:
 		m.settle()

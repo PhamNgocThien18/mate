@@ -113,6 +113,10 @@ const replHistory = 200
 const (
 	linkRetryFirst = 100 * time.Millisecond
 	linkRetryMax   = 2 * time.Second
+	// linkGrace is how long a REPL started beside its host (they start
+	// together in the Mate's pane) waits for it before saying it is not
+	// there.
+	linkGrace = 1500 * time.Millisecond
 )
 
 // Messages the link sends the REPL.
@@ -136,6 +140,7 @@ type (
 func link(ctx context.Context, conn Conn, send func(tea.Msg)) {
 	wait := time.Duration(0)
 	down := false
+	started, ever := time.Now(), false
 	for ctx.Err() == nil {
 		if wait > 0 {
 			select {
@@ -146,12 +151,12 @@ func link(ctx context.Context, conn Conn, send func(tea.Msg)) {
 		}
 		if connected := linkOnce(ctx, conn, send); connected {
 			wait = 0
-			down = false
+			down, ever = false, true
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		if !down {
+		if !down && (ever || time.Since(started) >= linkGrace) {
 			send(linkDownMsg{})
 			down = true
 		}

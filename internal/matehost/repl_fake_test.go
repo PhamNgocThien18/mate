@@ -85,7 +85,7 @@ func (f *fakeConn) OpenSession(_ context.Context, id int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.forks {
-		return ErrNoForks
+		return refused(ErrNoForks)
 	}
 	if !slices.ContainsFunc(f.sessions, func(s SessionInfo) bool { return s.News == id }) {
 		f.sessions = append(f.sessions, SessionInfo{News: id, OpenedAt: time.Now()})
@@ -166,3 +166,9 @@ func drain(m *Model) {
 		*m = next.(Model)
 	}
 }
+
+// refused is err as REPLConn gives back a refusal of the host's.
+func refused(err error) error { return &hostError{msg: err.Error(), err: err} }
+
+// unreachable is a call that never reached the host.
+var unreachable = errors.New("dial unix host.sock: connect: no such file or directory")

@@ -108,6 +108,12 @@ type Event struct {
 	Sessions []SessionInfo
 	// State is the host's state after the event.
 	State State
+	// Seq orders the events by when their state was read: emit runs after
+	// the host's lock is let go, so two goroutines' events can reach a
+	// subscriber in the other order. A client keeps the state of the
+	// highest Seq it has seen (CON-223). It starts again from 1 with a
+	// new host.
+	Seq int64
 }
 
 // Reporter tells Herdr what the host is doing (herdrReporter).
@@ -137,6 +143,8 @@ type Host struct {
 	draft    string
 	stopping bool
 	idle     chan struct{}
+	// seq numbers the events (Event.Seq).
+	seq int64
 
 	// Sessions (session.go): the open ones by news, and what they run with.
 	sessions  map[int]*session
@@ -666,7 +674,8 @@ func paragraph(reply string) string {
 // eventLocked is an event carrying a copy of item (which may be nil), the
 // queue and the state.
 func (h *Host) eventLocked(item *Item) Event {
-	ev := Event{State: h.stateLocked(), News: h.news, Work: h.work, Sessions: h.sessionsLocked()}
+	h.seq++
+	ev := Event{State: h.stateLocked(), News: h.news, Work: h.work, Sessions: h.sessionsLocked(), Seq: h.seq}
 	for _, q := range h.queue {
 		text := q.Text
 		if q.News != 0 {

@@ -2,6 +2,7 @@ package matehost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -65,6 +66,8 @@ type Model struct {
 	// sessionShown is set once the session the REPL shows was in an
 	// event; until then an event without it does not close the view.
 	sessionShown bool
+	// seq is the Event.Seq of the state shown.
+	seq int64
 
 	items   []Item
 	running *Item
@@ -137,7 +140,17 @@ func noted(err error) tea.Msg {
 	if err == nil {
 		return nil
 	}
-	return err
+	return replyMsg{op: callNote, err: err}
+}
+
+// failure is what the REPL tells the captain of a call that failed: the
+// host's own words when it refused, else that it could not be reached.
+func failure(err error) string {
+	var refused *hostError
+	if errors.As(err, &refused) {
+		return err.Error()
+	}
+	return "không nối được với Mate; chưa làm được việc này"
 }
 
 func (m Model) Init() tea.Cmd { return tea.Batch(tick(), m.readCrews(0)) }
@@ -173,6 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connected(msg)
 	case linkDownMsg:
 		m.linked, m.lost = false, true
+		// The note would hide that the host is gone (footer).
+		m.note = ""
 	case replyMsg:
 		m.reply(msg)
 	case error:
@@ -241,28 +256,34 @@ func (m *Model) apply(ev Event) {
 }
 
 func (m *Model) applyEvent(ev Event) {
-	m.state = ev.State
-	m.queue = ev.Queue
-	m.news = ev.News
-	m.work = ev.Work
-	m.sessions = ev.Sessions
-	if m.mode == viewSession {
-		if s, ok := m.findSession(m.openID); ok {
-			m.sessionShown = true
-			m.seeSession(s)
-		} else if m.sessionShown {
-			// Closed for idling, or by the host stopping.
-			m.leaveSession()
+	// An event whose state was read before the one shown last (Event.Seq)
+	// brings only what it alone carries: a finished turn, a note, a focus.
+	stale := ev.Seq != 0 && ev.Seq < m.seq
+	if !stale {
+		m.seq = ev.Seq
+		m.state = ev.State
+		m.queue = ev.Queue
+		m.news = ev.News
+		m.work = ev.Work
+		m.sessions = ev.Sessions
+		if m.mode == viewSession {
+			if s, ok := m.findSession(m.openID); ok {
+				m.sessionShown = true
+				m.seeSession(s)
+			} else if m.sessionShown {
+				// Closed for idling, or by the host stopping.
+				m.leaveSession()
+			}
 		}
 	}
 	if ev.Note != "" {
 		m.note = ev.Note
 	}
 	if ev.DraftCleared {
-		m.setInput(nil)
+		m.setChatDraft("")
 	}
 	if ev.DraftSet {
-		m.heardDraft(ev)
+		m.heardDraft(ev, stale)
 	}
 	if ev.Focus > 0 {
 		m.help = false
@@ -273,14 +294,16 @@ func (m *Model) applyEvent(ev Event) {
 		m.showWork()
 	}
 	it := ev.Item
-	if it == nil {
+	if it == nil || (stale && !it.Done) {
 		return
 	}
 	if !it.Done {
 		m.running = it
 		return
 	}
-	m.running = nil
+	if !stale {
+		m.running = nil
+	}
 	if m.hasItem(*it) {
 		// Read with the history on connecting (linkUpMsg).
 		return
@@ -302,54 +325,92 @@ func (m Model) hasItem(it Item) bool {
 }
 
 // connected takes a connection to the host: its history in place of what
-// was shown, and its first event as how things stand. The draft typed
-// while the host was away stays and is sent to it; a REPL opened with an
-// empty composer takes the draft the host keeps.
+// was shown, and its first event as how things stand. The chat's draft
+// typed while the host was away stays and is sent to it; a REPL whose chat
+// composer is empty takes the draft the host keeps.
 func (m *Model) connected(up linkUpMsg) {
 	m.linked, m.lost = true, false
 	m.draftSent, m.draftHeard = 0, 0
 	m.items = up.history
 	m.running = nil
 	m.sessionShown = true
+	m.seq = 0
 	m.apply(up.first)
 	m.scroll = min(m.scroll, m.maxScroll())
-	switch {
-	case len(m.input) > 0:
-		m.pushDraft()
-	case up.first.State.Draft != "" && m.mode == viewChat:
-		m.input = []rune(up.first.State.Draft)
-		m.cursor = len(m.input)
+	if m.scroll == 0 {
+		m.unseen = 0
 	}
+	if m.note == offlineSend {
+		m.note = ""
+	}
+	if draft := m.chatDraft(); draft != "" {
+		m.sendDraft(draft)
+	} else if up.first.State.Draft != "" {
+		m.setChatDraft(up.first.State.Draft)
+	}
+}
+
+// The captain's draft the host keeps is the chat's composer: a topic's
+// answer or a session's question is not the Mate's draft, and a REPL
+// beside this one must not get it in its chat.
+
+// chatDraft is what the chat's composer holds, shown or not.
+func (m Model) chatDraft() string {
+	if m.mode == viewChat {
+		return string(m.input)
+	}
+	return m.drafts[0]
+}
+
+// setChatDraft puts text in the chat's composer, shown or not, without
+// telling the host.
+func (m *Model) setChatDraft(text string) {
+	if m.mode == viewChat {
+		if text != string(m.input) {
+			m.input = []rune(text)
+			m.cursor = len(m.input)
+		}
+		return
+	}
+	if m.drafts == nil {
+		m.drafts = map[int]string{}
+	}
+	m.drafts[0] = text
 }
 
 // heardDraft is a draft change the host told of. One this REPL made is
 // counted; another REPL's replaces the chat's composer, unless a draft
-// of this one's is still on its way, which the host will take last.
-func (m *Model) heardDraft(ev Event) {
+// of this one's is still on its way (the host takes that one last), or a
+// later state was shown already.
+func (m *Model) heardDraft(ev Event, stale bool) {
 	if ev.DraftBy == m.id {
 		m.draftHeard = min(m.draftHeard+1, m.draftSent)
 		return
 	}
-	if m.draftHeard < m.draftSent || m.mode != viewChat || m.help {
+	if stale || m.draftHeard < m.draftSent {
 		return
 	}
-	if text := ev.State.Draft; text != string(m.input) {
-		m.input = []rune(text)
-		m.cursor = len(m.input)
+	m.setChatDraft(ev.State.Draft)
+}
+
+// pushDraft sends the chat's composer to the host as the captain's draft,
+// when the chat is shown.
+func (m *Model) pushDraft() {
+	if m.mode == viewChat {
+		m.sendDraft(string(m.input))
 	}
 }
 
-// pushDraft sends the composer to the host as the captain's draft.
-func (m *Model) pushDraft() {
+func (m *Model) sendDraft(text string) {
 	if !m.linked {
 		// Sent when the host is back (connected).
 		return
 	}
 	m.draftSent++
-	text, id := string(m.input), m.id
+	id := m.id
 	m.call(func(ctx context.Context, c Conn) tea.Msg {
 		if err := c.SetDraft(ctx, text, id); err != nil {
-			return replyMsg{op: opDraft, err: err}
+			return replyMsg{op: callDraft, err: err}
 		}
 		return nil
 	})
@@ -418,7 +479,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlX:
 		m.call(func(ctx context.Context, c Conn) tea.Msg {
 			_, ok, err := c.TakeLast(ctx)
-			return replyMsg{op: opTakeLast, ok: ok, err: err}
+			return replyMsg{op: callTakeLast, ok: ok, err: err}
 		})
 		return m, nil
 	case tea.KeyUp:
@@ -521,7 +582,7 @@ func (m *Model) send() {
 func (m *Model) submit(text string) {
 	m.call(func(ctx context.Context, c Conn) tea.Msg {
 		if err := c.Submit(ctx, text); err != nil {
-			return replyMsg{op: opSubmit, text: text, err: err}
+			return replyMsg{op: callSubmit, text: text, err: err}
 		}
 		return nil
 	})
@@ -567,12 +628,14 @@ const (
 
 // Calls whose answer the REPL acts on (replyMsg).
 const (
-	opDraft = iota + 1
-	opSubmit
-	opTakeLast
-	opOpenSession
-	opAskSession
-	opInterruptSession
+	callNote = iota + 1
+	callDraft
+	callAnswer
+	callSubmit
+	callTakeLast
+	callOpenSession
+	callAskSession
+	callInterruptSession
 )
 
 // replyMsg is the host's answer to a call the REPL acts on.
@@ -588,32 +651,38 @@ type replyMsg struct {
 // method's return when it called the host in its own process.
 func (m *Model) reply(r replyMsg) {
 	switch r.op {
-	case opDraft:
+	case callNote:
+		m.note = failure(r.err)
+	case callAnswer:
+		m.note = fmt.Sprintf("Mate chưa nhận câu trả lời cho #%d: %s", r.id, failure(r.err))
+		m.giveBackAnswer(r.id, r.text)
+	case callDraft:
 		// Never told back: no longer on its way.
 		m.draftHeard = min(m.draftHeard+1, m.draftSent)
-	case opSubmit:
+	case callSubmit:
 		// The message shown at once (send) never started.
 		if it := m.running; it != nil && it.Text == r.text && it.Reply == "" && len(it.Tools) == 0 {
 			m.running = nil
 		}
-		m.note = fmt.Sprintf("Mate chưa nhận tin: %v", r.err)
-		if len(m.input) == 0 && m.mode == viewChat {
-			m.setInput([]rune(r.text))
+		m.note = "Mate chưa nhận tin: " + failure(r.err)
+		if m.chatDraft() == "" {
+			m.setChatDraft(r.text)
+			m.pushDraft()
 		}
-	case opTakeLast:
+	case callTakeLast:
 		switch {
 		case r.err != nil:
-			m.note = r.err.Error()
+			m.note = failure(r.err)
 		case !r.ok:
 			m.note = "không có tin nào đang xếp hàng"
 		}
-	case opOpenSession:
+	case callOpenSession:
 		m.sessionOpened(r)
-	case opAskSession:
+	case callAskSession:
 		m.sessionAsked(r)
-	case opInterruptSession:
+	case callInterruptSession:
 		if r.err != nil {
-			m.note = r.err.Error()
+			m.note = failure(r.err)
 		}
 	}
 }

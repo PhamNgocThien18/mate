@@ -23,7 +23,8 @@ type LiveOptions struct {
 	// ends: the host does not end with it (CON-223). Nil runs none.
 	REPL func(ctx context.Context) error
 	// Restart is the least time between two starts of the REPL; zero
-	// means a second.
+	// means a second. A REPL that keeps ending at once waits longer each
+	// time, up to replRestartMax.
 	Restart time.Duration
 	// Log is told when the REPL ends on an error; nil tells no one.
 	Log io.Writer
@@ -31,6 +32,14 @@ type LiveOptions struct {
 
 // replStopWait bounds how long a stopping host waits for its REPL.
 const replStopWait = 5 * time.Second
+
+// A REPL that ran for less than replShortRun ended at once (its binary
+// gone mid-install, its project missing): the next start waits twice as
+// long as the last, up to replRestartMax.
+const (
+	replShortRun   = 5 * time.Second
+	replRestartMax = 30 * time.Second
+)
 
 // Live runs the host until it is asked to stop: the socket's stop op, a
 // signal on Signals, or ctx ending. The REPL is one of its clients, run
@@ -73,13 +82,15 @@ func (h *Host) Live(ctx context.Context, opts LiveOptions) error {
 			err = fmt.Errorf("matehost: the socket %s stopped", opts.Socket)
 		}
 	}
-	// The REPL first, so it gives the terminal back before the host goes.
+	// The turn first, as when the REPL ran in this process: a pane that
+	// closes may not leave the host long. Then the REPL, which hears the
+	// host stopping and gives the terminal back.
+	h.Stop(0, true)
 	endREPL()
 	select {
 	case <-replDone:
 	case <-time.After(replStopWait):
 	}
-	h.Stop(0, true)
 	cancel()
 	endServe()
 	if served != nil {
@@ -104,11 +115,18 @@ func superviseREPL(ctx context.Context, opts LiveOptions) {
 	if every <= 0 {
 		every = time.Second
 	}
+	wait := every
 	for ctx.Err() == nil {
 		started := time.Now()
 		err := opts.REPL(ctx)
 		if ctx.Err() != nil {
 			return
+		}
+		ran := time.Since(started)
+		if ran < replShortRun {
+			wait = min(wait*2, max(replRestartMax, every))
+		} else {
+			wait = every
 		}
 		if err != nil && opts.Log != nil {
 			fmt.Fprintf(opts.Log, "mate: the REPL ended (%v); starting it again\n", err)
@@ -116,7 +134,7 @@ func superviseREPL(ctx context.Context, opts LiveOptions) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(every - time.Since(started)):
+		case <-time.After(wait - ran):
 		}
 	}
 }

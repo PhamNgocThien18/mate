@@ -282,8 +282,36 @@ func (m *Model) flush() {
 		return
 	}
 	m.pending = nil
+	if !m.linked {
+		m.note = fmt.Sprintf("chưa nối được với Mate; câu trả lời cho #%d vẫn nằm trong khung", p.id)
+		m.giveBackAnswer(p.id, p.text)
+		return
+	}
 	m.confirm, m.confirmAt = fmt.Sprintf("✓ #%d đã trả lời · Mate đang xử lý", p.id), m.now()
-	m.call(func(ctx context.Context, c Conn) tea.Msg { return noted(c.AnswerNews(ctx, p.id, p.text)) })
+	m.call(func(ctx context.Context, c Conn) tea.Msg {
+		if err := c.AnswerNews(ctx, p.id, p.text); err != nil {
+			return replyMsg{op: callAnswer, id: p.id, text: p.text, err: err}
+		}
+		return nil
+	})
+}
+
+// giveBackAnswer puts an answer the host never got back in its frame's
+// composer, unless the captain has written something else there since.
+func (m *Model) giveBackAnswer(id int, text string) {
+	m.confirm = ""
+	if m.mode == viewTopics && m.openID == id {
+		if len(m.input) == 0 {
+			m.input, m.cursor = []rune(text), len([]rune(text))
+		}
+		return
+	}
+	if m.drafts == nil {
+		m.drafts = map[int]string{}
+	}
+	if m.drafts[id] == "" {
+		m.drafts[id] = text
+	}
 }
 
 // tickNews sends an answer whose undo delay is over.
