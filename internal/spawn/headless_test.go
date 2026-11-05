@@ -231,7 +231,7 @@ func TestStartMateHeadlessOnlyOverConfigPaneSaysSo(t *testing.T) {
 	if !res.Headless || !w.MateHeadless("shop") {
 		t.Fatalf("result = %+v, want a headless Mate", res)
 	}
-	if !strings.Contains(res.ModeNote, "mate.mode is pane") || !strings.Contains(res.ModeNote, "runs headless") {
+	if !strings.Contains(res.ModeNote, "mate.mode is pane") || !strings.Contains(res.ModeNote, "running headless") {
 		t.Fatalf("mode note = %q, want it to say project.yaml's pane was overridden", res.ModeNote)
 	}
 }

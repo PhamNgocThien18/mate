@@ -74,7 +74,8 @@ func headlessMode(req StartRequest, prior map[string]string, cfg store.MateConfi
 
 // headlessOnlyNote is StartResult.ModeNote when a HeadlessOnly start runs
 // headless over project.yaml's `mate.mode: pane`.
-const headlessOnlyNote = "project.yaml's mate.mode is pane, but this start has nowhere to show a pane, so the Mate runs headless"
+// Short, and printed first, because the console's status line is one row.
+const headlessOnlyNote = "project.yaml's mate.mode is pane, but nothing here can show a pane: running headless"
 
 // errNoHeadless refuses `--mode headless` on a harness that cannot run one.
 var errNoHeadless = errUsage("this harness cannot run a headless Mate: it has no headless turns (harness.HeadlessTurns)")

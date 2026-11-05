@@ -21,9 +21,9 @@ import (
 // Whether a Mate runs headless is asked by the UI a start comes from
 // (CON-205): a console that cannot split its terminal and a dashboard page
 // cannot show a pane Mate, and a console that can split leaves the mode to
-// project.yaml and the last run. These tests press the action functions the console hands
-// its TUI and its dashboard (tuiAndWebActions), over the fake Herdr
-// adapter, and read the mode StartMate recorded in mate.meta.
+// project.yaml and the last run. These tests press the action functions
+// the console hands its TUI and its dashboard (tuiAndWebActions), over the
+// fake Herdr adapter, and read the mode StartMate recorded in mate.meta.
 
 // splitTerminal is a terminal the console can split. Any host will do:
 // tuiAndWebActions only asks whether there is one.
@@ -160,8 +160,9 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 // no column to show a pane Mate in, so what its TUI starts, resumes,
 // onboards or restarts runs headless, though the last run was in a pane
 // (CON-150). A console that can split asks nothing, and the last run keeps
-// its pane (project.yaml names no mode here). Mate Office and Agent City cannot show a pane Mate either, so
-// a page's press runs headless even where its console can split (CON-205).
+// its pane (project.yaml names no mode here). Mate Office and Agent City
+// cannot show a pane Mate either, so a page's press runs headless even
+// where its console can split (CON-205).
 func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 	for _, ui := range []struct {
 		name     string

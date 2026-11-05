@@ -417,7 +417,8 @@ func settleAndRecord(ctx context.Context, w *store.Workspace, deps Deps, project
 		MetaSessionID: sessionID,
 		MetaStartedAt: startedAt.Format(time.RFC3339),
 		// Recorded so the next start without --mode keeps the pane rather
-		// than taking the headless default.
+		// than taking the headless default, unless project.yaml's
+		// `mate.mode` names one.
 		MetaMode: ModePane,
 		// See MetaLaunchedAt: a Codex Mate's rollout is adopted from it.
 		MetaLaunchedAt: launchedAt.Format(time.RFC3339),

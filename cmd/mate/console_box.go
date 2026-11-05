@@ -251,7 +251,8 @@ func restartMateAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps
 	}
 	line := fmt.Sprintf("%s; %s; Mate %s is running on %s in pane %s", stow.Outcome(), was, res.Agent, res.Harness, res.Pane)
 	if res.ModeNote != "" {
-		line += "; " + res.ModeNote
+		// First: the console's status line is one row (CON-220).
+		line = res.ModeNote + "; " + line
 	}
 	return line, nil
 }
