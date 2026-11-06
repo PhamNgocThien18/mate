@@ -145,7 +145,7 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 		t.Fatalf("init workspace: %v", err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := mainRun([]string{"console", root}, &stdout, &stderr)
+	code := testCLI().mainRun([]string{"console", root}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 for a usage refusal; stderr=%q", code, stderr.String())
 	}

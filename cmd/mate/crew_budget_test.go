@@ -28,7 +28,7 @@ func budgetWorkspace(t *testing.T) *store.Workspace {
 
 func runBudget(w *store.Workspace, args ...string) (string, string, error) {
 	var stdout, stderr bytes.Buffer
-	err := run(append([]string{"crew", "budget", "shop", "k3", "--workspace", w.Root()}, args...), &stdout, &stderr)
+	err := testCLI().run(append([]string{"crew", "budget", "shop", "k3", "--workspace", w.Root()}, args...), &stdout, &stderr)
 	return stdout.String(), stderr.String(), err
 }
 

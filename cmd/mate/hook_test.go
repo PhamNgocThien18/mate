@@ -14,7 +14,8 @@ import (
 // mateDirFor creates a workspace under t.TempDir() and returns the absolute,
 // symlink-resolved cwd of one project's Mate: <root>/.mate/projects/<p>/mate.
 // A hook process always runs with this as its cwd, so tests that do not set
-// MATE_PROJECT/MATE_WORKSPACE chdir here to exercise the fallback.
+// MATE_PROJECT/MATE_WORKSPACE run the hook from here (cli.inDir) to
+// exercise the fallback.
 func mateDirFor(t *testing.T, project string) (root, mateDir string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -33,28 +34,13 @@ func mateDirFor(t *testing.T, project string) (root, mateDir string) {
 	return w.Root(), mateDir
 }
 
-// chdir changes the process cwd for the duration of the test and restores it
-// on cleanup. cmd/mate's other tests (init_test.go) already do this
-// unparallelized, so the hook tests follow the same convention.
-func chdir(t *testing.T, dir string) {
-	t.Helper()
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
-}
-
 func TestCmdHookMatePromptWritesSentLogFromCwd(t *testing.T) {
 	root, mateDir := mateDirFor(t, "shop")
-	chdir(t, mateDir)
+	c := testCLI().inDir(mateDir)
 
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader(`{"prompt":"ship the checkout fix","session_id":"s1"}`)
-	if err := cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
+	if err := c.cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook mate-prompt: %v", err)
 	}
 	if stdout.Len() != 0 {
@@ -79,11 +65,11 @@ func TestCmdHookMatePromptWritesSentLogFromCwd(t *testing.T) {
 
 func TestCmdHookMateStopUpdatesMetaFromCwd(t *testing.T) {
 	root, mateDir := mateDirFor(t, "shop")
-	chdir(t, mateDir)
+	c := testCLI().inDir(mateDir)
 
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader(`{"session_id":"sess-1","transcript_path":"/tmp/t.jsonl","last_assistant_message":"PONG"}`)
-	if err := cmdHook([]string{"mate-stop"}, stdin, &stdout, &stderr); err != nil {
+	if err := c.cmdHook([]string{"mate-stop"}, stdin, &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook mate-stop: %v", err)
 	}
 	if stderr.Len() != 0 {
@@ -115,13 +101,11 @@ func TestCmdHookEnvOverridesCwd(t *testing.T) {
 	// A cwd that resolves to no workspace at all: the env vars alone must be
 	// enough to find the right one.
 	elsewhere := t.TempDir()
-	chdir(t, elsewhere)
-	t.Setenv("MATE_WORKSPACE", root)
-	t.Setenv("MATE_PROJECT", "shop")
+	c := testCLI().withEnv("MATE_WORKSPACE", root, "MATE_PROJECT", "shop").inDir(elsewhere)
 
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader(`{"prompt":"hi"}`)
-	if err := cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
+	if err := c.cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook mate-prompt: %v", err)
 	}
 	if stderr.Len() != 0 {
@@ -144,11 +128,11 @@ func TestCmdHookEnvOverridesCwd(t *testing.T) {
 
 func TestCmdHookMatePromptMalformedJSONExitsZeroAndWritesNothing(t *testing.T) {
 	root, mateDir := mateDirFor(t, "shop")
-	chdir(t, mateDir)
+	c := testCLI().inDir(mateDir)
 
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader(`{not json`)
-	if err := cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
+	if err := c.cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook mate-prompt: %v, want nil (hooks always exit 0)", err)
 	}
 	if stderr.Len() == 0 {
@@ -168,11 +152,11 @@ func TestCmdHookMatePromptMalformedJSONExitsZeroAndWritesNothing(t *testing.T) {
 }
 
 func TestCmdHookNoWorkspaceExitsZero(t *testing.T) {
-	chdir(t, t.TempDir())
+	c := testCLI().inDir(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader(`{"prompt":"hi"}`)
-	if err := cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
+	if err := c.cmdHook([]string{"mate-prompt"}, stdin, &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook mate-prompt: %v, want nil even with no workspace found", err)
 	}
 	if stderr.Len() == 0 {
@@ -182,16 +166,18 @@ func TestCmdHookNoWorkspaceExitsZero(t *testing.T) {
 
 func TestCmdHookUnknownSubcommandIsUsageError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := cmdHook([]string{"bogus"}, strings.NewReader(""), &stdout, &stderr)
+	err := testCLI().cmdHook([]string{"bogus"}, strings.NewReader(""), &stdout, &stderr)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
 	}
 }
 
+// Not parallel: the hook reads its payload from os.Stdin, which the test
+// swaps for a pipe.
 func TestRunDispatchesHook(t *testing.T) {
 	_, mateDir := mateDirFor(t, "shop")
-	chdir(t, mateDir)
+	c := testCLI().inDir(mateDir)
 	old := os.Stdin
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -205,7 +191,7 @@ func TestRunDispatchesHook(t *testing.T) {
 	w.Close()
 
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"hook", "mate-prompt"}, &stdout, &stderr); err != nil {
+	if err := c.run([]string{"hook", "mate-prompt"}, &stdout, &stderr); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 }

@@ -44,10 +44,8 @@ func TestCmdMergeTellsTheMateWhatComesNext(t *testing.T) {
 	if err := w.SaveProject("shop", cfg); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MATE_CALLER", "mate")
-
 	var out, errw bytes.Buffer
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().withEnv("MATE_CALLER", "mate").cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("merge: %v\nstderr: %s", err, errw.String())
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")

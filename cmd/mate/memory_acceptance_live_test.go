@@ -103,7 +103,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	}
 	repo := filepath.Join(w.ProjectHome(memoryProject), memoryProject)
 	writeRepo(t, repo, memorySite)
-	if err := run([]string{"project", "add", memoryProject, repo, "--workspace", root}, os.Stdout, os.Stderr); err != nil {
+	if err := testCLI().run([]string{"project", "add", memoryProject, repo, "--workspace", root}, os.Stdout, os.Stderr); err != nil {
 		t.Fatalf("project add: %v", err)
 	}
 	if w, err = store.Open(root); err != nil {
@@ -316,12 +316,12 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	// ---------- 4. the files ----------
 
 	var check, checkErr bytes.Buffer
-	if err := run([]string{"memory", "check", memoryProject, "--workspace", root}, &check, &checkErr); err != nil {
+	if err := testCLI().run([]string{"memory", "check", memoryProject, "--workspace", root}, &check, &checkErr); err != nil {
 		t.Fatalf("memory check failed: %v\n%s%s", err, check.String(), checkErr.String())
 	}
 	t.Logf("EVIDENCE memory check: %s%s", check.String(), checkErr.String())
 	var recalled bytes.Buffer
-	if err := run([]string{"recall", memoryProject, "--workspace", root}, &recalled, os.Stderr); err != nil {
+	if err := testCLI().run([]string{"recall", memoryProject, "--workspace", root}, &recalled, os.Stderr); err != nil {
 		t.Fatalf("recall: %v", err)
 	}
 	digest := recalled.String()

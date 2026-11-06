@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,15 +20,21 @@ import (
 // (docs/mvp.md tasks 08 and 37). These are hidden, agent-facing subcommands Claude Code's own hook
 // runner invokes on the Mate pane; a human never types them, so the top-level
 // usage lists `hook` only on its internal line, without these subcommands.
-func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func (c cli) cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return c.hook(harnesses, args, stdin, stdout, stderr)
+}
+
+// hook is cmdHook over the harness registry reg, so a test can register a
+// harness of its own.
+func (c cli) hook(reg harness.Registry, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate hook <mate-prompt|mate-stop|mate-session>")
 	}
 	switch args[0] {
 	case "mate-prompt":
-		runHook(stdin, stderr, "mate-prompt", hook.HandlePrompt)
+		c.runHook(stdin, stderr, "mate-prompt", hook.HandlePrompt)
 	case "mate-stop":
-		runHook(stdin, stderr, "mate-stop", hook.HandleStop)
+		c.runHook(stdin, stderr, "mate-stop", hook.HandleStop)
 	case harness.SessionHookName:
 		fs := flag.NewFlagSet("hook "+harness.SessionHookName, flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -37,11 +42,11 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return &usageError{err}
 		}
-		kind, err := sessionHookHarness(*harnessFlag)
+		kind, err := sessionHookHarness(reg, *harnessFlag)
 		if err != nil {
 			return &usageError{err}
 		}
-		runSessionHook(stdin, stdout, stderr, kind, time.Now())
+		c.runSessionHook(reg, stdin, stdout, stderr, kind, time.Now())
 	default:
 		return newUsageErrorf("unknown hook subcommand %q", args[0])
 	}
@@ -54,8 +59,8 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 // stdout: a Claude Code UserPromptSubmit hook's stdout becomes model
 // context, and Stop already fires unreliably (docs/mvp.md section 7), so
 // this path must never itself be the thing that blocks or corrupts a turn.
-func runHook(stdin io.Reader, stderr io.Writer, name string, handle func(*store.Workspace, string, []byte) error) {
-	root, project, err := resolveHookTarget()
+func (c cli) runHook(stdin io.Reader, stderr io.Writer, name string, handle func(*store.Workspace, string, []byte) error) {
+	root, project, err := c.resolveHookTarget()
 	if err != nil {
 		fmt.Fprintf(stderr, "mate hook %s: %v\n", name, err)
 		return
@@ -80,13 +85,13 @@ func runHook(stdin io.Reader, stderr io.Writer, name string, handle func(*store.
 // (HookInstaller.BareSessionHook) - a hook in a settings file written
 // before its harness learnt to name itself, or by the captain, says `hook
 // mate-session` and nothing more.
-func sessionHookHarness(flag string) (harness.Kind, error) {
+func sessionHookHarness(reg harness.Registry, flag string) (harness.Kind, error) {
 	if flag != "" {
-		return harnesses.Parse(flag)
+		return reg.Parse(flag)
 	}
 	var bare []harness.Kind
-	for _, k := range harnesses.Kinds() {
-		p, err := harnesses.Lookup(k)
+	for _, k := range reg.Kinds() {
+		p, err := reg.Lookup(k)
 		if err != nil {
 			return "", err
 		}
@@ -108,9 +113,9 @@ func sessionHookHarness(flag string) (harness.Kind, error) {
 // harness puts in context. Its stdout is the model's context, so every
 // failure after the workspace is found still prints one line telling the
 // Mate to run recall itself; like the other hooks it always exits 0.
-func runSessionHook(stdin io.Reader, stdout, stderr io.Writer, kind harness.Kind, now time.Time) {
+func (c cli) runSessionHook(reg harness.Registry, stdin io.Reader, stdout, stderr io.Writer, kind harness.Kind, now time.Time) {
 	const name = harness.SessionHookName
-	root, project, err := resolveHookTarget()
+	root, project, err := c.resolveHookTarget()
 	if err != nil {
 		fmt.Fprintf(stderr, "mate hook %s: %v\n", name, err)
 		return
@@ -135,7 +140,7 @@ func runSessionHook(stdin io.Reader, stdout, stderr io.Writer, kind harness.Kind
 		// The session still started: say so, and print the digest anyway.
 		fmt.Fprintf(stderr, "mate hook %s: %v\n", name, err)
 	}
-	if matehost.QuietSessionStart(start.Source, os.Getenv(matehost.EnvHostTurn)) {
+	if matehost.QuietSessionStart(start.Source, c.getenv(matehost.EnvHostTurn)) {
 		return
 	}
 	source := start.Source
@@ -146,7 +151,7 @@ func runSessionHook(stdin io.Reader, stdout, stderr io.Writer, kind harness.Kind
 	// harness without verified hooks never runs a Mate (spawn.StartMate),
 	// so a hook that names one is told to recall by hand rather than given
 	// a digest of a guessed size.
-	profile, err := harnesses.Lookup(kind)
+	profile, err := reg.Lookup(kind)
 	if err != nil {
 		fallback(err)
 		return
@@ -185,16 +190,16 @@ func oneLineMsg(err error) string {
 // exactly `<root>/.mate/projects/<project>/mate` (docs/mvp.md section 3),
 // so once the root is found the project is just the path component right
 // after `.mate/projects`.
-func resolveHookTarget() (root, project string, err error) {
-	root, err = findWorkspaceDir("")
+func (c cli) resolveHookTarget() (root, project string, err error) {
+	root, err = findWorkspaceDirIn("", c.getenv, c.getwd)
 	if err != nil {
 		return "", "", err
 	}
-	project = strings.TrimSpace(os.Getenv("MATE_PROJECT"))
+	project = strings.TrimSpace(c.getenv("MATE_PROJECT"))
 	if project != "" {
 		return root, project, nil
 	}
-	cwd, err := os.Getwd()
+	cwd, err := c.getwd()
 	if err != nil {
 		return "", "", err
 	}

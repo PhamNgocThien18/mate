@@ -14,7 +14,7 @@ import (
 // `mate mate repl` is a subcommand of `mate mate`, with a project.
 func TestMateREPLWantsAProject(t *testing.T) {
 	var out, errw bytes.Buffer
-	err := run([]string{"mate", "repl"}, &out, &errw)
+	err := testCLI().run([]string{"mate", "repl"}, &out, &errw)
 	var usage *usageError
 	if !errors.As(err, &usage) || !strings.Contains(err.Error(), "mate mate repl: want exactly 1 argument") {
 		t.Fatalf("mate mate repl with no project: %v", err)
@@ -22,7 +22,7 @@ func TestMateREPLWantsAProject(t *testing.T) {
 	if !strings.Contains(errw.String(), "usage: mate mate repl <project>") {
 		t.Fatalf("usage = %q", errw.String())
 	}
-	err = run([]string{"mate"}, &out, &errw)
+	err = testCLI().run([]string{"mate"}, &out, &errw)
 	if err == nil || !strings.Contains(err.Error(), "host|repl") {
 		t.Fatalf("mate mate alone: %v", err)
 	}

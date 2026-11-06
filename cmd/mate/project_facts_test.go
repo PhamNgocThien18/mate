@@ -40,7 +40,7 @@ func twoRepoWorkspace(t *testing.T) *store.Workspace {
 func projectFactsCLI(t *testing.T, w *store.Workspace) (int, string, string) {
 	t.Helper()
 	var out, errw bytes.Buffer
-	code := mainRun([]string{"project", "facts", "shop", "--workspace", w.Root()}, &out, &errw)
+	code := testCLI().mainRun([]string{"project", "facts", "shop", "--workspace", w.Root()}, &out, &errw)
 	return code, out.String(), errw.String()
 }
 

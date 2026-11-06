@@ -88,7 +88,7 @@ func TestCmdProjectAddListRemove(t *testing.T) {
 
 	// Remove one, list again.
 	out.Reset()
-	if err := cmdProjectRemove([]string{"--workspace", ws, "blog"}, &out, &errw); err != nil {
+	if err := testCLI().cmdProjectRemove([]string{"--workspace", ws, "blog"}, &out, &errw); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 
@@ -280,7 +280,7 @@ func TestCmdProjectRemoveUnknownProject(t *testing.T) {
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := cmdProjectRemove([]string{"--workspace", ws, "nope"}, &out, &errw); err == nil {
+	if err := testCLI().cmdProjectRemove([]string{"--workspace", ws, "nope"}, &out, &errw); err == nil {
 		t.Fatal("want error for removing an unknown project")
 	}
 }

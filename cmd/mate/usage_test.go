@@ -87,7 +87,7 @@ func TestUsageHandsEachFormToItsPage(t *testing.T) {
 func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
 	w := liveCrewWorkspace(t, "shop")
 	var stdout, stderr strings.Builder
-	err := run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
+	err := testCLI().run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "no timeline at") || !strings.Contains(err.Error(), "mate reindex") {
 		t.Fatalf("want the no-timeline error, got %v", err)
 	}
@@ -99,7 +99,7 @@ func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
 func TestUsageUnknownProjectIsAUsageError(t *testing.T) {
 	w := usageWorkspace(t)
 	var stdout, stderr strings.Builder
-	err := run([]string{"usage", "nope", "--workspace", w.Root()}, &stdout, &stderr)
+	err := testCLI().run([]string{"usage", "nope", "--workspace", w.Root()}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("usage on an unregistered project must fail")
 	}
@@ -116,7 +116,7 @@ func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr strings.Builder
-			err := run(args, &stdout, &stderr)
+			err := testCLI().run(args, &stdout, &stderr)
 			var ue *usageError
 			if !errors.As(err, &ue) {
 				t.Fatalf("want a usage error, got %v", err)

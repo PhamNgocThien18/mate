@@ -15,8 +15,14 @@ func pluginsFile(w *store.Workspace) string { return filepath.Join(w.StateDir(),
 
 func runMate(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
+	return runMateAs(t, testCLI(), args...)
+}
+
+// runMateAs is runMate through c.
+func runMateAs(t *testing.T, c cli, args ...string) (int, string, string) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := mainRun(args, &stdout, &stderr)
+	code := c.mainRun(args, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -49,8 +55,8 @@ func TestPluginAddIsTheCaptains(t *testing.T) {
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 	for _, caller := range []string{"mate", "crew"} {
-		t.Setenv("MATE_CALLER", caller)
-		code, _, stderr := runMate(t, "plugin", "add", pkg, "--as", "board", "--project", "shop", "--set", "id=1", "--workspace", w.Root())
+		as := testCLI().withEnv("MATE_CALLER", caller)
+		code, _, stderr := runMateAs(t, as, "plugin", "add", pkg, "--as", "board", "--project", "shop", "--set", "id=1", "--workspace", w.Root())
 		if code != 1 || !strings.Contains(stderr, "the captain runs mate plugin add; a "+caller+" cannot") {
 			t.Fatalf("MATE_CALLER=%s: exit %d, stderr %q", caller, code, stderr)
 		}
@@ -58,17 +64,16 @@ func TestPluginAddIsTheCaptains(t *testing.T) {
 			t.Fatalf("plugins.yaml written for a %s", caller)
 		}
 		// doctor and list stay open to it.
-		if code, _, stderr := runMate(t, "plugin", "list", "--workspace", w.Root()); code != 0 {
+		if code, _, stderr := runMateAs(t, as, "plugin", "list", "--workspace", w.Root()); code != 0 {
 			t.Fatalf("list as %s: exit %d %s", caller, code, stderr)
 		}
-		if code, _, stderr := runMate(t, "plugin", "doctor", "--workspace", w.Root()); code != 0 {
+		if code, _, stderr := runMateAs(t, as, "plugin", "doctor", "--workspace", w.Root()); code != 0 {
 			t.Fatalf("doctor as %s: exit %d %s", caller, code, stderr)
 		}
 	}
 }
 
 func TestPluginAddListDoctor(t *testing.T) {
-	t.Setenv("MATE_CALLER", "")
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 
@@ -107,7 +112,6 @@ func TestPluginAddListDoctor(t *testing.T) {
 }
 
 func TestPluginAddRefusals(t *testing.T) {
-	t.Setenv("MATE_CALLER", "")
 	w := pluginFixture(t, map[string]map[string]string{"board": {"blog": "z"}})
 	pkg := filepath.Join(w.Root(), "pkg")
 	before, err := os.ReadFile(pluginsFile(w))
@@ -146,7 +150,6 @@ func TestPluginAddRefusals(t *testing.T) {
 }
 
 func TestPluginDoctorFailsAndAsksTheHarness(t *testing.T) {
-	t.Setenv("MATE_CALLER", "")
 	// A harness that cannot give a Mate MCP servers, found through the
 	// catalog's own capability rather than by name.
 	var refusing harness.Kind
@@ -224,7 +227,6 @@ func TestPluginMateHarnessPrefersARunningMate(t *testing.T) {
 }
 
 func TestPluginWorkspaceAddListDoctor(t *testing.T) {
-	t.Setenv("MATE_CALLER", "")
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 	code, out, stderr := runMate(t, "plugin", "add", pkg, "--as", "board", "--set", "id=workspace", "--key", "b", "--workspace", w.Root())

@@ -23,11 +23,18 @@ func (r *recordingStarter) Start(spec prwatch.Spec) (int, error) {
 	return r.pid, nil
 }
 
-func usePRStarter(t *testing.T, st prwatch.Starter) {
+// usePRStarter is the test CLI starting watchers through st.
+func usePRStarter(st prwatch.Starter) cli {
+	c := testCLI()
+	c.prStarter = st
+	return c
+}
+
+// fakeAlive makes pid 4242, the recording starter's, the one live process.
+// prwatch.Alive is a package variable of prwatch, so a test that calls
+// this is not parallel.
+func fakeAlive(t *testing.T) {
 	t.Helper()
-	old := prStarter
-	prStarter = st
-	t.Cleanup(func() { prStarter = old })
 	oldAlive := prwatch.Alive
 	prwatch.Alive = func(pid int) bool { return pid == 4242 }
 	t.Cleanup(func() { prwatch.Alive = oldAlive })
@@ -48,13 +55,16 @@ func prWorkspace(t *testing.T) (string, *store.Workspace) {
 	return ws, w
 }
 
+// Not parallel: the second call asks prwatch.Alive whether the watcher
+// lives, and fakeAlive swaps that package variable.
 func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
-	usePRStarter(t, st)
+	c := usePRStarter(st)
+	fakeAlive(t)
 	var out, errw bytes.Buffer
 
-	if err := cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
+	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
 		t.Fatalf("pr watch: %v", err)
 	}
 	if len(st.specs) != 1 {
@@ -80,7 +90,7 @@ func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
 
 	// A second call while the watcher lives starts nothing.
 	out.Reset()
-	if err := cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
+	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	if len(st.specs) != 1 || !strings.Contains(out.String(), "already watching") {
@@ -91,7 +101,7 @@ func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
 func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
-	usePRStarter(t, st)
+	c := usePRStarter(st)
 	var out, errw bytes.Buffer
 
 	for _, tc := range []struct {
@@ -103,7 +113,7 @@ func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
 		{[]string{"nosuch", "k3", testPR}, "no such project"},
 		{[]string{"shop", "k3"}, "want exactly 3 arguments"},
 	} {
-		err := cmdPRWatch(append([]string{"--workspace", ws}, tc.args...), &out, &errw)
+		err := c.cmdPRWatch(append([]string{"--workspace", ws}, tc.args...), &out, &errw)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
 		}
@@ -112,7 +122,7 @@ func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
 	if err := w.UpdateCrewMeta("shop", "k3", map[string]string{"state": "finished"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err == nil || !strings.Contains(err.Error(), "is closed") {
+	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err == nil || !strings.Contains(err.Error(), "is closed") {
 		t.Fatalf("closed crew: err = %v", err)
 	}
 	if len(st.specs) != 0 {
@@ -123,12 +133,12 @@ func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
 func TestPRWatchOfAnEndedPullRequestStartsNothing(t *testing.T) {
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
-	usePRStarter(t, st)
+	c := usePRStarter(st)
 	if err := w.UpdateCrewMeta("shop", "k3", map[string]string{crewstate.MetaPRURL: testPR, crewstate.MetaPRState: crewstate.PRStateMerged}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errw bytes.Buffer
-	if err := cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
+	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	if len(st.specs) != 0 || !strings.Contains(out.String(), "already merged") {
@@ -141,12 +151,12 @@ func TestPRWatchOfAnEndedPullRequestStartsNothing(t *testing.T) {
 func TestPRWatchOfAClosedPullRequestWatchesAgain(t *testing.T) {
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
-	usePRStarter(t, st)
+	c := usePRStarter(st)
 	if err := w.UpdateCrewMeta("shop", "k3", map[string]string{crewstate.MetaPRURL: testPR, crewstate.MetaPRState: crewstate.PRStateClosed}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errw bytes.Buffer
-	if err := cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
+	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	if len(st.specs) != 1 || !strings.Contains(out.String(), "watching "+testPR) {

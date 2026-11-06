@@ -196,7 +196,7 @@ func TestDashboardEventsMatchTheEventsCommand(t *testing.T) {
 func TestDashboardCommandRefusesARemoteBind(t *testing.T) {
 	w := usageWorkspace(t)
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"dashboard", w.Root(), "--addr", "0.0.0.0:0"}, &stdout, &stderr)
+	err := testCLI().run([]string{"dashboard", w.Root(), "--addr", "0.0.0.0:0"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("mate dashboard bound every interface without --allow-remote")
 	}
@@ -212,7 +212,7 @@ func TestDashboardCommandRefusesARemoteBind(t *testing.T) {
 // from silently disagreeing.
 func TestDashboardCommandRejectsTwoWorkspaces(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"dashboard", "/a", "--workspace", "/b"}, &stdout, &stderr)
+	err := testCLI().run([]string{"dashboard", "/a", "--workspace", "/b"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("mate dashboard accepted two workspaces")
 	}

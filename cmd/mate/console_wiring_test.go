@@ -515,9 +515,7 @@ func TestConsoleStageRemakesAColumnWhoseRunnerDied(t *testing.T) {
 	live := rec.stage
 	rec.stage = dead
 	closed := 0
-	prev := columnStartWait
-	columnStartWait = 100 * time.Millisecond
-	t.Cleanup(func() { columnStartWait = prev })
+	rec.startWait = 100 * time.Millisecond
 	rec.h = closeAware{layout: func() { rec.layouts++ }, close: func() { closed++; _ = os.Symlink(live, dead) }}
 	fn := consoleStage(w, deps, rec.consoleColumns)
 	if err := fn(context.Background(), console.StageTarget{Kind: console.StageMate, ProjectID: "shop"}); err != nil {
@@ -578,9 +576,7 @@ func TestConsoleReviewRemakesATabWhoseRunnerDied(t *testing.T) {
 	dead := filepath.Join(rec.dir, "dead-review.sock")
 	live := rec.tabs[roleReview].socket
 	rec.tabs[roleReview] = commandTab{col: host.Column{Role: roleReview, Argv: []string{"/bin/mate", "pane", "serve", "--role", roleReview}}, socket: dead}
-	prev := columnStartWait
-	columnStartWait = 100 * time.Millisecond
-	t.Cleanup(func() { columnStartWait = prev })
+	rec.startWait = 100 * time.Millisecond
 	opened := 0
 	var closed []string
 	rec.h = reviewHost{

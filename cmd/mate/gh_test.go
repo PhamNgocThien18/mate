@@ -24,14 +24,6 @@ func (f *scriptedGH) Run(_ context.Context, cmd github.Command) (github.Result, 
 	return f.results[strings.Join(cmd.Args, " ")], nil
 }
 
-// useGH swaps the package's gh client for a scripted one for one test.
-func useGH(t *testing.T, f *scriptedGH) {
-	t.Helper()
-	old := ghClient
-	ghClient = github.Client{Runner: f}
-	t.Cleanup(func() { ghClient = old })
-}
-
 func projectWithOrigin(t *testing.T, origin string) (ws, repo string) {
 	t.Helper()
 	ws = t.TempDir()

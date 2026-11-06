@@ -55,7 +55,7 @@ func eventsWorkspace(t *testing.T) *store.Workspace {
 func runCLI(t *testing.T, args ...string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	if err := run(args, &stdout, &stderr); err != nil {
+	if err := testCLI().run(args, &stdout, &stderr); err != nil {
 		t.Fatalf("mate %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String()
@@ -159,7 +159,7 @@ func TestEventsSinceAcceptsAnIDAndATime(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"events", "shop", "--since", "not-a-time", "--workspace", w.Root()}, &stdout, &stderr); err == nil {
+	if err := testCLI().run([]string{"events", "shop", "--since", "not-a-time", "--workspace", w.Root()}, &stdout, &stderr); err == nil {
 		t.Fatal("--since accepted a value that is neither an id nor a time")
 	}
 }
@@ -180,7 +180,7 @@ func TestEventsReadsWhileTheWriterHoldsTheLock(t *testing.T) {
 		t.Fatal("events printed nothing while the writer held the lock")
 	}
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"reindex", w.Root()}, &stdout, &stderr); err == nil {
+	if err := testCLI().run([]string{"reindex", w.Root()}, &stdout, &stderr); err == nil {
 		t.Fatal("a second writer was allowed to reindex while the first held the lock")
 	}
 }

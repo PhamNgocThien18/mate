@@ -20,7 +20,7 @@ import (
 func TestConsoleSetupHelpNeedsNoWorkspaceOrTerminal(t *testing.T) {
 	for _, flag := range []string{"--help", "-h"} {
 		var out, stderr bytes.Buffer
-		if err := run([]string{"console", flag}, &out, &stderr); err != nil {
+		if err := testCLI().run([]string{"console", flag}, &out, &stderr); err != nil {
 			t.Fatal(err)
 		}
 		for _, want := range []string{".mate/console.yaml", "scope: crew", "command: [code", "mode: external", "{crew_dir}", "Reopen the console"} {

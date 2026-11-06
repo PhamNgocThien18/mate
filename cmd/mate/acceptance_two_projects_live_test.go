@@ -117,7 +117,7 @@ func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	}
 	// shop's captain merges shop's work themselves: a standing word in the
 	// Mate's memory, which recall hands it before its first turn.
-	if err := run([]string{"remember", "shop", "--captain", "--source", "captain", "I merge shop's work myself from the console; report it ready and leave it unmerged.", "--workspace", root}, os.Stdout, os.Stderr); err != nil {
+	if err := testCLI().run([]string{"remember", "shop", "--captain", "--source", "captain", "I merge shop's work myself from the console; report it ready and leave it unmerged.", "--workspace", root}, os.Stdout, os.Stderr); err != nil {
 		t.Fatalf("remember shop --captain: %v", err)
 	}
 	if w, err = store.Open(root); err != nil {

@@ -14,7 +14,7 @@ import (
 
 func TestRunUnknownMateSubcommandIsUsageError(t *testing.T) {
 	var out, errw bytes.Buffer
-	err := run([]string{"mate", "bogus"}, &out, &errw)
+	err := testCLI().run([]string{"mate", "bogus"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -24,7 +24,7 @@ func TestRunUnknownMateSubcommandIsUsageError(t *testing.T) {
 func TestMateSubcommandsRequireExactlyOneProject(t *testing.T) {
 	for _, sub := range []string{"start", "stop", "status"} {
 		var out, errw bytes.Buffer
-		err := run([]string{"mate", sub}, &out, &errw)
+		err := testCLI().run([]string{"mate", sub}, &out, &errw)
 		var ue *usageError
 		if !errors.As(err, &ue) {
 			t.Fatalf("mate %s with no project: err = %v, want *usageError", sub, err)
@@ -34,7 +34,7 @@ func TestMateSubcommandsRequireExactlyOneProject(t *testing.T) {
 
 func TestMateStartRejectsAnUnknownHarness(t *testing.T) {
 	var out, errw bytes.Buffer
-	err := run([]string{"mate", "start", "shop", "--harness", "gemini"}, &out, &errw)
+	err := testCLI().run([]string{"mate", "start", "shop", "--harness", "gemini"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -45,7 +45,7 @@ func TestMateStartRejectsAnUnknownHarness(t *testing.T) {
 // names the capability it lacks, before any workspace is looked for.
 func TestMateStartRefusesACrewOnlyHarness(t *testing.T) {
 	var out, errw bytes.Buffer
-	err := run([]string{"mate", "start", "shop", "--harness", "grok"}, &out, &errw)
+	err := testCLI().run([]string{"mate", "start", "shop", "--harness", "grok"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "Hooks") {
 		t.Fatalf("err = %v, want a *usageError naming Hooks", err)
@@ -70,7 +70,7 @@ func TestMateStatusPrintsOneLineForAStoppedProject(t *testing.T) {
 	}
 
 	var out, errw bytes.Buffer
-	if err := run([]string{"mate", "status", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"mate", "status", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("mate status: %v", err)
 	}
 	line := strings.TrimSpace(out.String())
@@ -93,7 +93,7 @@ func TestMateStatusPrintsOneLineForAStoppedProject(t *testing.T) {
 // TestMateStartRejectsAnUnknownHarness below.
 func TestMateStartAcceptsFreshFlag(t *testing.T) {
 	var out, errw bytes.Buffer
-	err := run([]string{"mate", "start", "shop", "--fresh", "--workspace", t.TempDir()}, &out, &errw)
+	err := testCLI().run([]string{"mate", "start", "shop", "--fresh", "--workspace", t.TempDir()}, &out, &errw)
 	var ue *usageError
 	if errors.As(err, &ue) {
 		t.Fatalf("--fresh must be a recognised flag, got usage error: %v", err)

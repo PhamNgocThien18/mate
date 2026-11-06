@@ -273,7 +273,7 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 			w := coreWorkspace(t)
 			defer tc.hold(t, w)()
 			var stdout, stderr bytes.Buffer
-			if code := mainRun([]string{"core", "run", w.Root()}, &stdout, &stderr); code != 1 {
+			if code := testCLI().mainRun([]string{"core", "run", w.Root()}, &stdout, &stderr); code != 1 {
 				t.Fatalf("exit %d, want 1; stderr %q", code, stderr.String())
 			}
 			if !strings.Contains(stderr.String(), tc.want) {
@@ -294,7 +294,7 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 func TestCoreUsage(t *testing.T) {
 	for _, args := range [][]string{{"core"}, {"core", "bogus"}, {"core", "run", "a", "b"}, {"core", "status", "a", "--workspace", "b"}} {
 		var stdout, stderr bytes.Buffer
-		if code := mainRun(args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), coreUsage) {
+		if code := testCLI().mainRun(args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), coreUsage) {
 			t.Errorf("mate %v: exit %d, stderr %q; want the usage", args, code, stderr.String())
 		}
 	}
@@ -326,7 +326,7 @@ func TestReindexNamesTheEngineHoldingTheTimeline(t *testing.T) {
 				defer l.Unlock()
 			}
 			var stdout, stderr bytes.Buffer
-			if code := mainRun([]string{"reindex", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), tc.want) {
+			if code := testCLI().mainRun([]string{"reindex", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), tc.want) {
 				t.Fatalf("exit %d, stderr %q; want 1 and %q", code, stderr.String(), tc.want)
 			}
 		})

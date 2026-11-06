@@ -264,11 +264,11 @@ func TestCoreStartStatusStop(t *testing.T) {
 func TestCoreStatusExitCodes(t *testing.T) {
 	w := coreWorkspace(t)
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "mate core: not running") {
+	if code := testCLI().mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "mate core: not running") {
 		t.Fatalf("status with no core: exit %d, stderr %q", code, stderr.String())
 	}
 	stdout.Reset()
-	if code := mainRun([]string{"core", "stop", "--workspace", w.Root()}, &stdout, &stderr); code != 0 || stdout.String() != "mate core: not running\n" {
+	if code := testCLI().mainRun([]string{"core", "stop", "--workspace", w.Root()}, &stdout, &stderr); code != 0 || stdout.String() != "mate core: not running\n" {
 		t.Fatalf("stop with no core: exit %d, stdout %q", code, stdout.String())
 	}
 	l, err := w.LockCore(store.CoreHolder{PID: 4242, Owner: store.CoreOwnerCore, URL: fakeCoreURL})
@@ -277,7 +277,7 @@ func TestCoreStatusExitCodes(t *testing.T) {
 	}
 	defer l.Unlock()
 	stdout.Reset()
-	if code := mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "mate core · pid 4242") {
+	if code := testCLI().mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "mate core · pid 4242") {
 		t.Fatalf("status with a core: exit %d, stdout %q", code, stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "(not answering: ") {
@@ -482,7 +482,7 @@ func TestBareMateBesideARunningEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{w.Root()}, &stdout, &stderr); code != 0 {
+	if code := testCLI().mainRun([]string{w.Root()}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 	for _, want := range []string{"mate core: already running\n", "mate core · pid 4242 · ", "Office  http://127.0.0.1:7777/office/\n", "City    http://127.0.0.1:7777/city/\n",
@@ -499,7 +499,7 @@ func TestBareMateBesideARunningEngine(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{w.Root()}, &stdout, &stderr); code != 1 || stderr.String() != "mate: the engine runs inside mate console (pid 4343); quit that console first\n" {
+	if code := testCLI().mainRun([]string{w.Root()}, &stdout, &stderr); code != 1 || stderr.String() != "mate: the engine runs inside mate console (pid 4343); quit that console first\n" {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 	l.Unlock()

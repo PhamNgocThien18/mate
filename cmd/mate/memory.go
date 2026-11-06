@@ -208,7 +208,7 @@ func cmdMemoryCheck(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	rep, err := memoryCheck(context.Background(), w, gitx.New(), fs.Arg(0), time.Now())
+	rep, err := memoryCheck(context.Background(), w, gitx.New(), fs.Arg(0), time.Now(), staleAnchorCommits)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ type memoryReport struct {
 }
 
 // memoryCheck is cmdMemoryCheck's core, over a real git for the anchors.
-func memoryCheck(ctx context.Context, w *store.Workspace, git gitx.Git, project string, now time.Time) (memoryReport, error) {
+func memoryCheck(ctx context.Context, w *store.Workspace, git gitx.Git, project string, now time.Time, staleAfter int) (memoryReport, error) {
 	var rep memoryReport
 	if err := requireProject(w, project); err != nil {
 		return rep, err
@@ -263,7 +263,7 @@ func memoryCheck(ctx context.Context, w *store.Workspace, git gitx.Git, project 
 		rep.Problems = append(rep.Problems, rep.Budget.OverLine())
 	}
 	for _, r := range cfg.Repos {
-		warnings, err := anchorWarnings(ctx, git, w.RepoDir(r.Path), r, anchorsIn(anchors, r.Name))
+		warnings, err := anchorWarnings(ctx, git, w.RepoDir(r.Path), r, anchorsIn(anchors, r.Name), staleAfter)
 		if err != nil {
 			return rep, fmt.Errorf("comparing %s's anchors with repo %s: %w", memory.ProjectFileName, r.Name, err)
 		}
@@ -297,7 +297,7 @@ func anchorsIn(anchors []memory.Anchor, repo string) []memory.Anchor {
 // its default branch's head; repo is that repository's directory. An old
 // anchor is not an error: the fact may still hold, and only a Crew can say.
 // It is a hint that the line is a hint.
-func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.RepoConfig, anchors []memory.Anchor) ([]string, error) {
+func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.RepoConfig, anchors []memory.Anchor, staleAfter int) ([]string, error) {
 	if len(anchors) == 0 {
 		return nil, nil
 	}
@@ -347,7 +347,7 @@ func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.Repo
 				why = fmt.Sprintf("%s is not %s's head", sha, label)
 			default:
 				why = fmt.Sprintf("%s has %d newer commit(s)", label, n)
-				far = n >= staleAnchorCommits
+				far = n >= staleAfter
 			}
 		}
 		advice := fmt.Sprintf("treat %s as a hint until a report or hand-back confirms it", itThem(len(bySHA[sha])))
@@ -367,8 +367,9 @@ func anchorWarnings(ctx context.Context, git gitx.Git, repo string, r store.Repo
 // staleAnchorCommits is how many commits an anchor may fall behind its
 // branch before `memory check` stops calling the line a hint and asks for
 // it to be re-read or moved into the repo (CON-145). A fact that old was
-// recorded against a tree that no longer exists.
-var staleAnchorCommits = 50
+// recorded against a tree that no longer exists. memoryCheck and
+// anchorWarnings take it as staleAfter, so a test passes a smaller one.
+const staleAnchorCommits = 50
 
 func lineList(lines []int) string {
 	s := make([]string, len(lines))

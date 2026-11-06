@@ -276,7 +276,7 @@ func TestBacklogCLIEntriesRemainVisibleToRecall(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errs bytes.Buffer
-	if err := run([]string{"backlog", "add", "shop", "checkout", "--section", "In flight", "--text", "Waiting for review.", "--workspace", w.Root()}, &out, &errs); err != nil {
+	if err := testCLI().run([]string{"backlog", "add", "shop", "checkout", "--section", "In flight", "--text", "Waiting for review.", "--workspace", w.Root()}, &out, &errs); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(w.BacklogFile("shop"))
@@ -319,7 +319,7 @@ func TestBacklogTrackerWritesAPointerLine(t *testing.T) {
 	writeFixture(t, w.BacklogFile("shop"), memory.BacklogHeader())
 	var out, errs bytes.Buffer
 	var ue *usageError
-	if err := run([]string{"backlog", "add", "shop", "k2", "--tracker", "HVN-12", "--workspace", w.Root()}, &out, &errs); !errors.As(err, &ue) || !strings.Contains(err.Error(), "no tracker plugin") {
+	if err := testCLI().run([]string{"backlog", "add", "shop", "k2", "--tracker", "HVN-12", "--workspace", w.Root()}, &out, &errs); !errors.As(err, &ue) || !strings.Contains(err.Error(), "no tracker plugin") {
 		t.Fatalf("--tracker without a plugin: err = %v, want a usage error naming the missing tracker block", err)
 	}
 
@@ -331,7 +331,7 @@ func TestBacklogTrackerWritesAPointerLine(t *testing.T) {
 		{"backlog", "add", "shop", "k6", "--section", "Queued", "--tracker", "HVN-15"},
 	} {
 		out.Reset()
-		if err := run(append(args, "--workspace", w.Root()), &out, &errs); err != nil {
+		if err := testCLI().run(append(args, "--workspace", w.Root()), &out, &errs); err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, errs.String())
 		}
 	}
@@ -339,10 +339,10 @@ func TestBacklogTrackerWritesAPointerLine(t *testing.T) {
 		t.Fatalf("add output = %q", out.String())
 	}
 	out.Reset()
-	if err := run([]string{"backlog", "move", "shop", "k4", "--section", "In flight", "--tracker", "HVN-20", "--workspace", w.Root()}, &out, &errs); err != nil {
+	if err := testCLI().run([]string{"backlog", "move", "shop", "k4", "--section", "In flight", "--tracker", "HVN-20", "--workspace", w.Root()}, &out, &errs); err != nil {
 		t.Fatal(err)
 	}
-	if err := run([]string{"backlog", "done", "shop", "k6", "--tracker", "HVN-15", "--workspace", w.Root()}, &out, &errs); err != nil {
+	if err := testCLI().run([]string{"backlog", "done", "shop", "k6", "--tracker", "HVN-15", "--workspace", w.Root()}, &out, &errs); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(w.BacklogFile("shop"))
@@ -361,7 +361,7 @@ func TestBacklogTrackerWritesAPointerLine(t *testing.T) {
 	if strings.Contains(string(data), "not copied") || strings.Contains(string(data), "ship the button") {
 		t.Errorf("backlog.md copied content a pointer replaces:\n%s", data)
 	}
-	if err := run([]string{"backlog", "add", "shop", "k7", "--tracker", "two words", "--workspace", w.Root()}, &out, &errs); !errors.As(err, &ue) {
+	if err := testCLI().run([]string{"backlog", "add", "shop", "k7", "--tracker", "two words", "--workspace", w.Root()}, &out, &errs); !errors.As(err, &ue) {
 		t.Fatalf("a tracker id with spaces: err = %v, want a usage error", err)
 	}
 }

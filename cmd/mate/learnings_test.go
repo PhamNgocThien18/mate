@@ -44,7 +44,7 @@ func TestLearningsOpenAndClose(t *testing.T) {
 		{"learnings", "list", "shop", "--workspace", w.Root()},
 	} {
 		var ue *usageError
-		if err := run(args, &strings.Builder{}, &strings.Builder{}); !errors.As(err, &ue) {
+		if err := testCLI().run(args, &strings.Builder{}, &strings.Builder{}); !errors.As(err, &ue) {
 			t.Errorf("%v: err = %v, want a usage error", args, err)
 		}
 	}

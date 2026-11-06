@@ -114,7 +114,7 @@ func TestRecallQuotesTheRealCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errw strings.Builder
-	if code := mainRun([]string{"recall", "shop", "--workspace", w.Root()}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"recall", "shop", "--workspace", w.Root()}, &out, &errw); code != 0 {
 		t.Fatalf("exit %d: %s", code, errw.String())
 	}
 	var table bytes.Buffer
@@ -135,7 +135,7 @@ func TestRecallQuotesTheRealCommands(t *testing.T) {
 	)
 
 	out.Reset()
-	if code := mainRun([]string{"recall", "shop", "--max-bytes", "10", "--workspace", w.Root()}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"recall", "shop", "--max-bytes", "10", "--workspace", w.Root()}, &out, &errw); code != 0 {
 		t.Fatalf("--max-bytes 10: exit %d: %s", code, errw.String())
 	}
 	if !strings.Contains(out.String(), "Run `"+selfBinary()+" recall shop --part 2,") {
@@ -146,7 +146,7 @@ func TestRecallQuotesTheRealCommands(t *testing.T) {
 func TestRecallCLI(t *testing.T) {
 	w, _, _ := recallFixture(t)
 	var out, errw strings.Builder
-	if code := mainRun([]string{"recall", "shop", "--live", "--workspace", w.Root()}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"recall", "shop", "--live", "--workspace", w.Root()}, &out, &errw); code != 0 {
 		t.Fatalf("exit %d: %s", code, errw.String())
 	}
 	if !strings.Contains(out.String(), "== 1. Live state ==") || strings.Contains(out.String(), "== 2.") {
@@ -158,15 +158,15 @@ func TestRecallCLI(t *testing.T) {
 		// together with --live (CON-68).
 		{"recall", "shop", "--part", "3,x"}, {"recall", "shop", "--part", "42"}, {"recall", "shop", "--live", "--part", "1"},
 	} {
-		if code := mainRun(append(args, "--workspace", w.Root()), &out, &errw); code != 2 {
+		if code := testCLI().mainRun(append(args, "--workspace", w.Root()), &out, &errw); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
 	}
-	if code := mainRun([]string{"recall", "nosuch", "--workspace", w.Root()}, &out, &errw); code != 1 {
+	if code := testCLI().mainRun([]string{"recall", "nosuch", "--workspace", w.Root()}, &out, &errw); code != 1 {
 		t.Errorf("an unknown project: exit %d, want 1", code)
 	}
 	out.Reset()
-	if code := mainRun([]string{"recall", "shop", "--part", "5,3", "--workspace", w.Root()}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"recall", "shop", "--part", "5,3", "--workspace", w.Root()}, &out, &errw); code != 0 {
 		t.Fatalf("--part 5,3: exit %d: %s", code, errw.String())
 	}
 	if got := partHeadings(out.String()); strings.Join(got, "|") != "== 3. PROJECT.md ==|== 5. memory.md ==" {
