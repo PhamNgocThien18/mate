@@ -33,12 +33,12 @@ import (
 var splitTerminal host.Host = layoutFunc(func() {})
 
 // consoleUIs is how the console's TUI and its pages press an action: both
-// through one engine's Act, over the console's engineActions (CON-209),
-// the TUI's HeadlessOnly where it cannot split (h nil). The engine is not
-// started: Act needs none of its loops.
+// through one engine's Act (CON-209), which runs every action itself
+// (CON-232), the TUI's HeadlessOnly where it cannot split (h nil). The
+// engine is not started: Act needs none of its loops.
 func consoleUIs(t *testing.T, w *store.Workspace, deps spawn.Deps, h host.Host) (tui, web coreapi.ActionFunc) {
 	t.Helper()
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: engineActions(w, deps, nil)})
+	engine := testEngine(t, core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses()})
 	t.Cleanup(engine.Stop)
 	return tuiAction(engine.Act, h), engine.Act
 }

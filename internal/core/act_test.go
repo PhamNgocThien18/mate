@@ -48,14 +48,6 @@ func (h *heldActs) act(ctx context.Context, req coreapi.ActionRequest) (string, 
 	return "did " + string(req.Action), nil
 }
 
-// locksOnly is e with every action run by Options.Act, the engine's own
-// bodies (ownAction) left out: a test of the locks holds any action in
-// heldActs, the Mate's stop and a new Project's onboard included.
-func locksOnly(e *Engine) *Engine {
-	e.own = func(coreapi.ActionRequest) coreapi.ActionFunc { return nil }
-	return e
-}
-
 func (h *heldActs) count() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -116,7 +108,7 @@ func TestActRefusesASecondActionOnABusyTarget(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHeldActs()
-			e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
+			e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
 			defer e.Stop()
 			done := hold(t, e, h, tc.first)
 			_, err := e.Act(context.Background(), tc.second)
@@ -154,7 +146,7 @@ func TestChatAndPeekRunDuringAStopOrAMerge(t *testing.T) {
 	w := hostWorkspace(t)
 	calls := fakeHost(t, w.MateDir("shop"))
 	h := newHeldActs()
-	e := locksOnly(New(Options{Workspace: w, Act: h.act}))
+	e := New(Options{Workspace: w, Act: h.act})
 	defer e.Stop()
 	stopped := hold(t, e, h, stopMate)
 	merged := hold(t, e, h, mergeCrew)
@@ -267,8 +259,7 @@ func TestTheHostHoldsTheCaptainsWords(t *testing.T) {
 
 // A tick with no headless Mate's host to hold it - no Mate, no host to
 // dial, a host older than work-okay - runs at once in the engine, as it
-// ran in the console before the undo, and never reaches Options.Act
-// (CON-231).
+// ran in the console before the undo (CON-231).
 func TestTheTickRunsInTheEngineWithoutAHost(t *testing.T) {
 	old := hostWorkspace(t)
 	serveFakeHost(t, old.MateDir("shop"), func(hostCall) string { return `{"error":"unknown op \"work-okay\""}` })
@@ -282,15 +273,11 @@ func TestTheTickRunsInTheEngineWithoutAHost(t *testing.T) {
 		if err := matehost.DoneWork(path, id, "", now); err != nil {
 			t.Fatal(err)
 		}
-		h := newHeldActs()
-		e := New(Options{Workspace: w, Act: h.act})
+		e := New(Options{Workspace: w})
 		okay := coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: strconv.Itoa(id)}
 		line, err := e.Act(context.Background(), okay)
 		if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); err != nil || line != want {
 			t.Errorf("%s: okay = %q, %v; want %q", name, line, err, want)
-		}
-		if got := h.count(); got != 0 {
-			t.Errorf("%s: Options.Act ran %d times, want the engine's own tick", name, got)
 		}
 		list, err := matehost.LoadWork(path)
 		if err != nil {
@@ -343,7 +330,7 @@ func TestTheChatRefusesAMateItCannotReach(t *testing.T) {
 // free again.
 func TestActPassesTheCallersContextAndAlwaysCleansUp(t *testing.T) {
 	h := newHeldActs()
-	e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
+	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
 	defer e.Stop()
 	computed := 0
 	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
@@ -396,7 +383,7 @@ func TestActPassesTheCallersContextAndAlwaysCleansUp(t *testing.T) {
 // named "workspace".
 func TestAddingAProjectDoesNotHoldAProjectNamedWorkspace(t *testing.T) {
 	h := newHeldActs()
-	e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
+	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
 	defer e.Stop()
 	done := hold(t, e, h, addProject)
 	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "workspace", TargetKind: "project"}); err != nil {
@@ -408,13 +395,13 @@ func TestAddingAProjectDoesNotHoldAProjectNamedWorkspace(t *testing.T) {
 	}
 }
 
-// With no Options.Act, an action the engine does not run itself says so
-// and runs nothing.
-func TestActWithoutAnActionFunction(t *testing.T) {
+// An action the engine has no body for says so, in the words cmd/mate's
+// consoleAction said before CON-232, and runs nothing.
+func TestActWithoutABody(t *testing.T) {
 	e := New(Options{Workspace: shopWorkspace(t)})
 	defer e.Stop()
-	if _, err := e.Act(context.Background(), mergeCrew); err == nil || err.Error() != "merge is not wired in this engine" {
-		t.Fatalf("merge with no action function = %v, want it not wired", err)
+	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: "dance", Target: "shop"}); err == nil || err.Error() != "usage: dance is not wired in this build" {
+		t.Fatalf("an action with no body = %v, want it not wired", err)
 	}
 }
 

@@ -276,6 +276,19 @@ func consoleLoad(snapshot coreapi.LoadFunc, bindings []query.CommandBinding, not
 	}
 }
 
+// tuiAction is what the console's TUI presses: act, the core's Act, with
+// every request HeadlessOnly in a terminal the console cannot split (h is
+// nil: neither WezTerm nor Ghostty), which has no column to show a pane
+// Mate in (CON-205). A page's request says so itself (internal/dashboard's
+// coreRequest).
+func tuiAction(act coreapi.ActionFunc, h host.Host) coreapi.ActionFunc {
+	headlessOnly := h == nil
+	return func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+		req.HeadlessOnly = headlessOnly
+		return act(ctx, req)
+	}
+}
+
 // consoleTerminalFiles requires the caller's own stdout to be a real
 // *os.File, which an in-process test harness writing to a bytes.Buffer is
 // not. That keeps the dispatch tests from ever reaching tea.NewProgram, and

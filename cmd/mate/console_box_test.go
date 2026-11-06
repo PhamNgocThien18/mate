@@ -498,15 +498,13 @@ func TestConsoleBoxActionsRefuseAStoppedAgent(t *testing.T) {
 
 // A dialog over the Mate's pane and a pane that moved while it was read are
 // refusals like the other three: nothing typed, the line queued, and the
-// outcome says why in a few words rather than failing the action.
+// outcome says why in a few words rather than failing the action (the
+// words: internal/core's TestRefusalReasonIsShortForEverySendRefusal).
 func TestConsoleBoxQueuesBehindTheTwoNewRefusals(t *testing.T) {
 	for _, err := range []error{send.ErrDialogOpen, send.ErrPaneChanged} {
 		coded := observability.WrapError(observability.CodeStateConflict, "a send refusal", err)
 		if !boxSendRefusal(coded) {
 			t.Errorf("%v is not a box refusal", err)
-		}
-		if reason := refusalReason(coded); reason == coded.Error() {
-			t.Errorf("%v has no short reason", err)
 		}
 	}
 

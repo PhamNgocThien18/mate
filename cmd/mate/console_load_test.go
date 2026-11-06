@@ -57,7 +57,7 @@ func TestConsoleLoadAddsItsKeysToTheSnapshot(t *testing.T) {
 // through Act would be seen only once the two seconds are over.
 func TestConsoleReadsAFreshSnapshotAfterAnAction(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: engineActions(w, deps, nil)})
+	engine := testEngine(t, core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses()})
 	defer engine.Stop()
 	load := consoleLoad(engine.Snapshot, nil, func(context.Context) []string { return nil })
 	tui := tuiAction(engine.Act, nil)

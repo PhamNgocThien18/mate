@@ -170,7 +170,7 @@ func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
 		f := newBoxFixture(t)
 		observer := &seesBusy{}
 		f.deps.Observer = observer
-		_, err := boxReplyAction(context.Background(), f.ws, f.deps, coreapi.ActionRequest{
+		_, err := engineAction(t, f.ws, f.deps)(context.Background(), coreapi.ActionRequest{
 			Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
 		if !errors.Is(err, send.ErrAgentBusy) || observer.calls != 1 {
 			t.Fatalf("err %v after %d observations, want busy from the observer", err, observer.calls)

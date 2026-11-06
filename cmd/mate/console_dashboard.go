@@ -15,12 +15,10 @@ import (
 //
 // Its pages press the action sheet's buttons too (CON-141), through the
 // engine's Act, the console's way in as well (CON-209, over the socket
-// since CON-214), which the engine puts in itself. notice is whether the
-// core has Jev to explain a crew's screen.
-func consoleDashboard(ws *store.Workspace, addr string, allowRemote bool, notice bool) *core.DashboardOptions {
-	deps := dashboardDeps(ws)
-	deps.Notice = notice
-	return &core.DashboardOptions{Addr: addr, AllowRemote: allowRemote, Deps: deps}
+// since CON-214), which the engine puts in itself, with whether it has Jev
+// to explain a screen (core.Options.Notice, CON-232).
+func consoleDashboard(ws *store.Workspace, addr string, allowRemote bool) *core.DashboardOptions {
+	return &core.DashboardOptions{Addr: addr, AllowRemote: allowRemote, Deps: dashboardDeps(ws)}
 }
 
 // headlessHint is what a console in a terminal it cannot split says

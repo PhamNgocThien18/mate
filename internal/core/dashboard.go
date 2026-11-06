@@ -28,12 +28,16 @@ type DashboardOptions struct {
 	// and does not start when it cannot serve the socket.
 	Socket string
 	// Deps are the answers only the caller holds (cmd/mate's dashboardDeps:
-	// `mate diff`, the crew's branch, the harnesses' plugins), and Notice,
-	// whether the pages offer Jev (CON-141). The engine fills in the rest:
-	// Snapshot and FreshSnapshot are its own, TimelineStale is its ingest's,
-	// and Act is Engine.Act whatever the caller put there (CON-209). With no
-	// Options.Act the dashboard is read-only and reads no snapshot.
+	// `mate diff`, the crew's branch, the harnesses' plugins). The engine
+	// fills in the rest: Snapshot and FreshSnapshot are its own,
+	// TimelineStale is its ingest's, Act is Engine.Act whatever the caller
+	// put there (CON-209), and Notice, whether the pages offer Jev
+	// (CON-141), is whether Options.Notice is set (CON-232).
 	Deps dashboard.Deps
+	// ReadOnly serves the pages with no snapshot and no action: they read
+	// mate.db and the workspace's files alone. Only a test of the server
+	// itself, which has no Herdr to read a snapshot through, asks for it.
+	ReadOnly bool
 }
 
 // dashboardPart serves the dashboard as one of the engine's parts. Over
@@ -215,9 +219,11 @@ func (d *dashboardPart) read() Serving {
 
 // dashboardDeps is the caller's dashboard.Deps with the engine's own answers
 // in: the snapshot every UI reads, the fresh one a pressed button is checked
-// against, the ingest's stale timelines, and Engine.Act, the one way in for
-// an action from any UI: under the engine's locks, and followed by
-// Invalidate so the next read sees what it changed.
+// against, the ingest's stale timelines, whether there is Jev to ask
+// (Options.Notice), and Engine.Act, the one way in for an action from any
+// UI: under the engine's locks, and followed by Invalidate so the next read
+// sees what it changed. A ReadOnly dashboard gets none of the snapshots,
+// Jev or Act.
 func (e *Engine) dashboardDeps() dashboard.Deps {
 	deps := e.o.Dashboard.Deps
 	if ingest := e.o.Ingest; ingest != nil {
@@ -227,12 +233,13 @@ func (e *Engine) dashboardDeps() dashboard.Deps {
 	}
 	deps.Core = e.Status
 	deps.ClientSeen = e.clientSeen
-	if e.o.Act != nil {
-		deps.Snapshot = e.Snapshot
-		deps.FreshSnapshot = e.FreshSnapshot
-		deps.Act = e.Act
-	} else {
+	if e.o.Dashboard.ReadOnly {
 		deps.Snapshot, deps.FreshSnapshot, deps.Act, deps.Notice = nil, nil, nil, false
+		return deps
 	}
+	deps.Snapshot = e.Snapshot
+	deps.FreshSnapshot = e.FreshSnapshot
+	deps.Act = e.Act
+	deps.Notice = e.o.Notice != nil
 	return deps
 }

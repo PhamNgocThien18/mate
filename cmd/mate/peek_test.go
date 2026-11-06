@@ -90,8 +90,8 @@ func TestCrewReadersReadThroughTheProfilesSource(t *testing.T) {
 	if got.Health.Kind != crewstate.HealthBusy {
 		t.Fatalf("health = %+v, want busy read off the Codex screen", got.Health)
 	}
-	if _, err := boxPeekAction(context.Background(), w, deps, coreapi.ActionRequest{Target: "shop", Crew: "k3"}); err != nil {
-		t.Fatalf("boxPeekAction: %v", err)
+	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionPeek, Target: "shop", Crew: "k3"}); err != nil {
+		t.Fatalf("peek: %v", err)
 	}
 	if len(rt.ReadSources) < 3 {
 		t.Fatalf("reads = %v, want one per reader", rt.ReadSources)
