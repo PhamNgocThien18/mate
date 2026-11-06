@@ -241,7 +241,7 @@ func TestClientSnapshotSaysWhyItCouldNotRead(t *testing.T) {
 	}
 }
 
-// Client.Act runs every action coreapi names, the five of the chat on the
+// Client.Act runs every action coreapi names, the six of the chat on the
 // Mate's host and the rest through Options.Act, with the request the client
 // sent, field for field.
 func TestClientActRunsEveryAction(t *testing.T) {
@@ -257,19 +257,24 @@ func TestClientActRunsEveryAction(t *testing.T) {
 		t.Fatalf("found %d actions in coreapi, want every one", len(actions))
 	}
 	// What each chat action asks the host: a say carries no news, an
-	// interrupt and a fork_close no text.
+	// interrupt and a fork_close no text, an undo the held item its Input
+	// names.
 	hostOp := map[coreapi.Action]hostCall{
 		coreapi.ActionSay:       {Op: matehost.OpSubmit, Text: "text of say"},
 		coreapi.ActionInterrupt: {Op: matehost.OpInterrupt, News: 7},
 		coreapi.ActionAnswer:    {Op: matehost.OpAnswer, Text: "text of answer", News: 7},
 		coreapi.ActionFork:      {Op: matehost.OpSessionAsk, Text: "text of fork", News: 7},
 		coreapi.ActionForkClose: {Op: matehost.OpSessionClose, News: 7},
+		coreapi.ActionUndo:      {Op: matehost.OpUndo, Held: 4},
 	}
 	ran := 0
 	for _, a := range actions {
 		req := coreapi.ActionRequest{
 			Action: a, Target: "shop", TargetKind: "mate", Input: "text of " + string(a), News: 7,
 			Repo: "../shop", Crew: "buy", Key: "k-" + string(a), Harness: "claude", HeadlessOnly: true,
+		}
+		if a == coreapi.ActionUndo {
+			req.Input = "4"
 		}
 		line, err := c.Act(context.Background(), req)
 		if err != nil {
