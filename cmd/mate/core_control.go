@@ -189,10 +189,22 @@ func (c coreControl) start(ws *store.Workspace, stdout io.Writer) error {
 		default:
 		}
 		if !c.now().Before(deadline) {
-			return fmt.Errorf("mate core: no answer within %s; see %s", durationWord(c.startWait), logName)
+			return &coreNoAnswerError{wait: c.startWait, log: logName}
 		}
 		time.Sleep(c.poll)
 	}
+}
+
+// coreNoAnswerError is start's error for a core it started that did not
+// answer on its socket within startWait. A console says it in its own words
+// (CON-214).
+type coreNoAnswerError struct {
+	wait time.Duration
+	log  string
+}
+
+func (e *coreNoAnswerError) Error() string {
+	return fmt.Sprintf("mate core: no answer within %s; see %s", durationWord(e.wait), e.log)
 }
 
 // openCoreLog opens core.log to append to, after moving one past

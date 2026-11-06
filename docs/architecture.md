@@ -107,8 +107,8 @@ reusing the ledger needs `--why` split out of `usage` first.
 
 | Process | Started by | Code | Runs |
 | -- | -- | -- | -- |
-| Console | `mate console` (plain `mate` and `mate <dir>` run the core since 2026-11-06) | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications; refuses to open while `mate core` runs (CON-211) |
-| Core | `mate`, `mate <dir>`, `mate core run` (foreground); `mate core start` (background, CON-213) | `cmdCoreHere`, `cmdCoreRun`, `runCore`, `cmd/mate/core.go`; start/stop/status in `cmd/mate/core_control.go` | The engine with no console: the same parts as the console's, plus `.mate/core.sock` and the clients' routes on it (CON-212). Stops within the engine's bound on SIGINT, SIGTERM or SIGHUP. `start` runs `mate core run` in a session of its own with its output in `.mate/core.log`; `stop` sends SIGTERM, then SIGKILL after 60 s, only to the pid `core.lock`'s holder wrote ([core.md](core.md)) |
+| Console | `mate console` (plain `mate` and `mate <dir>` run the core since 2026-11-06) | `runConsole`, `cmd/mate/console.go`; reaching the core in `cmd/mate/console_core.go` | One per workspace (flock on `.mate/console.lock`, CON-162). A client of the core (CON-214): runs no engine, reads the snapshot and sends actions over `.mate/core.sock`; starts the core when none answers, never stops it ([core.md](core.md#the-console)) |
+| Core | `mate`, `mate <dir>`, `mate core run` (foreground); `mate core start` (background, CON-213) | `cmdCoreHere`, `cmdCoreRun`, `runCore`, `cmd/mate/core.go`; start/stop/status in `cmd/mate/core_control.go` | The engine, with or without a console: observer, timeline, outbox, auto daemon, recovery, Office/City and notifications, plus `.mate/core.sock` and the clients' routes on it (CON-212). Stops within the engine's bound on SIGINT, SIGTERM or SIGHUP. `start` runs `mate core run` in a session of its own with its output in `.mate/core.log`; `stop` sends SIGTERM, then SIGKILL after 60 s, only to the pid `core.lock`'s holder wrote ([core.md](core.md)) |
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone. The stage runs `herdr agent attach --takeover` for a crew or a pane Mate, and the Mate REPL for a headless Mate (CON-224) |
 | Herdr server | `herdr.Herdr` (`internal/runtime/herdr`), when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane: a pane Mate and every Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`). Codex and pi Mates, and `mate.mode: pane` |
@@ -119,12 +119,12 @@ reusing the ledger needs `--why` split out of `usage` first.
 | Read-only dashboard | `mate dashboard` | `cmdDashboard`, `cmd/mate/dashboard.go` | Office/City over `db.OpenRead`; the port is busy while a console or a core serves it |
 | CLI commands | the Mate, a Crew or the captain | `commands()` table, `cmd/mate/dispatch.go` | Short-lived: `mate send`, `mate wake`, `mate news`, `mate merge`... Read and write `.mate/` directly, not through the console |
 
-In the console or in `mate core run`, `core.Engine`
+In `mate core run` (and in a console built before CON-214), `core.Engine`
 (`internal/core/engine.go`, built by `engineOptions` in
 `cmd/mate/console_auto.go`) first takes `.mate/core.lock` (CON-211): one
 engine per workspace, wherever it runs; a second one gets
 `core.RunningError` naming the holder's pid and owner (`core` or
-`console`) and starts nothing. The console and `mate core run` take it
+`console`) and starts nothing. `mate core run` takes it
 (`core.Lock`) before `engineOptions` builds the parts, whose observer opens
 `mate.db`, and hand it in as `Options.Claim`. A core then binds `.mate/core.sock` (0600;
 a socket left by a dead core is removed, a path too long or a filesystem
@@ -144,11 +144,11 @@ them all together under that one bound; the server's own shutdown takes at
 most 5 s of it. It closes `mate.db` only once everything has stopped; past
 the bound it names what still runs on stderr and leaves `mate.db` to the
 process exit. `core.lock` is released last, or, past the bound, also left to
-the process exit. A console quit in the middle of an action waits for it inside
-that same bound (`quitAbandoned`, `cmd/mate/console.go`).
+the process exit. A console quit in the middle of an action neither cancels
+nor waits for it: the core runs it to its end (CON-214).
 
-`Options.ConsolePresent` says whether a console is open: always true for
-the console's engine; for `mate core run`, true while a request saying
+`Options.ConsolePresent` says whether a console is open: for `mate core
+run`, true while a request saying
 `X-Mate-Client: console` (`coreapi.ClientHeader`) reached its socket in the
 last 10 s (`core.ConsoleSeen`, CON-212). Only the outbox loop reads it
 (`outbox.Deps.ConsolePresent`, wired by `engineOptions`): with no console it types nothing into a Manual
@@ -259,10 +259,9 @@ in its host. Neither word stands for the other.
 workspace is in use (`mate`, or `mate core start|stop|restart|status`,
 CON-213). UIs on this
 machine reach it over `.mate/core.sock` through `internal/coreclient`
-(built in CON-212); the console becomes such a client in CON-214. CLI
-commands keep writing files directly. Until then, a console runs its own engine and closing it stops the engine,
-and with it Office/City and notifications; `mate core run` is the engine
-without a console, and the two refuse to run side by side.
+(built in CON-212); the console is such a client since CON-214, and closing
+it leaves the engine, Office/City and notifications running. CLI commands
+keep writing files directly.
 
 ## 3. State files in `.mate/`
 

@@ -235,18 +235,6 @@ func TestCoreUsage(t *testing.T) {
 	}
 }
 
-// A console opened while `mate core` runs says so and opens nothing.
-func TestConsoleEngineRefusalNamesTheCore(t *testing.T) {
-	err := consoleEngineRefusal(&core.RunningError{Holder: store.CoreHolder{PID: 77, Owner: store.CoreOwnerCore}})
-	if want := "mate console: mate core (pid 77) is running; stop it with `mate core stop` to open this console"; err == nil || err.Error() != want {
-		t.Fatalf("refusal = %v, want %q", err, want)
-	}
-	other := errors.New("some other failure")
-	if err := consoleEngineRefusal(other); err != other {
-		t.Fatalf("refusal of another error = %v, want it unchanged", err)
-	}
-}
-
 // `mate reindex` with mate.db held names the process holding the engine;
 // with no engine it keeps the database's own refusal.
 func TestReindexNamesTheEngineHoldingTheTimeline(t *testing.T) {

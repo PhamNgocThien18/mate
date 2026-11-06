@@ -20,7 +20,7 @@ directory above the current one that holds `.mate/`.
 | `mate core stop [<dir>]` | Sends the core SIGTERM and waits up to 60 s; a core still running then gets SIGKILL, and its socket is removed. |
 | `mate core restart [<dir>]` | `stop`, then `start`. |
 | `mate core status [<dir>]` | The pid, owner, version and build, start time, socket and the Office/City URLs. Exit 0 when an engine runs, 1 when none does. |
-| `mate console [<dir>]` | Opens the console. Until CON-214 the console runs an engine of its own, so it refuses to open while the core runs. |
+| `mate console [<dir>]` | Opens the console, a client of the core (CON-214): see "The console" below. |
 
 `mate` opens no browser; it prints the URLs:
 
@@ -55,9 +55,42 @@ CON-210); a second signal ends it at once.
 | -- | -- | -- | -- |
 | nothing | runs the core | starts the core | `mate core: not running`, exit 0 |
 | the core | prints `mate core: already running` and the status, exit 0 | `mate core: already running (pid N, since HH:MM)`, exit 0 | stops it |
-| a console's engine | `mate: the engine runs inside mate console (pid N); quit that console first`, exit 1 | the same refusal, exit 1 | refuses: quit that console |
+| a console's engine (a console built before CON-214) | `mate: the engine runs inside mate console (pid N); quit that console first`, exit 1 | the same refusal, exit 1 | refuses: quit that console |
 
 `mate core run` beside a running core says `already running` and exits 1.
+
+## The console
+
+`mate console` runs no engine (CON-214). It opens in this order:
+
+1. It takes `.mate/console.lock` (one console per workspace, CON-162). A
+   second console whose captain answers `N` exits and touches no core.
+2. It connects to `.mate/core.sock`. With no core answering it starts one
+   as `mate core start` does and waits up to 10 s; past that it says
+   `mate console: mate core did not answer within 10s; see .mate/core.log`
+   and exits 1.
+3. It reads `GET /api/core`. A core of another build is asked about before
+   the TUI draws: `mate core (pid N) runs a different build of mate.
+   Restart it? [Y/n]`. `n` exits 1 with ``mate console: the console and mate
+   core must be the same build; run `mate core restart` when ready``; any
+   other answer restarts the core and opens. The snapshot crosses the
+   socket as JSON by Go's field names, so the two must be one build.
+
+The console reads `/api/snapshot` and `/api/core` every 2 s and sends its
+actions to `/api/act`, each with `X-Mate-Client: console`. The core counts
+a console as open for 10 s after its last request: with none, a Manual
+project's queued outbox lines wait; an Auto project's are delivered either
+way. The status line says the core's notices (`/api/core`); the URL of
+Office/City in a terminal the console cannot split comes from there too.
+
+Quitting the console stops no core. An action still running when the
+console quits is neither cancelled nor waited for: the console says
+`<action> keeps running in mate core`. When the core goes away while the
+console is open, the header says `stale` and the console tries again every
+2 s; it never starts the core again itself, so it does not race a `mate
+core stop` that meant it. `.mate/console.yaml`'s `dashboard` and
+`.mate/.env` (Jev) are read by the core when it starts: change them, then
+`mate core restart`.
 
 ## How a command knows the core runs
 

@@ -250,20 +250,6 @@ func coreEngineRefusal(err error) error {
 	return fmt.Errorf("mate core: already running (%s)", pidWord(running.Holder.PID))
 }
 
-// consoleEngineRefusal words Start's refusal for a console: until the
-// console is a client of the core (CON-214), it runs no engine of its own
-// beside one.
-func consoleEngineRefusal(err error) error {
-	var running *core.RunningError
-	if !errors.As(err, &running) {
-		return err
-	}
-	if running.Holder.Owner == core.OwnerCore {
-		return fmt.Errorf("mate console: mate core (%s) is running; stop it with `mate core stop` to open this console", pidWord(running.Holder.PID))
-	}
-	return fmt.Errorf("mate console: another mate console (%s) runs the engine on this workspace; quit it first", pidWord(running.Holder.PID))
-}
-
 // engineHolderRefusal is `mate reindex`'s word when mate.db is locked: the
 // process holding core.lock, which runs the engine that writes mate.db.
 // It is nil when no engine holds core.lock, so the caller keeps the error
