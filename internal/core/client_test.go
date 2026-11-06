@@ -44,7 +44,22 @@ func socketEngine(t *testing.T, w *store.Workspace, o Options, addr ...string) *
 		o.Dashboard = &DashboardOptions{}
 	}
 	o.Dashboard.Addr, o.Dashboard.Socket = bind, w.CoreSocket()
-	e := New(o)
+	return startEngine(t, New(o))
+}
+
+// transportEngine is socketEngine with every action run by Options.Act
+// (locksOnly): for a test of what the socket carries, not of the engine's
+// own bodies (CON-231), which have tests of their own.
+func transportEngine(t *testing.T, w *store.Workspace, o Options) *Engine {
+	t.Helper()
+	o.Workspace, o.Harnesses, o.Owner, o.Stderr = w, testHarnesses, OwnerCore, io.Discard
+	o.Dashboard = &DashboardOptions{Addr: freeAddr, Socket: w.CoreSocket()}
+	return startEngine(t, locksOnly(New(o)))
+}
+
+// startEngine starts e and stops it when the test ends.
+func startEngine(t *testing.T, e *Engine) *Engine {
+	t.Helper()
 	if err := e.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -112,7 +127,7 @@ func TestClientRoutesAreTheSocketsAlone(t *testing.T) {
 	if snap, err := c.Snapshot(ctx); err != nil || len(snap.Projects) != 1 || snap.Projects[0].ProjectID != "shop" {
 		t.Fatalf("Snapshot over the socket = %+v, %v; want shop", snap.Projects, err)
 	}
-	if line, err := c.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "shop"}); err != nil || line != "did mode" {
+	if line, err := c.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", Crew: "buy"}); err != nil || line != "did merge" {
 		t.Fatalf("Act over the socket = %q, %v", line, err)
 	}
 	// The pages' routes are on the socket too, as before.
@@ -243,13 +258,13 @@ func TestClientSnapshotSaysWhyItCouldNotRead(t *testing.T) {
 
 // Client.Act runs every action coreapi names, the six of the chat on the
 // Mate's host and the rest through Options.Act, with the request the client
-// sent, field for field.
+// sent, field for field (transportEngine).
 func TestClientActRunsEveryAction(t *testing.T) {
 	w := hostWorkspace(t)
 	withTimelineDB(t, w)
 	calls := fakeHost(t, w.MateDir("shop"))
 	h := newHeldActs()
-	socketEngine(t, w, Options{Act: h.act})
+	transportEngine(t, w, Options{Act: h.act})
 	c := dial(t, w)
 
 	actions := coreapiActions(t)
@@ -358,7 +373,7 @@ func TestClientActErrorsAreTheEngines(t *testing.T) {
 		}
 		return h.act(ctx, req)
 	}
-	e := socketEngine(t, w, Options{Act: act})
+	e := transportEngine(t, w, Options{Act: act})
 	c := dial(t, w)
 	ctx := context.Background()
 
