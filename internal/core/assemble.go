@@ -28,20 +28,32 @@ import (
 // slows one read and never freezes the UIs.
 const livenessBound = 3 * time.Second
 
-// liveness asks Herdr which agents are up, for query.LoadLive. It never
-// starts a server; a question that cannot be asked is left unasked and the
-// rows keep their recorded state. It was the console's consoleLiveness.
+// liveness asks Herdr which agents are up, and each headless Mate's host of
+// its own whether it answers on its socket (CON-225), for query.LoadLive.
+// It never starts a server; a question that cannot be asked is left
+// unasked and the rows keep their recorded state. It was the console's
+// consoleLiveness.
+//
+// The two are asked side by side, each within its own bound: a Herdr that
+// is slow to answer must not use up the hosts' time, or every headless
+// Mate would read as stopped.
 func liveness(ctx context.Context, ws *store.Workspace, deps spawn.Deps) query.Liveness {
-	if deps.Runtime == nil {
-		return query.Liveness{}
+	hosts := make(chan map[string]bool, 1)
+	go func() {
+		hctx, cancel := context.WithTimeout(ctx, livenessBound)
+		defer cancel()
+		hosts <- spawn.HostLiveness(hctx, ws)
+	}()
+	var live query.Liveness
+	if deps.Runtime != nil {
+		if spec, err := spawn.SessionSpec(deps, ws); err == nil {
+			hctx, cancel := context.WithTimeout(ctx, livenessBound)
+			live = query.ReadLiveness(hctx, deps.Runtime, spec)
+			cancel()
+		}
 	}
-	spec, err := spawn.SessionSpec(deps, ws)
-	if err != nil {
-		return query.Liveness{}
-	}
-	ctx, cancel := context.WithTimeout(ctx, livenessBound)
-	defer cancel()
-	return query.ReadLiveness(ctx, deps.Runtime, spec)
+	live.Hosts = <-hosts
+	return live
 }
 
 // withCrewHealth puts the observer's latest readings into a snapshot

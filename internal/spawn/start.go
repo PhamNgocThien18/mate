@@ -95,20 +95,37 @@ type StartResult struct {
 	Adopted bool
 	// Headless is true when the Mate runs as a headless host (CON-78).
 	Headless bool
+	// PID is the headless host's pid when it runs as a process of its own
+	// (CON-225); 0 for a Mate in a pane, or a host that gave none.
+	PID int
 	// ModeNote explains a mode the captain did not choose: a HeadlessOnly
 	// start ran headless although project.yaml's `mate.mode` is pane
 	// (CON-220). Empty when nothing needed saying.
 	ModeNote string
 }
 
+// Place is where the started Mate runs, for a one-line result: "in pane
+// <id>", or for a headless host of its own "headless, host pid <n>".
+func (r StartResult) Place() string {
+	if r.Pane != "" {
+		return "in pane " + r.Pane
+	}
+	if r.PID > 0 {
+		return fmt.Sprintf("headless, host pid %d", r.PID)
+	}
+	return "headless"
+}
+
 // StartMate starts the Mate of one project: it refreshes the Mate's
 // directory, creates the Herdr workspace and tab, launches the harness,
-// settles its startup screen, and records `mate.meta`.
+// settles its startup screen, and records `mate.meta`. A headless Mate
+// instead gets its host started as a process of its own, outside Herdr
+// (startHost, CON-225).
 //
 // A failure after the tab exists is compensated: the agent is stopped, the
 // tab is closed, and no `mate.meta` is left behind. The only state a
-// successful start depends on is what Herdr reports, never the previous
-// meta.
+// successful start depends on is what Herdr, or the host's socket,
+// reports, never the previous meta.
 func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequest) (StartResult, error) {
 	if w == nil {
 		return StartResult{}, errUsage("spawn: a workspace is required")
@@ -195,12 +212,35 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 		return StartResult{}, err
 	}
 
-	// 3. Herdr: the workspace session, a workspace labelled with the
-	// project, and the Mate tab. All three are cwd = the Mate directory.
 	sessionSpec, err := deps.sessionSpec(w)
 	if err != nil {
 		return StartResult{}, err
 	}
+	if headless {
+		// 3. A headless Mate's host is a process of its own (CON-225):
+		// Herdr is not asked, nothing is opened in it. The session's name
+		// still rides in the Mate's environment, for the Crews it spawns.
+		session := runtime.SessionHandle{Name: sessionSpec.Name, ConfigHome: sessionSpec.ConfigHome}
+		// 3b. A start interrupted after the host came up (the console quit
+		// mid-start) leaves it running with no mate.meta: it is adopted,
+		// not started a second time, which its host lock would refuse.
+		if strings.TrimSpace(priorMeta[MetaAgent]) == "" {
+			adopted, ok, err := adoptInterruptedHost(ctx, w, deps, project, kind, mateDir, session)
+			if err != nil || ok {
+				adopted.StaleMeta, adopted.ModeNote = staleMeta, modeNote
+				return adopted, err
+			}
+		}
+		result, err := startHost(ctx, w, deps, project, profile, mateDir, decision, prep, plugins.servers, session)
+		if err != nil {
+			return StartResult{}, err
+		}
+		result.StaleMeta, result.ModeNote = staleMeta, modeNote
+		return result, nil
+	}
+
+	// 3. Herdr: the workspace session, a workspace labelled with the
+	// project, and the Mate tab. All three are cwd = the Mate directory.
 	session, err := deps.Runtime.EnsureSession(ctx, sessionSpec)
 	if err != nil {
 		return StartResult{}, err
@@ -211,13 +251,7 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	// running with no mate.meta. It is this project's Mate, so it is
 	// adopted rather than launched a second time - which Herdr would refuse
 	// by name - or stopped, which would throw its conversation away.
-	if strings.TrimSpace(priorMeta[MetaAgent]) == "" && headless {
-		adopted, ok, err := adoptInterruptedHost(ctx, w, deps, project, kind, mateDir, session)
-		if err != nil || ok {
-			adopted.StaleMeta, adopted.ModeNote = staleMeta, modeNote
-			return adopted, err
-		}
-	} else if strings.TrimSpace(priorMeta[MetaAgent]) == "" {
+	if strings.TrimSpace(priorMeta[MetaAgent]) == "" {
 		adopted, ok, err := adoptInterruptedStart(ctx, w, deps, project, kind, mateDir, session)
 		if err != nil || ok {
 			adopted.StaleMeta = staleMeta
@@ -231,15 +265,6 @@ func StartMate(ctx context.Context, w *store.Workspace, deps Deps, req StartRequ
 	}
 
 	// From here on every failure must undo the tab and leave no meta.
-	if headless {
-		result, err := startHostInTab(ctx, w, deps, project, profile, mateDir, decision, prep, plugins.servers, session, tab)
-		if err != nil {
-			compensate(ctx, deps, w, project, session, tab)
-			return StartResult{}, err
-		}
-		result.StaleMeta, result.ModeNote = staleMeta, modeNote
-		return result, nil
-	}
 	result, err := startInTab(ctx, w, deps, project, profile, mateDir, decision, prep, plugins.servers, session, tab)
 	if err != nil {
 		compensate(ctx, deps, w, project, session, tab)
@@ -473,6 +498,9 @@ func refuseIfLive(ctx context.Context, w *store.Workspace, deps Deps, project st
 	if name == "" {
 		return false, nil
 	}
+	if store.MateHostDetached(meta) {
+		return refuseIfHostLive(ctx, w, project, meta)
+	}
 	spec, err := deps.sessionSpec(w)
 	if err != nil {
 		return false, err
@@ -493,6 +521,29 @@ func refuseIfLive(ctx context.Context, w *store.Workspace, deps Deps, project st
 	return false, observability.NewError(observability.CodeAlreadyExists,
 		fmt.Sprintf("%v: project %s is served by agent %q in session %s; stop it first", ErrMateRunning, project, name, session.Name)).
 		WithDetails(map[string]any{"agent_name": name, "herdr_session": session.Name})
+}
+
+// refuseIfHostLive is refuseIfLive for a headless Mate whose host runs as
+// a process of its own (CON-225): its socket, not Herdr, says whether it
+// runs. A host that holds its lock but does not answer is refused too: a
+// second one would not get the lock, and a stop is what ends the first.
+func refuseIfHostLive(ctx context.Context, w *store.Workspace, project string, meta map[string]string) (stale bool, err error) {
+	pid := meta[MetaPID]
+	if pingHost(ctx, w.MateDir(project)) == nil {
+		return false, observability.NewError(observability.CodeAlreadyExists,
+			fmt.Sprintf("%v: project %s is served by its headless host (pid %s); stop it first", ErrMateRunning, project, pid)).
+			WithDetails(map[string]any{"agent_name": meta[MetaAgent], "pid": pid})
+	}
+	held, err := hostLockHeld(w, project)
+	if err != nil {
+		return false, err
+	}
+	if held {
+		return false, observability.NewError(observability.CodeAlreadyExists,
+			fmt.Sprintf("%v: the headless host of %s (pid %s) still runs but does not answer on its socket; stop it with mate mate stop %s, then start again", ErrMateRunning, project, pid, project)).
+			WithDetails(map[string]any{"agent_name": meta[MetaAgent], "pid": pid})
+	}
+	return true, nil
 }
 
 // prepareMateDir renders the Mate's cwd: the operating manual, the skills

@@ -158,9 +158,11 @@ func Run(ctx context.Context, ws *store.Workspace, deps spawn.Deps, progress fun
 	// workspace whose agents all stopped on purpose has no reason to bring
 	// a server up just because a console opened.
 	live := query.ReadLiveness(ctx, deps.Runtime, spec)
+	live.Hosts = spawn.HostLiveness(ctx, ws)
 	if !live.Asked {
+		// A headless Mate's host of its own (CON-225) is still recovered:
+		// its socket answered, not Herdr. lost leaves every pane out.
 		res.Err = fmt.Errorf("herdr could not be asked which agents are running")
-		return res
 	}
 	todo := lost(ws, live)
 	if len(todo) == 0 {
@@ -168,10 +170,13 @@ func Run(ctx context.Context, ws *store.Workspace, deps spawn.Deps, progress fun
 	}
 	say(Progress{Total: len(todo)})
 
-	// 3. The Herdr server, then the agents.
-	if _, err := deps.Runtime.EnsureSession(ctx, spec); err != nil {
-		res.Err = fmt.Errorf("herdr session %s could not be started: %w", spec.Name, err)
-		return res
+	// 3. The Herdr server, when a pane needs it, then the agents. A host
+	// of its own needs none.
+	if needsHerdr(ws, todo) {
+		if _, err := deps.Runtime.EnsureSession(ctx, spec); err != nil {
+			res.Err = fmt.Errorf("herdr session %s could not be started: %w", spec.Name, err)
+			return res
+		}
 	}
 	for i, it := range todo {
 		if ctx.Err() != nil {
@@ -185,13 +190,18 @@ func Run(ctx context.Context, ws *store.Workspace, deps spawn.Deps, progress fun
 }
 
 // lost lists the Mates and Crews to restart: the meta records a pane, Herdr
-// does not list the agent, and the crew is not over. A meta with no pane is a
-// stop somebody asked for and is left alone.
+// does not list the agent, and the crew is not over; or it records a
+// headless Mate's host of its own that does not answer on its socket
+// (CON-225). A meta with neither is a stop somebody asked for and is left
+// alone. When Herdr could not be asked, no pane is listed.
 func lost(ws *store.Workspace, live query.Liveness) []Item {
 	var out []Item
 	for _, ref := range ws.Projects() {
-		if meta, err := ws.ReadMateMeta(ref.Name); err == nil && meta[spawn.MetaPane] != "" && !live.Alive(meta[spawn.MetaAgent]) {
+		if meta, err := ws.ReadMateMeta(ref.Name); err == nil && live.MateGone(ref.Name, meta) {
 			out = append(out, Item{Project: ref.Name})
+		}
+		if !live.Asked {
+			continue
 		}
 		for _, c := range crewsOf(ws, ref.Name) {
 			if c.meta[spawn.MetaPane] == "" || live.Alive(c.meta[spawn.MetaAgent]) {
@@ -204,6 +214,21 @@ func lost(ws *store.Workspace, live query.Liveness) []Item {
 		}
 	}
 	return out
+}
+
+// needsHerdr reports whether restarting todo needs the Herdr server: a
+// Crew, or a Mate that is not a headless host of its own.
+func needsHerdr(ws *store.Workspace, todo []Item) bool {
+	for _, it := range todo {
+		if it.Crew != "" {
+			return true
+		}
+		meta, err := ws.ReadMateMeta(it.Project)
+		if err != nil || !store.MateHostDetached(meta) {
+			return true
+		}
+	}
+	return false
 }
 
 // WatcherStarter starts a detached pull request watcher. A test replaces it.

@@ -46,8 +46,16 @@ func MateOutbox(ws *store.Workspace, deps Deps) *outbox.Sender {
 // `mate/mate.meta` resolved against the session Herdr currently answers for.
 // The sender takes it as a function so it imports nothing that could start
 // or stop an agent.
+//
+// A headless Mate whose host runs outside Herdr (CON-225) has no pane to
+// resolve: the sender reaches it through its host and needs only its name
+// and harness, which the meta gives without asking Herdr.
 func mateOutboxHandle(ws *store.Workspace, deps Deps) outbox.HandleFunc {
 	return func(ctx context.Context, project string) (runtime.AgentHandle, harness.Kind, error) {
+		if meta, err := ws.ReadMateMeta(project); err == nil && store.MateHostDetached(meta) {
+			kind, _ := deps.Harnesses.Parse(meta[MetaHarness])
+			return runtime.AgentHandle{Name: meta[MetaAgent], RawID: project, Kind: kind}, kind, nil
+		}
 		return MateHandle(ctx, ws, deps, project)
 	}
 }

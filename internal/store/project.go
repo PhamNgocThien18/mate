@@ -172,6 +172,31 @@ func (w *Workspace) MateHeadless(project string) bool {
 	return err == nil && meta[MetaMateMode] == MateModeHeadless && strings.TrimSpace(meta["agent"]) != ""
 }
 
+// MetaMatePID and MetaMateSocket are the mate.meta keys of a headless
+// Mate whose host runs as a background process of its own, outside Herdr
+// (CON-225): the host's pid and the socket it answers on. Such a meta
+// records no pane, tab or Herdr workspace.
+const (
+	MetaMatePID    = "pid"
+	MetaMateSocket = "socket"
+)
+
+// MateHostDetached reports whether a mate.meta records a running headless
+// Mate whose host is a process of its own (CON-225): the headless mode, an
+// agent name, and no pane. Whether it is alive is the host's socket's to
+// say, not Herdr's. A headless meta with a pane is a host an older binary
+// started in its Herdr pane; Herdr still answers for it.
+func MateHostDetached(meta map[string]string) bool {
+	return meta[MetaMateMode] == MateModeHeadless && strings.TrimSpace(meta["agent"]) != "" && strings.TrimSpace(meta["pane"]) == ""
+}
+
+// MateRecorded reports whether a mate.meta records a Mate that was started
+// and not stopped: a pane, or a host of its own (MateHostDetached). A stop
+// drops both.
+func MateRecorded(meta map[string]string) bool {
+	return strings.TrimSpace(meta["pane"]) != "" || MateHostDetached(meta)
+}
+
 // MetaFollowups is the crew `.meta` key `mate merge --followups` writes
 // (CON-74): where the findings a passing review left standing were
 // recorded before the merge - a `backlog:<text>` line under the project's

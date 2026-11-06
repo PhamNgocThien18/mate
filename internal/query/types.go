@@ -458,7 +458,9 @@ type BindingValue struct {
 	// Runtime is which runtime owns the session below. It is "herdr" because
 	// the schema records Herdr handles specifically (the columns are
 	// herdr_session/herdr_workspace/herdr_tab/herdr_pane) - a schema fact,
-	// not a probe of what is running.
+	// not a probe of what is running. It is "host" for a headless Mate
+	// whose host runs as a process of its own (CON-225), which has no
+	// Herdr workspace, tab or pane.
 	Runtime string
 	Session string
 	// Workspace is the Herdr workspace id the binding recorded. It is the

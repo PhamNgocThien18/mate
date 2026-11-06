@@ -48,7 +48,7 @@ func (e *Engine) startMate(ctx context.Context, req coreapi.ActionRequest) (stri
 	if err != nil {
 		return "", err
 	}
-	line := fmt.Sprintf("Mate %s is running on %s in pane %s", res.Agent, res.Harness, res.Pane)
+	line := fmt.Sprintf("Mate %s is running on %s %s", res.Agent, res.Harness, res.Place())
 	if res.ModeNote != "" {
 		// First: the console's status line is one row (CON-220).
 		line = res.ModeNote + "; " + line
@@ -212,7 +212,7 @@ func (e *Engine) restartMate(ctx context.Context, req coreapi.ActionRequest) (st
 	if gone || stopped.AlreadyGone {
 		was = "the previous Mate was already gone"
 	}
-	line := fmt.Sprintf("%s; %s; Mate %s is running on %s in pane %s", stow.Outcome(), was, res.Agent, res.Harness, res.Pane)
+	line := fmt.Sprintf("%s; %s; Mate %s is running on %s %s", stow.Outcome(), was, res.Agent, res.Harness, res.Place())
 	if res.ModeNote != "" {
 		// First: the console's status line is one row (CON-220).
 		line = res.ModeNote + "; " + line

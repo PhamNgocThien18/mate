@@ -17,11 +17,11 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// TestLiveHeadlessMate is CON-78's proof: a headless Claude Mate in a real
-// Herdr pane. Herdr lists the host under the Mate's name, two app lines
-// are two `claude -p` turns on one session (the second resumed), the
-// Mate's own hooks record both answers in sent.log, and the stop is the
-// host's own clean exit.
+// TestLiveHeadlessMate is CON-78's proof, moved out of Herdr by CON-225: a
+// headless Claude Mate whose host is a process of its own. Herdr lists no
+// agent for it, two app lines are two `claude -p` turns on one session
+// (the second resumed), the Mate's own hooks record both answers in
+// sent.log, and the stop is the host's own clean exit.
 func TestLiveHeadlessMate(t *testing.T) {
 	requireLive(t)
 	session, configHome := liveLabSession(t)
@@ -88,12 +88,16 @@ func TestLiveHeadlessMate(t *testing.T) {
 		defer stopCancel()
 		_, _ = spawn.StopMate(stopCtx, w, deps, "shop")
 	})
-	if !started.Headless || started.Agent != "mate-shop" {
-		t.Fatalf("started = %+v", started)
+	if !started.Headless || started.Agent != "mate-shop" || started.PID <= 0 || started.Pane != "" {
+		t.Fatalf("started = %+v, want a host of its own", started)
 	}
+	// CON-225: the host is a process of its own, and Herdr has nothing of it.
 	handle := runtime.AgentHandle{Session: runtime.SessionHandle{Name: session, ConfigHome: configHome}, Name: started.Agent, RawID: "shop"}
-	if _, err := rt.InspectAgent(ctx, handle); err != nil {
-		t.Fatalf("Herdr does not list the host as %s: %v", started.Agent, err)
+	if _, err := rt.InspectAgent(ctx, handle); !runtime.IsAgentNotFound(err) {
+		t.Fatalf("Herdr answers for %s (%v), want no agent: the host runs outside Herdr", started.Agent, err)
+	}
+	if alive := spawn.HostLiveness(ctx, w); !alive["shop"] {
+		t.Fatalf("host liveness = %v, want shop answering", alive)
 	}
 
 	host := matehost.Dial(w.MateDir("shop"))
@@ -148,5 +152,11 @@ func TestLiveHeadlessMate(t *testing.T) {
 	}
 	if !stopped.Confirmed || stopped.Forced != "" {
 		t.Fatalf("stop = %+v, want the host's clean exit", stopped)
+	}
+	if alive := spawn.HostLiveness(ctx, w); len(alive) != 0 {
+		t.Fatalf("host liveness after the stop = %v, want no host recorded", alive)
+	}
+	if err := matehost.Dial(w.MateDir("shop")).Ping(ctx); err == nil {
+		t.Fatal("the host still answers after its stop")
 	}
 }

@@ -1,14 +1,15 @@
 // Package matehost runs a headless Mate (CON-78). Instead of a harness's
-// own TUI, the Mate's Herdr pane runs `mate mate-host <project>`: a small
-// REPL that shows the captain their own messages and the Mate's replies to
-// them, and keeps the app's event lines out of sight. Each message is one
-// `claude -p` run resumed on the same session, and the turn lock makes sure
-// only one runs at a time, whoever started it.
+// own TUI, the Mate is `mate mate host <project>`: a background process of
+// its own, outside Herdr (CON-225), that runs each message as one `claude
+// -p` resumed on the same session; the turn lock makes sure only one runs
+// at a time, whoever started it. The REPL (repl*.go) is one of its
+// clients: it shows the captain their own messages and the Mate's replies
+// to them, and keeps the app's event lines out of sight.
 //
 // The rest of mate reaches the host over a unix socket in the Mate's
-// directory: the outbox delivers event lines through it, and stow, context
-// refresh and the console ask it whether the Mate is busy or the captain
-// has a draft.
+// directory: the outbox delivers event lines through it, the snapshot asks
+// it whether the Mate is alive, and stow, context refresh and the console
+// ask it whether the Mate is busy or the captain has a draft.
 package matehost
 
 import (
@@ -30,6 +31,9 @@ const (
 	// HistoryName is what the host showed, one item per line, replayed when
 	// the host starts again.
 	HistoryName = "host.jsonl"
+	// LogName is where a host started outside Herdr writes its stdout and
+	// stderr (CON-225); LogName+".1" is the run before the last rotation.
+	LogName = "host.log"
 	// TurnLock and HostLock name the store.TryMateLock locks.
 	TurnLock = "turn"
 	HostLock = "host"
@@ -37,6 +41,9 @@ const (
 
 // SocketPath is the control socket of the Mate in mateDir.
 func SocketPath(mateDir string) string { return filepath.Join(mateDir, SocketName) }
+
+// LogPath is the log of the host of the Mate in mateDir.
+func LogPath(mateDir string) string { return filepath.Join(mateDir, LogName) }
 
 // EnvHostTurn is set on every turn a host runs, to the turn's number in
 // that host (1 for its first). Claude runs SessionStart on every resumed
@@ -61,7 +68,9 @@ func QuietSessionStart(source, hostTurn string) bool {
 // turns it into one run per message (claude.TurnArgs).
 type Launch struct {
 	Project string `json:"project"`
-	// Agent is the Herdr agent name the host takes in its pane.
+	// Agent is the Mate's agent name, `mate-<project>` (spawn's
+	// AgentNamePrefix). A host outside Herdr (CON-225) is no Herdr agent;
+	// the name stays the Mate's identity in mate.meta.
 	Agent string `json:"agent"`
 	// Harness is the harness kind whose HeadlessTurns runs each message.
 	Harness   string   `json:"harness"`
