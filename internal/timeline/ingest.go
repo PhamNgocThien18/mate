@@ -24,7 +24,7 @@ import (
 //
 // The composer word is crewstate.Composer, the spelling the console and
 // `mate state` already share, so this package needs neither internal/send
-// nor the Herdr adapter it pulls in.
+// nor the runtime port it pulls in.
 type HealthReading struct {
 	Project      string
 	Crew         string // empty for the Mate

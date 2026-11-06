@@ -17,6 +17,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -58,10 +59,10 @@ func mergeLiveWorkspace(t *testing.T, session string) *store.Workspace {
 // mergeLiveDeps is the real Herdr adapter, wired the way every other live
 // test in this package wires it: the lab session is the runner's, so this
 // must never start a server of its own.
-func mergeLiveDeps(t *testing.T, session, configHome string) (spawn.Deps, *runtime.Herdr) {
+func mergeLiveDeps(t *testing.T, session, configHome string) (spawn.Deps, *herdr.Herdr) {
 	t.Helper()
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")
@@ -90,7 +91,7 @@ const shipBrief = "Append the single line `merged by mate` to README.md in this 
 
 // crewPaneTail reads a crew's pane so a timeout says what the agent was
 // doing, not only that nothing arrived.
-func crewPaneTail(ctx context.Context, rt *runtime.Herdr, session, configHome, agent, crew string) func() string {
+func crewPaneTail(ctx context.Context, rt *herdr.Herdr, session, configHome, agent, crew string) func() string {
 	handle := runtime.AgentHandle{
 		Session: runtime.SessionHandle{Name: session, ConfigHome: configHome},
 		Name:    agent, RawID: crew, Kind: codex.KindCodex,

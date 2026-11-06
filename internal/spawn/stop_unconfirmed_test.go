@@ -9,6 +9,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 )
 
@@ -119,7 +120,7 @@ func TestStopMateThroughHerdrWhenTheSessionIsNotRunning(t *testing.T) {
 				t.Errorf("StopMate ran %v; nothing beyond `session list` can answer here", spec.Args)
 				return process.Result{}, errors.New("unexpected herdr command")
 			}}
-			deps.Runtime = runtime.NewHerdr(runner)
+			deps.Runtime = herdr.NewHerdr(runner)
 
 			res, err := spawn.StopMate(context.Background(), w, deps, "shop")
 			if tc.wantErr {

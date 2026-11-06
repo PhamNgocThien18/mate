@@ -90,7 +90,7 @@ type ReadAdapter interface {
 // ReadAdapter remains the short form for existing callers.
 type ReadOnlyAdapter = ReadAdapter
 
-var _ ReadAdapter = (*Herdr)(nil)
+var _ Adapter = (*Fake)(nil)
 var _ ReadAdapter = (*Fake)(nil)
 
 // SessionSpec names a Herdr session for one app Workspace. Name, when empty,
@@ -328,7 +328,7 @@ func (s agentStartSpec) Validate() error {
 	paneCwd := filepath.Clean(strings.TrimSpace(s.tab.Cwd))
 	// Herdr reports the pane cwd with symlinks resolved (macOS /var -> /private/var);
 	// the launch spec may hold the unresolved spelling. Same directory is what matters.
-	if !samePath(launchCwd, paneCwd) {
+	if !SamePath(launchCwd, paneCwd) {
 		return observability.NewError(
 			observability.CodeUsage,
 			fmt.Sprintf("launch spec was validated at cwd %s but the pane runs in %s; required context would not be discovered", launchCwd, paneCwd),
@@ -436,9 +436,9 @@ func StopGraceful(exit harness.GracefulStopper) Stop {
 // Mode is graceful or force; empty for the zero Stop.
 func (s Stop) Mode() StopMode { return s.mode }
 
-// exitPrompt is the graceful stop's line and the keys pressed before it, or
+// ExitPrompt is the graceful stop's line and the keys pressed before it, or
 // an error when the Stop does not carry a line.
-func (s Stop) exitPrompt() (clear []string, line string, err error) {
+func (s Stop) ExitPrompt() (clear []string, line string, err error) {
 	if s.exit == nil || strings.TrimSpace(s.exit.ExitPrompt()) == "" {
 		return nil, "", observability.NewError(observability.CodeUsage, "a graceful stop needs the harness's exit prompt")
 	}
@@ -590,10 +590,10 @@ func SessionNameForWorkspace(id WorkspaceID) string {
 	return name
 }
 
-// sessionAddress fills Name and socket path without reserving the name or
+// SessionAddress fills Name and socket path without reserving the name or
 // writing an owner marker. LookupSession uses this so a diagnostic cannot
 // provision. The default session is never selected as a workspace mapping.
-func sessionAddress(spec SessionSpec) (SessionHandle, error) {
+func SessionAddress(spec SessionSpec) (SessionHandle, error) {
 	name := strings.TrimSpace(spec.Name)
 	if name == "default" {
 		return SessionHandle{}, fmt.Errorf("session: refusing to bind an app Workspace to the Herdr default session")

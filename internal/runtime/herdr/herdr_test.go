@@ -1,4 +1,4 @@
-package runtime_test
+package herdr_test
 
 import (
 	"context"
@@ -16,11 +16,12 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 )
 
 func TestWithSessionPutsFlagBeforeTerminator(t *testing.T) {
 	t.Parallel()
-	got := runtime.WithSession("lab-s", []string{"agent", "start", "n", "--kind", "claude", "--pane", "w1:p1", "--", "--bare"})
+	got := herdr.WithSession("lab-s", []string{"agent", "start", "n", "--kind", "claude", "--pane", "w1:p1", "--", "--bare"})
 	if !runtime.SessionBeforeTerminator(got) {
 		t.Fatalf("session not before --: %#v", got)
 	}
@@ -59,7 +60,7 @@ func TestHerdrEnsureSessionBindsRunningNamedSession(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	cfg := t.TempDir()
 	h, err := rt.EnsureSession(ctx, runtime.SessionSpec{
 		WorkspaceID: id,
@@ -102,7 +103,7 @@ func TestHerdrEnsureSessionStartsWhenNotRunning(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.StartServer = func(_ context.Context, session string) error {
 		if session != wantName {
 			t.Fatalf("started %q", session)
@@ -137,7 +138,7 @@ func TestHerdrEnsureSessionRefusesForeignOwnerMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt := runtime.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
+	rt := herdr.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
 		if argvHas(spec.Args, "session", "list") {
 			return process.Result{Stdout: sessionListRunning("shared-lab")}, nil
 		}
@@ -181,7 +182,7 @@ func TestHerdrWaitRunningReturnsLastStatusError(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.StartServer = func(context.Context, string) error { return nil }
 	_, err = rt.EnsureSession(ctx, runtime.SessionSpec{
 		WorkspaceID: id,
@@ -241,7 +242,7 @@ func TestHerdrEnsureDoesNotCloseWhenAgentListFails(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	spec := runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "default",
@@ -272,7 +273,7 @@ func TestHerdrLookupSessionDoesNotStartServer(t *testing.T) {
 		t.Fatalf("lookup must not run %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.StartServer = func(context.Context, string) error {
 		started = true
 		return nil
@@ -315,7 +316,7 @@ func TestHerdrLookupSessionBindsWhenRunning(t *testing.T) {
 		t.Fatalf("lookup must not run %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.StartServer = func(context.Context, string) error {
 		started = true
 		return nil
@@ -338,7 +339,7 @@ func TestHerdrLookupSessionBindsWhenRunning(t *testing.T) {
 
 func TestHerdrEnsureSessionRefusesDefault(t *testing.T) {
 	t.Parallel()
-	rt := runtime.NewHerdr(&process.FakeRunner{})
+	rt := herdr.NewHerdr(&process.FakeRunner{})
 	_, err := rt.EnsureSession(context.Background(), runtime.SessionSpec{
 		Name:       "default",
 		ConfigHome: "/tmp/cfg",
@@ -382,7 +383,7 @@ func TestHerdrEnsureProjectWorkspaceCreatesWhenEmpty(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "mate-ws_test1", ConfigHome: "/tmp/cfg"},
 		Label:   "Project A",
@@ -434,7 +435,7 @@ func TestHerdrCreateAgentTabRenamesWorkspaceRootTab(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	cwd := "/private/tmp/gomate-g4-s3-cwd.R5Unrd"
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
@@ -488,7 +489,7 @@ func TestHerdrEnsureProjectWorkspaceIgnoresFocusedCrewTab(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Dup",
@@ -531,7 +532,7 @@ func TestHerdrEnsureProjectWorkspaceMatchesLabelAndCwd(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Duplicate",
@@ -590,7 +591,7 @@ func TestHerdrLookupSameCwdDuplicatesPicksLowestAndEnsureClosesEmpty(t *testing.
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	spec := runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "default",
@@ -664,7 +665,7 @@ func TestHerdrEnsureDoesNotCloseOccupiedExtra(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	spec := runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "default",
@@ -724,7 +725,7 @@ func TestHerdrCreateAgentTabDoesNotReuseDeadMatePane(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{
 			Session:     runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
@@ -782,7 +783,7 @@ func TestHerdrCreateAgentTabCreatesWhenRootPaneIsDead(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{
 			Session:     runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
@@ -829,7 +830,7 @@ func TestHerdrEnsureProjectWorkspaceReuseRefusesEnv(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	_, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Duplicate",
@@ -865,7 +866,7 @@ func TestHerdrEnsureProjectWorkspaceDoesNotReuseMismatchedCwd(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", spec.Args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Project A",
@@ -910,7 +911,7 @@ func TestHerdrCreateAgentTabPassesAllowlistedEnv(t *testing.T) {
 		}
 		return process.Result{Stdout: tabCreatedJSON(cwd)}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{Session: runtime.SessionHandle{Name: "s"}, WorkspaceID: "w1"},
 		Label:     "Mate",
@@ -1335,7 +1336,7 @@ func TestHerdrStartMissingPaneIsUsage(t *testing.T) {
 
 func TestHerdrStartRefusesNilSpec(t *testing.T) {
 	t.Parallel()
-	rt := runtime.NewHerdr(&process.FakeRunner{})
+	rt := herdr.NewHerdr(&process.FakeRunner{})
 	_, err := rt.StartAgent(context.Background(), nil)
 	if err == nil {
 		t.Fatal("nil spec must not start")
@@ -1406,7 +1407,7 @@ func TestHerdrWaitAgentAlwaysEmitsTimeout(t *testing.T) {
 
 func TestHerdrEnsureProjectWorkspaceRefusesUnknownEnv(t *testing.T) {
 	t.Parallel()
-	rt := runtime.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
+	rt := herdr.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
 		t.Fatalf("unknown env must not reach argv: %#v", spec.Args)
 		return process.Result{}, nil
 	}})
@@ -1447,7 +1448,7 @@ func TestHerdrEnsureProjectWorkspacePassesAllowlistedEnv(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Project A",
@@ -1501,7 +1502,7 @@ func TestHerdrCreateAgentTabWithEnvCreatesNewTabInsteadOfRenamingRoot(t *testing
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Project A",
@@ -1553,7 +1554,7 @@ func TestHerdrCreateAgentTabRenameRefusesEnv(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
 		Label:   "Project A",
@@ -1573,7 +1574,7 @@ func TestHerdrCreateAgentTabRenameRefusesEnv(t *testing.T) {
 
 func TestHerdrCreateAgentTabRefusesUnknownEnv(t *testing.T) {
 	t.Parallel()
-	_, err := runtime.NewHerdr(&process.FakeRunner{}).CreateAgentTab(context.Background(), runtime.TabSpec{
+	_, err := herdr.NewHerdr(&process.FakeRunner{}).CreateAgentTab(context.Background(), runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{Session: runtime.SessionHandle{Name: "s"}, WorkspaceID: "w1"},
 		Label:     "Crew",
 		Cwd:       t.TempDir(),
@@ -1586,7 +1587,7 @@ func TestHerdrCreateAgentTabRefusesUnknownEnv(t *testing.T) {
 
 func TestHerdrListAgentsUsesAgentListNotFocus(t *testing.T) {
 	t.Parallel()
-	rt := runtime.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
+	rt := herdr.NewHerdr(&process.FakeRunner{Handler: func(_ context.Context, spec process.Spec) (process.Result, error) {
 		if argvHas(spec.Args, "agent", "list") {
 			if !hasSessionBeforeTerminator(spec.Args) {
 				t.Fatalf("list missing --session in option region: %#v", spec.Args)
@@ -1733,11 +1734,11 @@ func reserveOn(t *testing.T, names runtime.LiveNameRegistry, session runtime.Ses
 	return res
 }
 
-func bootHerdr(t *testing.T, handler func(context.Context, process.Spec) (process.Result, error)) (*runtime.Herdr, harness.LaunchSpec, runtime.SessionHandle, runtime.TabHandle) {
+func bootHerdr(t *testing.T, handler func(context.Context, process.Spec) (process.Result, error)) (*herdr.Herdr, harness.LaunchSpec, runtime.SessionHandle, runtime.TabHandle) {
 	return bootHerdrWithOptions(t, false, handler)
 }
 
-func bootHerdrWithOptions(t *testing.T, observePaneEnvClear bool, handler func(context.Context, process.Spec) (process.Result, error)) (*runtime.Herdr, harness.LaunchSpec, runtime.SessionHandle, runtime.TabHandle) {
+func bootHerdrWithOptions(t *testing.T, observePaneEnvClear bool, handler func(context.Context, process.Spec) (process.Result, error)) (*herdr.Herdr, harness.LaunchSpec, runtime.SessionHandle, runtime.TabHandle) {
 	t.Helper()
 	cwd := t.TempDir()
 	path := filepath.Join(cwd, "context.md")
@@ -1756,7 +1757,7 @@ func bootHerdrWithOptions(t *testing.T, observePaneEnvClear bool, handler func(c
 		}
 		return handler(ctx, spec)
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.Names = runtime.NewMemoryNameRegistry()
 	session := runtime.SessionHandle{Name: "mate-ws_test1", ConfigHome: "/tmp/cfg", SocketPath: "/tmp/cfg/herdr/sessions/mate-ws_test1/herdr.sock"}
 	tab := runtime.TabHandle{
@@ -1882,7 +1883,7 @@ func TestHerdrEnsureProjectWorkspaceDoesNotGateOnAPaneTitle(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.PaneShellBudget = 10 * time.Millisecond
 	ws, err := rt.EnsureProjectWorkspace(ctx, runtime.WorkspaceSpec{
 		Session: runtime.SessionHandle{Name: "mate-ws_test1", ConfigHome: "/tmp/cfg"},
@@ -1933,7 +1934,7 @@ func TestHerdrCreateAgentTabReusesRootTabWithNoPaneTitle(t *testing.T) {
 			return process.Result{}, nil
 		}
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	rt.PaneShellBudget = 10 * time.Millisecond
 	ws := runtime.WorkspaceHandle{
 		Session:     runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"},
@@ -1999,7 +2000,7 @@ func TestHerdrCreateAgentTabRefusesMismatchedCwdFromCreate(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"}, WorkspaceID: "w1"},
 		Label:     "Mate",
@@ -2050,7 +2051,7 @@ func TestHerdrCreateAgentTabRefusesEmptyCwdFromCreate(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"}, WorkspaceID: "w1"},
 		Label:     "Mate",
@@ -2105,7 +2106,7 @@ func TestHerdrCreateAgentTabRefusesMismatchedCwdOnLabelReuse(t *testing.T) {
 		t.Fatalf("unexpected argv %#v", args)
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	tab, err := rt.CreateAgentTab(ctx, runtime.TabSpec{
 		Workspace: runtime.WorkspaceHandle{Session: runtime.SessionHandle{Name: "s", ConfigHome: "/tmp/cfg"}, WorkspaceID: "w1"},
 		Label:     "crew_001",
@@ -2248,4 +2249,13 @@ func TestHerdrStartPaneBusyExhaustedSurvivesAFailedInspection(t *testing.T) {
 	if !strings.Contains(coded.Message, tab.PaneID) || !strings.Contains(coded.Message, "retrying") {
 		t.Fatalf("message = %q", coded.Message)
 	}
+}
+
+func mustStartSpec(t *testing.T, tab runtime.TabHandle, res runtime.NameReservation, launch harness.LaunchSpec) runtime.AgentStartSpec {
+	t.Helper()
+	spec, err := runtime.NewAgentStartSpec(tab, res, launch, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec
 }

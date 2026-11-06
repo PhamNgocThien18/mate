@@ -20,6 +20,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 )
 
@@ -36,7 +37,7 @@ func TestLiveCodexDelayedPasteAndRecovery(t *testing.T) {
 	defer cancel()
 	cli := func(args ...string) []byte {
 		t.Helper()
-		out, err := exec.CommandContext(ctx, "herdr", runtime.WithSession(session, args)...).CombinedOutput()
+		out, err := exec.CommandContext(ctx, "herdr", herdr.WithSession(session, args)...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("herdr %v: %v\n%s", args, err, out)
 		}
@@ -100,7 +101,7 @@ func TestLiveCodexDelayedPasteAndRecovery(t *testing.T) {
 	}
 	name := fmt.Sprintf("paste-probe-%d", time.Now().UnixNano())
 	for attempt := 0; ; attempt++ {
-		args := runtime.WithSession(session, []string{"agent", "start", name, "--kind", "codex", "--pane", pane, "--timeout", "30000"})
+		args := herdr.WithSession(session, []string{"agent", "start", name, "--kind", "codex", "--pane", pane, "--timeout", "30000"})
 		out, err := exec.CommandContext(ctx, "herdr", args...).CombinedOutput()
 		if err == nil {
 			break
@@ -111,7 +112,7 @@ func TestLiveCodexDelayedPasteAndRecovery(t *testing.T) {
 		time.Sleep(100 * time.Millisecond) // wait for the newly created shell
 	}
 	h := runtime.AgentHandle{Session: runtime.SessionHandle{Name: session}, Name: name, Kind: codex.KindCodex, Tab: runtime.TabHandle{PaneID: pane}}
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	read := func() string {
 		t.Helper()
 		s, err := rt.ReadAgentStyled(ctx, h, harness.ReadRecentUnwrapped, 80)

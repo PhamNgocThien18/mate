@@ -15,6 +15,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -29,7 +30,7 @@ import (
 // live StartMate needs against the runner's provisioned Herdr session.
 type liveLab struct {
 	w          *store.Workspace
-	rt         *runtime.Herdr
+	rt         *herdr.Herdr
 	deps       spawn.Deps
 	session    string
 	configHome string
@@ -62,7 +63,7 @@ func newLiveLab(t *testing.T) liveLab {
 		t.Fatalf("AddProject: %v", err)
 	}
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

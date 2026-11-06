@@ -12,6 +12,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/screen"
 	"github.com/nguyenngocanh94/mate/internal/screen/fixture"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -109,7 +110,7 @@ const (
 	// after this timeout and the settle answers the dialog
 	// (docs/plans/pane-state-jev-2026-10-13.md section 5). An agent Herdr
 	// has not listed yet by then is polled for up to 50 s more
-	// (runtime.Herdr's adoption window), so a slow harness keeps the 60 s
+	// (herdr.Herdr's adoption window), so a slow harness keeps the 60 s
 	// a start had before. Herdr accepts > 3000 and <= 300000 ms.
 	DefaultStartTimeout = 10 * time.Second
 )
@@ -202,7 +203,7 @@ func LiveDeps(harnesses harness.Registry, opts ...LiveOption) Deps {
 		opt(&o)
 	}
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Binary = o.herdrBinary
 	rt.Names = names
 	return Deps{Runtime: rt, Harnesses: harnesses, Names: names, DefaultMode: ModeHeadless, Cleaner: teardown.Live()}

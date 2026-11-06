@@ -21,6 +21,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/harness/pi"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -347,7 +348,7 @@ func piLabAuth(t *testing.T) {
 }
 
 type mcpCaptureRuntime struct {
-	*runtime.Herdr
+	*herdr.Herdr
 	last string
 }
 

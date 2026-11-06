@@ -139,12 +139,12 @@ func (f *FakeSessionStream) Open(ctx context.Context, ref AgentSessionRef, size 
 // its peer has closed it.
 func (f *FakeSessionChannel) Read(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, sessionStreamReadContextError(err)
+		return nil, SessionStreamReadContextError(err)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
-		return nil, sessionChannelClosedError("read")
+		return nil, SessionChannelClosedError("read")
 	}
 	if len(f.readErrors) > 0 {
 		err := f.readErrors[0]
@@ -171,7 +171,7 @@ func (f *FakeSessionChannel) Write(ctx context.Context, input []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
-		return sessionChannelClosedError("write")
+		return SessionChannelClosedError("write")
 	}
 	if err := MapSessionStreamError("write", f.writeErr); err != nil {
 		return err
@@ -198,7 +198,7 @@ func (f *FakeSessionChannel) Resize(ctx context.Context, size TerminalSize) erro
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
-		return sessionChannelClosedError("resize")
+		return SessionChannelClosedError("resize")
 	}
 	if err := MapSessionStreamError("resize", f.resizeErr); err != nil {
 		return err

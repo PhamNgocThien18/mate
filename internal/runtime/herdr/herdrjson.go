@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/observability"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
 )
 
 // cliEnvelope is Herdr 0.8.2's machine-readable CLI wrapper for workspace,
@@ -67,7 +68,7 @@ type createdTab struct {
 type agentInfo struct {
 	Name          string
 	Kind          string
-	Status        AgentStatus
+	Status        runtime.AgentStatus
 	LaunchPending bool
 	PaneID        string
 	TabID         string
@@ -122,7 +123,7 @@ func parseResult(data []byte, dest any) error {
 		return err
 	}
 	if env.Error != nil {
-		return NewHerdrError(env.Error.Code, env.Error.Message)
+		return runtime.NewHerdrError(env.Error.Code, env.Error.Message)
 	}
 	if len(env.Result) == 0 {
 		return fmt.Errorf("herdr json: missing result")
@@ -407,12 +408,12 @@ func parsePaneProcessInfo(data []byte) (paneProcessInfo, error) {
 	return out, nil
 }
 
-func parseAgentStatus(s string) AgentStatus {
-	switch AgentStatus(s) {
-	case AgentIdle, AgentWorking, AgentBlocked, AgentDone:
-		return AgentStatus(s)
+func parseAgentStatus(s string) runtime.AgentStatus {
+	switch runtime.AgentStatus(s) {
+	case runtime.AgentIdle, runtime.AgentWorking, runtime.AgentBlocked, runtime.AgentDone:
+		return runtime.AgentStatus(s)
 	default:
-		return AgentUnknown
+		return runtime.AgentUnknown
 	}
 }
 
@@ -475,10 +476,10 @@ func mapProcessFailure(exit int, stdout, stderr []byte) error {
 		return nil
 	}
 	if errObj, ok := decodeCLIError(stderr); ok {
-		return NewHerdrError(errObj.Code, errObj.Message)
+		return runtime.NewHerdrError(errObj.Code, errObj.Message)
 	}
 	if errObj, ok := decodeCLIError(stdout); ok {
-		return NewHerdrError(errObj.Code, errObj.Message)
+		return runtime.NewHerdrError(errObj.Code, errObj.Message)
 	}
 	msg := strings.TrimSpace(string(stderr))
 	if msg == "" {

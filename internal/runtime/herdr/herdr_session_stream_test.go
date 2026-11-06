@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +20,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/process"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"golang.org/x/sys/unix"
 )
 
@@ -41,7 +42,7 @@ func TestLiveHerdrSessionStreamSignalIsolation(t *testing.T) {
 		t.Fatal("refusing to run the live stream test against a shared Herdr session")
 	}
 	h := NewHerdr(process.ExecRunner{})
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: session, AgentName: agent}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: session, AgentName: agent}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestLiveHerdrSessionStreamRawOutputAndResize(t *testing.T) {
 		t.Fatal("refusing to run the live stream test against a shared Herdr session")
 	}
 	h := NewHerdr(process.ExecRunner{})
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: session, AgentName: agent}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: session, AgentName: agent}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestLiveHerdrSessionStreamRawOutputAndResize(t *testing.T) {
 	if !raw {
 		t.Fatal("live agent attach did not return ANSI bytes")
 	}
-	resized := TerminalSize{Cols: 120, Rows: 36}
+	resized := runtime.TerminalSize{Cols: 120, Rows: 36}
 	if err := channel.Resize(ctx, resized); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestLiveHerdrSessionStreamAgentDisappearance(t *testing.T) {
 		t.Fatal("set MATE_HERDR_LIVE_PANE to the live agent pane")
 	}
 	h := NewHerdr(process.ExecRunner{})
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: session, AgentName: agent}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: session, AgentName: agent}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +137,7 @@ func TestLiveHerdrSessionStreamAgentDisappearance(t *testing.T) {
 	}
 	assertSessionStreamCode(t, streamErr, observability.CodeNotFound)
 	var coded *observability.Error
-	if !errors.As(streamErr, &coded) || coded.Details["herdr_code"] != HerdrAgentNotFound ||
+	if !errors.As(streamErr, &coded) || coded.Details["herdr_code"] != runtime.HerdrAgentNotFound ||
 		!strings.Contains(coded.Message, "herdr: server shut down: terminal attach") ||
 		!strings.Contains(coded.Message, "not found") {
 		t.Fatalf("disappearance diagnosis = %v, want the live terminal-not-found string", streamErr)
@@ -147,7 +148,7 @@ func TestLiveHerdrSessionStreamHerdrRestart(t *testing.T) {
 	requireLive(t)
 	session, agent, helper := liveSessionStreamConfig(t)
 	h := NewHerdr(process.ExecRunner{})
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: session, AgentName: agent}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: session, AgentName: agent}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,14 +178,14 @@ func TestLiveHerdrSessionStreamHerdrRestart(t *testing.T) {
 	// "lost connection to server: server closed connection" (observed when the
 	// connection drops mid-shutdown). Both are the same shutdown class, so pin
 	// the class and the herdr_code, not one string.
-	if !errors.As(streamErr, &coded) || coded.Details["herdr_code"] != HerdrServerNotRunning ||
+	if !errors.As(streamErr, &coded) || coded.Details["herdr_code"] != runtime.HerdrServerNotRunning ||
 		(!strings.Contains(coded.Message, "server is shutting down") &&
 			!strings.Contains(coded.Message, "lost connection to server: server closed connection")) {
 		t.Fatalf("restart diagnosis = %v, want a live Herdr server-shutdown string", streamErr)
 	}
 }
 
-func drainLiveSessionStreamToQuiet(t *testing.T, channel SessionChannel) int {
+func drainLiveSessionStreamToQuiet(t *testing.T, channel runtime.SessionChannel) int {
 	t.Helper()
 	var drained int
 	for {
@@ -253,10 +254,10 @@ func TestHerdrSessionStreamResolvesBeforeStartingPTY(t *testing.T) {
 	h := NewHerdr(runner)
 	h.Binary = filepath.Join(t.TempDir(), "must-not-start")
 
-	channel, err := h.Open(context.Background(), AgentSessionRef{
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{
 		HerdrSession: "stream-test",
 		AgentName:    "stream-agent",
-	}, TerminalSize{Cols: 80, Rows: 24})
+	}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if channel != nil {
 		t.Fatal("unresolved agent returned a channel")
 	}
@@ -270,8 +271,8 @@ func TestHerdrSessionStreamForwardsRawBytesResizesAndReopens(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ref := AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}
-	size := TerminalSize{Cols: 80, Rows: 24}
+	ref := runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}
+	size := runtime.TerminalSize{Cols: 80, Rows: 24}
 	channel, err := h.Open(ctx, ref, size)
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +296,7 @@ func TestHerdrSessionStreamForwardsRawBytesResizesAndReopens(t *testing.T) {
 		}
 	}
 
-	resized := TerminalSize{Cols: 120, Rows: 36}
+	resized := runtime.TerminalSize{Cols: 120, Rows: 36}
 	if err := channel.Resize(ctx, resized); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +333,7 @@ func TestHerdrSessionStreamForwardsRawBytesResizesAndReopens(t *testing.T) {
 func TestHerdrSessionStreamRawKeyFixture(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "keys")
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +369,7 @@ func TestHerdrSessionStreamRawKeyFixture(t *testing.T) {
 func TestHerdrSessionStreamReadCancellationDoesNotLatchDisappearance(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "delayed-disappearance")
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +409,7 @@ func TestHerdrSessionStreamReadCancellationDoesNotLatchDisappearance(t *testing.
 func TestHerdrSessionStreamIsRawWhenOpenReturns(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "raw-at-open")
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +439,7 @@ func TestHerdrSessionStreamIsRawWhenOpenReturns(t *testing.T) {
 func TestHerdrSessionStreamReadDeadlineDoesNotCloseChannel(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "keys")
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,10 +468,10 @@ func TestHerdrSessionStreamReadDeadlineDoesNotCloseChannel(t *testing.T) {
 func TestHerdrSessionStreamCloseReapsChildAndDoesNotLeakResources(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "stubborn")
-	ref := AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}
+	ref := runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}
 	beforeFDs := sessionStreamFDCount(t)
-	beforeGoroutines := runtime.NumGoroutine()
-	channel, err := h.Open(context.Background(), ref, TerminalSize{Cols: 80, Rows: 24})
+	beforeGoroutines := goruntime.NumGoroutine()
+	channel, err := h.Open(context.Background(), ref, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,18 +500,18 @@ func TestHerdrSessionStreamCloseReapsChildAndDoesNotLeakResources(t *testing.T) 
 	}
 
 	deadline = time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() > beforeGoroutines || sessionStreamFDCount(t) > beforeFDs {
+	for goruntime.NumGoroutine() > beforeGoroutines || sessionStreamFDCount(t) > beforeFDs {
 		if time.Now().After(deadline) {
-			t.Fatalf("resources did not converge after Close: goroutines=%d (before %d), fds=%d (before %d)", runtime.NumGoroutine(), beforeGoroutines, sessionStreamFDCount(t), beforeFDs)
+			t.Fatalf("resources did not converge after Close: goroutines=%d (before %d), fds=%d (before %d)", goruntime.NumGoroutine(), beforeGoroutines, sessionStreamFDCount(t), beforeFDs)
 		}
-		runtime.Gosched()
+		goruntime.Gosched()
 	}
 }
 
 func TestHerdrSessionStreamCancelledCloseStillReapsChild(t *testing.T) {
 	h := newTestSessionHerdr(t)
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "stubborn")
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +531,7 @@ func TestHerdrSessionStreamCancelledCloseStillReapsChild(t *testing.T) {
 
 func TestHerdrSessionStreamResizeAndCloseAreRaceFree(t *testing.T) {
 	h := newTestSessionHerdr(t)
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +541,7 @@ func TestHerdrSessionStreamResizeAndCloseAreRaceFree(t *testing.T) {
 		go func() {
 			defer resize.Done()
 			for j := 0; j < 1000; j++ {
-				_ = channel.Resize(context.Background(), TerminalSize{Cols: 80 + j%2, Rows: 24 + j%2})
+				_ = channel.Resize(context.Background(), runtime.TerminalSize{Cols: 80 + j%2, Rows: 24 + j%2})
 			}
 		}()
 	}
@@ -588,7 +589,7 @@ func TestHerdrSessionStreamMapsAttachFailureTaxonomy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newTestSessionHerdr(t)
 			t.Setenv(sessionStreamHelperEnv+"_MODE", test.mode)
-			channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+			channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -607,7 +608,7 @@ func TestHerdrSessionStreamMapsAttachFailureTaxonomy(t *testing.T) {
 func TestHerdrSessionStreamEndErrorWaitsForDelayedStderr(t *testing.T) {
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "delayed-stderr")
 	h := newTestSessionHerdr(t)
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,7 +631,7 @@ func TestHerdrSessionStreamEndErrorWaitsForDelayedStderr(t *testing.T) {
 func TestHerdrSessionStreamDrainedAgentDisappearance(t *testing.T) {
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "disappearance")
 	h := newTestSessionHerdr(t)
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +655,7 @@ func TestHerdrSessionStreamDrainedAgentDisappearance(t *testing.T) {
 func TestHerdrSessionStreamDrainedHerdrRestart(t *testing.T) {
 	t.Setenv(sessionStreamHelperEnv+"_MODE", "restart")
 	h := newTestSessionHerdr(t)
-	channel, err := h.Open(context.Background(), AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, TerminalSize{Cols: 80, Rows: 24})
+	channel, err := h.Open(context.Background(), runtime.AgentSessionRef{HerdrSession: "stream-test", AgentName: "stream-agent"}, runtime.TerminalSize{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,7 +694,7 @@ func agentGetEnvelope() string {
 	return `{"id":"agent:get","result":{"agent":{"agent":"fixture","agent_status":"idle","name":"stream-agent","pane_id":"w1:p1","tab_id":"w1:t1","terminal_id":"term_test","workspace_id":"w1","cwd":"/tmp"}}}`
 }
 
-func readSessionStream(t *testing.T, channel SessionChannel) []byte {
+func readSessionStream(t *testing.T, channel runtime.SessionChannel) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -704,7 +705,7 @@ func readSessionStream(t *testing.T, channel SessionChannel) []byte {
 	return data
 }
 
-func readSessionSuffix(t *testing.T, channel SessionChannel, suffix string) string {
+func readSessionSuffix(t *testing.T, channel runtime.SessionChannel, suffix string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -721,7 +722,7 @@ func readSessionSuffix(t *testing.T, channel SessionChannel, suffix string) stri
 	}
 }
 
-func readSessionContains(t *testing.T, channel SessionChannel, needle string) string {
+func readSessionContains(t *testing.T, channel runtime.SessionChannel, needle string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

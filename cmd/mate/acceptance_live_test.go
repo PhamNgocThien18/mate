@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -76,7 +77,7 @@ func TestLiveAcceptanceMateRunsATask(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

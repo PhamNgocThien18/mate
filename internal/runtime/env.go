@@ -67,24 +67,3 @@ func runtimeEnv(src []harness.EnvVar) []EnvVar {
 	}
 	return vars
 }
-
-// exportAssignments renders vars as the words of one POSIX `export` typed
-// into a pane's shell: KEY='value', with a single quote in the value closed,
-// escaped and reopened, so a path with spaces or quotes arrives whole.
-// AllowlistedEnv has already refused keys and values that could not be one
-// assignment.
-func exportAssignments(vars []EnvVar) []string {
-	out := make([]string, 0, len(vars))
-	for _, v := range vars {
-		out = append(out, v.Key+"='"+strings.ReplaceAll(v.Value, "'", `'\''`)+"'")
-	}
-	return out
-}
-
-func envFlags(vars []EnvVar) []string {
-	out := make([]string, 0, len(vars)*2)
-	for _, v := range vars {
-		out = append(out, "--env", v.Key+"="+v.Value)
-	}
-	return out
-}
