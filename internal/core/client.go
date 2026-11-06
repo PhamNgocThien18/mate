@@ -86,6 +86,7 @@ func (e *Engine) Status() coreapi.CoreStatus {
 	} else if line != "" {
 		s.Notices = append(s.Notices, line)
 	}
+	s.Notices = append(s.Notices, hostNotices(e.hosts.read())...)
 	s.Notices = append(s.Notices, e.o.Notices...)
 	return s
 }

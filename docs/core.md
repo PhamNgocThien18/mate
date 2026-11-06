@@ -79,6 +79,34 @@ new core, which writes its own record over the old one.
 | `core.sock` | The core's unix socket (0600): Office/City's routes and the clients' API (`/api/core`, `/api/snapshot`, `/api/act`, CON-212). Removed when the core stops. |
 | `core.log` | The output of every core: `mate core start` sends the core's output there, and a core in the foreground (`mate`, `mate core run`) appends what it prints to the terminal. Before it opens the log, either moves a log larger than 10 MB to `core.log.1`, keeping that one old log. The log of a core that is running is never rotated. |
 
+## The headless Mates' hosts
+
+A headless Mate's host is a process of its own (CON-225), not the core's:
+stopping or restarting the core sends it nothing, and a turn in it runs on.
+A core that starts finds each host alive on its socket and leaves it be.
+
+While it runs, the core watches every host that `mate.meta` records
+(`pid`, no pane) every 5 seconds (CON-226). A host found dead twice in a row,
+under the same `pid`, is started again on its session through recovery,
+under `.mate/recover.lock` and the action lock of its Project, and
+`core.log` gets a line:
+
+```
+mate core: Mate shop: host pid 4242 died; started again (1 of 3 in 10m), resumed its session
+```
+
+| Case | What the core does |
+| -- | -- |
+| The captain stopped the Mate | Nothing: the stop drops `agent`, `pid` and `socket` from `mate.meta`. |
+| The host holds its host lock but does not answer | Nothing: it is alive and wedged; stop it. |
+| A UI is stopping, starting or restarting that Mate | Nothing this time: that action decides. |
+| A Mate in a Herdr pane (Codex, pi, `mate.mode: pane`) | Nothing: Herdr reports it. |
+| A Manual project | The same as an Auto one: starting the host types nothing into the Mate. |
+| A fourth death within 10 minutes | Starts nothing more. A notification, unless `MATE_NOTIFICATIONS=off`, and the notice `Mate shop: host died 4 times in 10m; not restarting` on the console's status line, on the Mate's row and in `mate core status`. A start by hand gives a new count. |
+
+The count lives in the core's memory: a restarted core counts from zero, and
+its recovery brings back a host that died meanwhile.
+
 ## After installing a new mate
 
 A running core keeps running the binary it started from. `mate core status`

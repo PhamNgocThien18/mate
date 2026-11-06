@@ -61,21 +61,30 @@ func (n *notifyLoop) Start(ctx context.Context) error {
 	return nil
 }
 
+// notificationsOn is `.mate/.env`'s MATE_NOTIFICATIONS: on unless it says
+// off.
+func notificationsOn(ws *store.Workspace) (bool, error) {
+	env, err := ws.LoadEnv()
+	if err != nil {
+		return false, err
+	}
+	switch value := strings.ToLower(strings.TrimSpace(env["MATE_NOTIFICATIONS"])); value {
+	case "off", "false", "0", "no":
+		return false, nil
+	case "", "on", "true", "1", "yes":
+		return true, nil
+	default:
+		return false, fmt.Errorf("MATE_NOTIFICATIONS must be on or off")
+	}
+}
+
 func (n *notifyLoop) start(ctx context.Context) error {
 	ws, err := store.Open(n.root)
 	if err != nil {
 		return err
 	}
-	env, err := ws.LoadEnv()
-	if err != nil {
+	if on, err := notificationsOn(ws); err != nil || !on {
 		return err
-	}
-	switch value := strings.ToLower(strings.TrimSpace(env["MATE_NOTIFICATIONS"])); value {
-	case "off", "false", "0", "no":
-		return nil
-	case "", "on", "true", "1", "yes":
-	default:
-		return fmt.Errorf("MATE_NOTIFICATIONS must be on or off")
 	}
 	path, err := ws.Resolve(filepath.Join(ws.StateDir(), "notifications.json"))
 	if err != nil {

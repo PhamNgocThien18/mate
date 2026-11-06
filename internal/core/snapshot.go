@@ -189,6 +189,7 @@ func (e *Engine) assemble(ctx context.Context) (query.Snapshot, error) {
 		return snap, err
 	}
 	snap = withRecovery(snap, e.Recovery(), e.now())
+	snap = withHostWatch(snap, e.hosts.read())
 	if e.o.Watcher != nil {
 		snap = withCrewHealth(snap, e.o.Watcher.Snapshot())
 		snap = withRuntimeNotice(snap, e.o.Watcher)
