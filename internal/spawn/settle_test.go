@@ -85,31 +85,35 @@ func TestStartMateAnswersTheClaudeTrustDialog(t *testing.T) {
 }
 
 func TestStartMateAnswersTheCodexTrustDialog(t *testing.T) {
-	w := newWorkspace(t, "shop")
-	rt := runtime.NewFake()
-	deps := fakeDeps(t, rt)
-	dialog := screen(t, "codex-0.154.0-trust-dialog.txt")
-	ready := screen(t, "codex-0.154.0-ready.txt")
-	rt.NextStartupScreen = dialog
-	rt.OnSendKeys = func(handle runtime.AgentHandle, keys []string) {
-		if keys[0] == "enter" {
-			rt.SetReadOutput(handle, ready)
-		}
-	}
+	for _, fixtureName := range []string{"codex-0.154.0-trust-dialog.txt", "codex-0.156.1-trust-dialog.txt", "codex-0.167.0-trust-dialog.txt"} {
+		t.Run(fixtureName, func(t *testing.T) {
+			w := newWorkspace(t, "shop")
+			rt := runtime.NewFake()
+			deps := fakeDeps(t, rt)
+			dialog := screen(t, fixtureName)
+			ready := screen(t, "codex-0.154.0-ready.txt")
+			rt.NextStartupScreen = dialog
+			rt.OnSendKeys = func(handle runtime.AgentHandle, keys []string) {
+				if keys[0] == "enter" {
+					rt.SetReadOutput(handle, ready)
+				}
+			}
 
-	res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Harness: codex.KindCodex})
-	if err != nil {
-		t.Fatalf("StartMate: %v", err)
-	}
-	if !res.TrustDialog {
-		t.Fatal("the start must report that it answered the trust dialog")
-	}
-	var keys []string
-	for _, sent := range rt.SentKeys {
-		keys = append(keys, sent.Keys...)
-	}
-	if strings.Join(keys, ",") != "1,enter" {
-		t.Fatalf("presses = %v, want 1 then enter (codex opens with option 1 highlighted)", keys)
+			res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Harness: codex.KindCodex})
+			if err != nil {
+				t.Fatalf("StartMate: %v", err)
+			}
+			if !res.TrustDialog {
+				t.Fatal("the start must report that it answered the trust dialog")
+			}
+			var keys []string
+			for _, sent := range rt.SentKeys {
+				keys = append(keys, sent.Keys...)
+			}
+			if strings.Join(keys, ",") != "1,enter" {
+				t.Fatalf("presses = %v, want 1 then enter (codex opens with option 1 highlighted)", keys)
+			}
+		})
 	}
 }
 
