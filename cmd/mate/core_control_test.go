@@ -112,7 +112,7 @@ func fakeCoreMain() int {
 type fakeCores struct {
 	coreControl
 	mu     sync.Mutex
-	pids   []int
+	procs  []*os.Process
 	binary string
 }
 
@@ -129,14 +129,18 @@ func newFakeCores(t *testing.T, mode string) *fakeCores {
 			return err
 		}
 		f.mu.Lock()
-		f.pids = append(f.pids, cmd.Process.Pid)
+		f.procs = append(f.procs, cmd.Process)
 		f.mu.Unlock()
 		return nil
 	}
 	f.startWait, f.stopWait, f.killWait, f.poll = 10*time.Second, 5*time.Second, 5*time.Second, 20*time.Millisecond
+	// Killed through the *os.Process, which knows when start's Wait has
+	// reaped it: a raw pid could be another process's by then.
 	t.Cleanup(func() {
-		for _, pid := range f.started() {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, p := range f.procs {
+			_ = p.Kill()
 		}
 	})
 	return f
@@ -145,7 +149,11 @@ func newFakeCores(t *testing.T, mode string) *fakeCores {
 func (f *fakeCores) started() []int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]int(nil), f.pids...)
+	pids := make([]int, len(f.procs))
+	for i, p := range f.procs {
+		pids[i] = p.Pid
+	}
+	return pids
 }
 
 func (f *fakeCores) startOK(t *testing.T, ws *store.Workspace) (pid int, out string) {
@@ -456,8 +464,8 @@ func TestCoreCommandsBesideAConsoleEngine(t *testing.T) {
 	if err := f.stop(w, &out); err == nil || err.Error() != "mate core: the engine runs inside mate console (pid 4343); quit that console" {
 		t.Fatalf("stop = %v", err)
 	}
-	if st, err := f.statusOut(t, w); err != nil || !strings.Contains(st, "  owner    console\n") {
-		t.Fatalf("status = %v:\n%s", err, st)
+	if st, err := f.statusOut(t, w); err != nil || !strings.Contains(st, "  owner    console\n") || strings.Contains(st, "Log     ") {
+		t.Fatalf("status = %v, want the console's engine and no core.log:\n%s", err, st)
 	}
 	if n := len(f.started()); n != 0 {
 		t.Fatalf("started %d processes", n)
@@ -617,5 +625,70 @@ func TestForegroundCoreAlsoWritesCoreLog(t *testing.T) {
 	}
 	if fi, _ := os.Stat(w.CoreLogFile()); fi.Size() != coreLogMax+1 {
 		t.Fatal("core.log rotated under a running engine")
+	}
+}
+
+// A core that lets go of core.lock while another engine takes it at once,
+// between two looks of stop's: stop sees the holder change and sends no
+// SIGKILL to the old pid, which may be some other process's by then.
+func TestCoreStopNeverKillsAPidThatNoLongerHoldsTheLock(t *testing.T) {
+	w := coreWorkspace(t)
+	old, err := w.LockCore(store.CoreHolder{PID: 5151, Owner: store.CoreOwnerCore})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFakeCores(t, "serve")
+	f.stopWait = 300 * time.Millisecond
+	var next *store.CoreLock
+	t.Cleanup(func() {
+		if next != nil {
+			next.Unlock()
+		}
+	})
+	var sent []syscall.Signal
+	f.signal = func(pid int, sig syscall.Signal) error {
+		sent = append(sent, sig)
+		if pid != 5151 {
+			t.Errorf("signalled pid %d", pid)
+		}
+		if sig == syscall.SIGTERM {
+			old.Unlock()
+			if next, err = w.LockCore(store.CoreHolder{PID: 6262, Owner: store.CoreOwnerCore}); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil
+	}
+	var out bytes.Buffer
+	if err := f.stop(w, &out); err != nil || !strings.HasSuffix(out.String(), "mate core: stopped\n") {
+		t.Fatalf("stop = %v, %q", err, out.String())
+	}
+	if len(sent) != 1 || sent[0] != syscall.SIGTERM {
+		t.Fatalf("signals = %v, want SIGTERM alone", sent)
+	}
+}
+
+// Two starts at once: the one whose core lost the lock says the other's
+// runs, exit 0, rather than that its own ended.
+func TestCoreStartBesideAStartThatWon(t *testing.T) {
+	w := coreWorkspace(t)
+	f := newFakeCores(t, "fail")
+	command := f.command
+	var won *store.CoreLock
+	t.Cleanup(func() {
+		if won != nil {
+			won.Unlock()
+		}
+	})
+	f.command = func(root string) (*exec.Cmd, error) {
+		var err error
+		if won, err = w.LockCore(store.CoreHolder{PID: 7373, Owner: store.CoreOwnerCore, Started: time.Now()}); err != nil {
+			return nil, err
+		}
+		return command(root)
+	}
+	var out bytes.Buffer
+	if err := f.start(w, &out); err != nil || !strings.HasPrefix(out.String(), "mate core: already running (pid 7373, since ") {
+		t.Fatalf("start = %v, %q", err, out.String())
 	}
 }

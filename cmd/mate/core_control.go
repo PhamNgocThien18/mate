@@ -180,11 +180,16 @@ func (c coreControl) start(ws *store.Workspace, stdout io.Writer) error {
 		}
 		select {
 		case err := <-exited:
+			// Another start won the lock at the same moment: its core runs.
+			if h, held, _ := ws.CoreRunning(); held && h.Owner == core.OwnerCore {
+				_, err := fmt.Fprintf(stdout, "mate core: already running (%s, since %s)\n", pidWord(h.PID), c.clock(h.Started))
+				return err
+			}
 			return fmt.Errorf("mate core: pid %d ended at once (%v); see %s", pid, err, logName)
 		default:
 		}
 		if !c.now().Before(deadline) {
-			return fmt.Errorf("mate core: no answer within %s; see %s", c.startWait, logName)
+			return fmt.Errorf("mate core: no answer within %s; see %s", durationWord(c.startWait), logName)
 		}
 		time.Sleep(c.poll)
 	}
@@ -225,19 +230,25 @@ func (c coreControl) stop(ws *store.Workspace, stdout io.Writer) error {
 	if h.PID <= 0 {
 		return fmt.Errorf("mate core: %s is held but names no process to stop", ws.CoreLockFile())
 	}
-	fmt.Fprintf(stdout, "mate core: stopping pid %d (at most %s)...\n", h.PID, c.stopWait)
+	fmt.Fprintf(stdout, "mate core: stopping pid %d (at most %s)...\n", h.PID, durationWord(c.stopWait))
 	if err := c.signal(h.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("mate core: stopping pid %d: %w", h.PID, err)
 	}
-	if c.released(ws, c.stopWait) {
+	if c.released(ws, h.PID, c.stopWait) {
 		_, err := fmt.Fprintln(stdout, "mate core: stopped")
 		return err
 	}
-	fmt.Fprintf(stdout, "mate core: pid %d did not stop within %s; killing it\n", h.PID, c.stopWait)
+	// Asked again right before SIGKILL: only to the pid the holder of the
+	// lock wrote, while it holds it.
+	if !c.holds(ws, h.PID) {
+		_, err := fmt.Fprintln(stdout, "mate core: stopped")
+		return err
+	}
+	fmt.Fprintf(stdout, "mate core: pid %d did not stop within %s; killing it\n", h.PID, durationWord(c.stopWait))
 	if err := c.signal(h.PID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("mate core: killing pid %d: %w", h.PID, err)
 	}
-	if !c.released(ws, c.killWait) {
+	if !c.released(ws, h.PID, c.killWait) {
 		return fmt.Errorf("mate core: pid %d still holds %s after SIGKILL", h.PID, ws.CoreLockFile())
 	}
 	// A killed core leaves its socket; the next core removes it too, but
@@ -258,11 +269,12 @@ func (c coreControl) restart(ws *store.Workspace, stdout io.Writer) error {
 	return c.start(ws, stdout)
 }
 
-// released waits up to d for core.lock to be free.
-func (c coreControl) released(ws *store.Workspace, d time.Duration) bool {
+// released waits up to d for pid to let core.lock go: the lock free, or
+// held by another engine that took it between two looks.
+func (c coreControl) released(ws *store.Workspace, pid int, d time.Duration) bool {
 	deadline := c.now().Add(d)
 	for {
-		if _, held, err := ws.CoreRunning(); err == nil && !held {
+		if !c.holds(ws, pid) {
 			return true
 		}
 		if !c.now().Before(deadline) {
@@ -270,6 +282,25 @@ func (c coreControl) released(ws *store.Workspace, d time.Duration) bool {
 		}
 		time.Sleep(c.poll)
 	}
+}
+
+// holds reports whether pid is what the holder of core.lock wrote, while
+// the lock is held. A lock that cannot be read, or whose record names no
+// pid, counts as held, so nothing is taken for stopped that was not.
+func (c coreControl) holds(ws *store.Workspace, pid int) bool {
+	h, held, err := ws.CoreRunning()
+	if err != nil {
+		return true
+	}
+	return held && (h.PID == pid || h.PID <= 0)
+}
+
+// durationWord is d as "60s" rather than Go's "1m0s".
+func durationWord(d time.Duration) string {
+	if d >= time.Second && d%time.Second == 0 {
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	}
+	return d.String()
 }
 
 // errCoreNotRunning is `mate core status` with no engine: exit 1.
@@ -333,7 +364,10 @@ func (c coreControl) printStatus(ws *store.Workspace, h store.CoreHolder, stdout
 		fmt.Fprintf(stdout, "  notice   %s\n", n)
 	}
 	fmt.Fprint(stdout, officeCityLines(h.URL, h.LANURL, h.TCPError))
-	fmt.Fprint(stdout, herdrLogLines(ws))
+	if h.Owner != core.OwnerConsole {
+		// A console's engine writes no core.log.
+		fmt.Fprint(stdout, herdrLogLines(ws))
+	}
 	if binaryChanged(h) {
 		fmt.Fprintln(stdout, "stale: the mate binary changed after this core started; run `mate core restart`")
 	}
