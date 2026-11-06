@@ -19,6 +19,7 @@ import (
 // session not running is not that confirmation: the agent is still present
 // in these fakes, and nothing proved the harness stopped writing.
 func TestContextRefreshFinalizesOnlyAfterAConfirmedStop(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// lose is what happens to Herdr after the checkpoint is written

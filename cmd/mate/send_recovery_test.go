@@ -12,6 +12,7 @@ import (
 )
 
 func TestCrewSendRecoversOnlyItsRecordedDraft(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"same draft", "human suffix", "different payload", "new incarnation", "empty unconfirmed", "no record"} {
 		t.Run(mode, func(t *testing.T) {
 			w := liveCrewWorkspace(t, "shop")
@@ -68,6 +69,7 @@ func TestCrewSendRecoversOnlyItsRecordedDraft(t *testing.T) {
 }
 
 func TestCrewUnknownAfterEnterDoesNotWriteSent(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)

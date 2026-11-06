@@ -20,6 +20,7 @@ import (
 // and starting it once closed its pane and ended every attach on it, and
 // today would end every REPL connected to its host. Its host runs outside
 // Herdr (CON-225), and the refresh does not ask Herdr for anything either.
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment.
 func TestContextRefreshKeepsTheHeadlessMatesHost(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(claude.ClaudeConfigDirEnv, "")

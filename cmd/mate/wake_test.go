@@ -72,6 +72,7 @@ func runWake(t *testing.T, w *store.Workspace, args ...string) string {
 // The command prints internal/wake's text for the project named, its
 // three parts, and a wake moves part 2's cursor.
 func TestWakeCommandPrintsTheWake(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	text := runWake(t, w)
 	for _, want := range []string{
@@ -96,6 +97,7 @@ func TestWakeCommandPrintsTheWake(t *testing.T) {
 // `--peek` reaches internal/wake as a wake that moves nothing: the cursor
 // stays where it was, and the Mate's next wake still shows the lines.
 func TestWakeCommandPeekLeavesTheCursor(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	peeked := runWake(t, w, "--peek")
 	if !strings.Contains(peeked, "== 2. New status since your last wake (4) ==") {
@@ -110,6 +112,7 @@ func TestWakeCommandPeekLeavesTheCursor(t *testing.T) {
 }
 
 func TestWakeCommandWantsOneProject(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	if code, _, errOut := runMate(t, "wake", "--workspace", w.Root()); code == 0 || !strings.Contains(errOut, "usage: mate wake <project> [--peek] [--workspace <dir>]") {
 		t.Fatalf("no project: exit %d, %q", code, errOut)

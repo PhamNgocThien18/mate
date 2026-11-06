@@ -75,6 +75,7 @@ func commitInWorktree(t *testing.T, worktree, name, body, subject string) {
 // workspace flag after the positional arguments is the case reorderArgs
 // exists for, and --stat is a boolean that must not swallow the next token.
 func TestDiffCommandParsesItsFlagsInAnyPosition(t *testing.T) {
+	t.Parallel()
 	f := newDiffFixture(t)
 	commitInWorktree(t, f.worktree, "README.md", "shop\nfirst\n", "add first line")
 

@@ -13,6 +13,7 @@ import (
 const supportedReview = "## Summary\nChecked the contract.\n## Verdict\npass\n## Findings\nnone\n## Verification gaps\nnone\n"
 
 func TestReviewCheckRequiresUnambiguousEvidenceForNewReviews(t *testing.T) {
+	t.Parallel()
 	f := newSinceFixture(t, priorReportWithFindings)
 	reviewer := "review-current"
 	recordReview(t, f.diffFixture, reviewer, supportedReview)
@@ -56,6 +57,7 @@ func TestReviewCheckRequiresUnambiguousEvidenceForNewReviews(t *testing.T) {
 }
 
 func TestReviewCheckRequiresExactlyOneClosurePerPriorFinding(t *testing.T) {
+	t.Parallel()
 	f := newSinceFixture(t, priorReportWithFindings)
 	reviewer := "review-current"
 	recordReview(t, f.diffFixture, reviewer, supportedReview)

@@ -32,6 +32,7 @@ import (
 // It asserts the frame contract as well as the content: View must return
 // exactly h lines, or the gallery a person sees is not the one this test
 // passed on.
+// Not parallel: it sets MATE_ASCII in the process environment.
 func TestConsoleGalleryRendersRegisteredProjects(t *testing.T) {
 	root := t.TempDir()
 	ws, err := store.Init(root, workspaceDefaults())
@@ -80,6 +81,7 @@ func TestConsoleGalleryRendersRegisteredProjects(t *testing.T) {
 // first and under the cursor, so Enter alone creates the Mate the workspace
 // is configured for.
 func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	ws, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -140,6 +142,7 @@ func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 // TestConsoleRefusesANonTerminal: `mate console <dir> > file` must refuse with a
 // usage error instead of starting Bubble Tea against a pipe.
 func TestConsoleRefusesANonTerminal(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := store.Init(root, workspaceDefaults()); err != nil {
 		t.Fatalf("init workspace: %v", err)
@@ -160,6 +163,7 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 // installer can put it. Every other command builds on baseDeps() as before
 // CON-189; its runtime looks for herdr on PATH only, so it never reaches
 // that one.
+// Not parallel: it sets PATH, XDG_BIN_HOME in the process environment.
 func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	const consoleCall = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
 	engineHosts := map[string]bool{"runConsole": true, "runCoreForeground": true}
@@ -212,6 +216,7 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 // engine, loop, timeline, server or notification of its own. A quit in the
 // middle of an action neither cancels nor waits for it: the core runs it.
 func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
+	t.Parallel()
 	calls := callersOf(t)["runConsole"]
 	for _, want := range []string{"openConsole", "boundedLoad", "consoleLoad", "tuiAction", "sayAbandoned"} {
 		if !calls[want] {

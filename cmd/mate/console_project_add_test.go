@@ -17,6 +17,7 @@ import (
 // included. Before this the bridge refused every workspace onboard, so the
 // key the footer advertised could only ever fail.
 func TestConsoleNewProjectRegistersTheRepoItWasGiven(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "alpha")
 	repo := filepath.Join(w.ProjectHome("beta"), "services", "beta")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -53,6 +54,7 @@ func TestConsoleNewProjectRegistersTheRepoItWasGiven(t *testing.T) {
 // TestConsoleNewProjectRefusalsMatchTheCLI: the Console runs the same checks
 // as `mate project add`, so a path that is not a git work tree root, or
 // does not exist, is refused and nothing is registered.
+// Not parallel: it sets GIT_CEILING_DIRECTORIES in the process environment through outsideAnyCheckout.
 func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 	w, deps := consoleFixture(t, "alpha")
 	plain := filepath.Join(w.Root(), "plain")
@@ -84,6 +86,7 @@ func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 // M9). An empty one registers a Project with no repo, PROJECT.md included,
 // and the result line says how to add one.
 func TestConsoleNewProjectWithoutARepo(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "alpha")
 	line, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "  ",

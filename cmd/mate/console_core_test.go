@@ -58,6 +58,7 @@ func consoleLink(ctl coreControl, build, answer string, out io.Writer) consoleCo
 // A console opened with no core starts one, as `mate core start` does, and
 // reaches it; once the console has gone, the core still runs.
 func TestConsoleStartsTheCoreWhenNoneRuns(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "serve")
 	build := fakeCoreBinary(t, w, f, "build 1")
@@ -95,6 +96,7 @@ func TestConsoleStartsTheCoreWhenNoneRuns(t *testing.T) {
 // running and the console exits 1; Enter or y restarts it with the binary
 // installed now, and the console goes on with it.
 func TestConsoleAsksBeforeItRunsBesideAnotherBuild(t *testing.T) {
+	t.Parallel()
 	const question = "mate core (pid %d) runs a different build of mate. Restart it? [Y/n] "
 	for _, tc := range []struct {
 		answer  string
@@ -147,6 +149,7 @@ func TestConsoleAsksBeforeItRunsBesideAnotherBuild(t *testing.T) {
 // A second console whose captain answers N to CON-162's question exits
 // before it reaches the core: nothing is dialled, started or restarted.
 func TestASecondConsoleThatSaysNoTouchesNoCore(t *testing.T) {
+	t.Parallel()
 	h := newClaimHarness(t)
 	var out bytes.Buffer
 	ctl := liveCoreControl()
@@ -180,6 +183,7 @@ func TestASecondConsoleThatSaysNoTouchesNoCore(t *testing.T) {
 // words and exits 1, whether it started that core or found it holding
 // core.lock.
 func TestConsoleSaysACoreThatDoesNotAnswer(t *testing.T) {
+	t.Parallel()
 	const want = "mate console: mate core did not answer within 300ms; see .mate/core.log"
 	t.Run("it started it", func(t *testing.T) {
 		w := coreWorkspace(t)
@@ -212,6 +216,7 @@ func TestConsoleSaysACoreThatDoesNotAnswer(t *testing.T) {
 // the next read, and live again once a core answers on the socket. The
 // reads here are `r`'s, which take the same load as the 2 s tick
 // (startLoad); the core that comes back is one the test starts.
+// Not parallel: it sets MATE_ASCII in the process environment.
 func TestConsoleHeaderComesBackLiveWithTheCore(t *testing.T) {
 	w := coreWorkspace(t)
 	runOne := func() (stop func()) {
@@ -278,6 +283,7 @@ func TestConsoleHeaderComesBackLiveWithTheCore(t *testing.T) {
 // there; the core's other notices only when the opening status line did not
 // say them.
 func TestCoreNoticesRepeatOnlyTheNotificationsWord(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	newSocketCore(t, w, func(rw http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(rw).Encode(coreapi.CoreStatus{PID: 1, Notices: []string{
@@ -294,6 +300,7 @@ func TestCoreNoticesRepeatOnlyTheNotificationsWord(t *testing.T) {
 // runs the new binary, another build than its own. It does not ask again,
 // and says to open the console again.
 func TestAnOlderConsoleSaysToOpenItAgain(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "serve")
 	fakeCoreBinary(t, w, f, "build 1")

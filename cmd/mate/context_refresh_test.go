@@ -26,6 +26,7 @@ func contextRefresh(ctx context.Context, w *store.Workspace, deps spawn.Deps, pr
 // Mate that stowed without running it, or whose memory changed after it,
 // keeps its session.
 func TestMateRefresherVerifiesTheCheckpointReceipt(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ scenario, wantErr string }{
 		{"receipt", ""},
 		{"no-receipt", "refresh: no checkpoint receipt for this turn"},
@@ -95,6 +96,7 @@ func TestMateRefresherVerifiesTheCheckpointReceipt(t *testing.T) {
 }
 
 func TestCheckpointRequiresEveryOpenCrewInFlight(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	ctx := context.Background()
 	if _, err := spawn.StartMate(ctx, w, deps, spawn.StartRequest{Project: "shop"}); err != nil {

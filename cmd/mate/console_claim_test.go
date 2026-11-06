@@ -69,6 +69,7 @@ func (h *claimHarness) claim(answer string, quitsOn syscall.Signal) consoleClaim
 }
 
 func TestConsoleClaimTakesAFreeWorkspaceWithoutAsking(t *testing.T) {
+	t.Parallel()
 	ws, err := store.Init(t.TempDir(), workspaceDefaults())
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +87,7 @@ func TestConsoleClaimTakesAFreeWorkspaceWithoutAsking(t *testing.T) {
 }
 
 func TestConsoleClaimLeavesTheOldConsoleWhenTheCaptainSaysNo(t *testing.T) {
+	t.Parallel()
 	for _, answer := range []string{"n\n", "\n", ""} {
 		h := newClaimHarness(t)
 		_, err := h.claim(answer, syscall.SIGTERM).take(h.ws)
@@ -105,6 +107,7 @@ func TestConsoleClaimLeavesTheOldConsoleWhenTheCaptainSaysNo(t *testing.T) {
 }
 
 func TestConsoleClaimQuitsTheOldConsoleAndTakesTheLock(t *testing.T) {
+	t.Parallel()
 	h := newClaimHarness(t)
 	unlock, err := h.claim("y\n", syscall.SIGTERM).take(h.ws)
 	if err != nil {
@@ -120,6 +123,7 @@ func TestConsoleClaimQuitsTheOldConsoleAndTakesTheLock(t *testing.T) {
 }
 
 func TestConsoleClaimKillsAnOldConsoleThatDoesNotQuit(t *testing.T) {
+	t.Parallel()
 	h := newClaimHarness(t)
 	unlock, err := h.claim("yes\n", syscall.SIGKILL).take(h.ws)
 	if err != nil {
@@ -135,6 +139,7 @@ func TestConsoleClaimKillsAnOldConsoleThatDoesNotQuit(t *testing.T) {
 }
 
 func TestConsoleClaimGivesUpWhenTheLockOutlivesSIGKILL(t *testing.T) {
+	t.Parallel()
 	h := newClaimHarness(t)
 	_, err := h.claim("y\n", 0).take(h.ws)
 	if err == nil || !strings.Contains(err.Error(), "still holds") {

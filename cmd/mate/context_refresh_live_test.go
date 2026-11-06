@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMateContextRefreshPreservesHeldQuestion(t *testing.T) {
 	requireConsoleLive(t)
 	session, home := consoleLiveLab(t)

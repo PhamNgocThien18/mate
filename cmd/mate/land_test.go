@@ -47,6 +47,7 @@ func landWorkspace(t *testing.T) (*store.Workspace, string, string) {
 }
 
 func TestCmdLandMergesAndRecordsEverythingInOrder(t *testing.T) {
+	t.Parallel()
 	w, root, shot := landWorkspace(t)
 	fake := &process.FakeRunner{}
 	fake.Responses = map[string]process.Result{"land-sh SH-12": {ExitCode: 0, Stdout: []byte("SH-12 → Done, 1 comment, 1 attachment\n")}}
@@ -122,6 +123,7 @@ func TestCmdLandMergesAndRecordsEverythingInOrder(t *testing.T) {
 }
 
 func TestCmdLandRefusesLikeMergeAndRecordsNothing(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
 	var out, errw bytes.Buffer
 	err := testCLI().withEnv("MATE_CALLER", "crew").cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
@@ -142,6 +144,7 @@ func TestCmdLandRefusesLikeMergeAndRecordsNothing(t *testing.T) {
 }
 
 func TestCmdLandLeavesTheTrackerToTheMateWithoutALandCommand(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
 	writePlugins(t, w, "linear", "tracker:\n      read: [read-sh]\n")
 	var out, errw bytes.Buffer
@@ -154,6 +157,7 @@ func TestCmdLandLeavesTheTrackerToTheMateWithoutALandCommand(t *testing.T) {
 }
 
 func TestCmdLandKeepsARecordTheMateWrote(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
 	own := "# k3 learning\nSource: the Mate wrote this.\nLearning: follow-up\n- a real finding\n\n## Predictions\n1. a claim; baseline x; next check y — outcome: open\n\n" + usage.LearningHeading + "\ntokens: 1 total\n"
 	if err := os.WriteFile(w.CrewLearning("shop", "k3"), []byte(own), 0o644); err != nil {
@@ -173,6 +177,7 @@ func TestCmdLandKeepsARecordTheMateWrote(t *testing.T) {
 }
 
 func TestCmdLandClosesAPullRequestCrewTheWatcherSawMerged(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
 	// Land the branch the way GitHub would, then record the watcher's facts:
 	// the crew is then a `crew stop`, not a merge.
@@ -197,6 +202,7 @@ func TestCmdLandClosesAPullRequestCrewTheWatcherSawMerged(t *testing.T) {
 }
 
 func TestCmdLandWantsTwoArguments(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().cmdLand([]string{"shop"}, &out, &errw)
 	if err == nil || !strings.Contains(err.Error(), "want exactly 2 arguments") {
@@ -205,6 +211,7 @@ func TestCmdLandWantsTwoArguments(t *testing.T) {
 }
 
 func TestRunDispatchesLand(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := testCLI().run([]string{"land", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
@@ -234,6 +241,7 @@ func writePlugins(t *testing.T, w *store.Workspace, id, extra string) {
 }
 
 func TestCmdLandNamesTheTrackerIdEvenWithoutATrackerPlugin(t *testing.T) {
+	t.Parallel()
 	_, root, _ := landWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := testCLI().cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {

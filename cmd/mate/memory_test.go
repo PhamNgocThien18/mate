@@ -23,6 +23,7 @@ var memoryDay = time.Date(2026, 9, 24, 10, 0, 0, 0, time.Local)
 // preference, an aging lesson and a perishable lesson, written into the
 // 9-byte memory.md every Mate had before task 36.
 func TestRememberThreeCallsBuildTheFile(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	if err := os.MkdirAll(w.MateDir("shop"), 0o755); err != nil {
 		t.Fatal(err)
@@ -73,6 +74,7 @@ func rememberCLI(t *testing.T, w *store.Workspace, args ...string) (int, string,
 }
 
 func TestRememberCLIWritesAndPrintsTheEntry(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	code, out, errw := rememberCLI(t, w, "shop", "--lesson", "--source", "crews/k1/report.md §Durable facts", "Hugo builds into public/.")
 	if code != 0 {
@@ -90,6 +92,7 @@ func TestRememberCLIWritesAndPrintsTheEntry(t *testing.T) {
 }
 
 func TestRememberCLIRefusals(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	cases := []struct {
 		name string
@@ -123,6 +126,7 @@ func TestRememberCLIRefusals(t *testing.T) {
 }
 
 func TestRememberSaysWhenOverBudget(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	if err := os.WriteFile(w.WorkspaceDoc(), bytes.Repeat([]byte("x"), 3*memory.BudgetTokens), 0o644); err != nil {
 		t.Fatal(err)
@@ -158,6 +162,7 @@ func writeMemoryFiles(t *testing.T, w *store.Workspace, mem, project string) {
 }
 
 func TestMemoryCheckCLIPassesAndPrintsTheBudget(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	head := strings.TrimSpace(gitOut(t, w.RepoDir("shop/shop"), "rev-parse", "--short", "main"))
 	today := time.Now().Format(memory.DateLayout)
@@ -186,6 +191,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // TestMemoryCheckCLIReportsEveryRule: one file breaking every rule, and the
 // CLI prints one line per problem with file and line, and exits 1.
 func TestMemoryCheckCLIReportsEveryRule(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	now := time.Now()
 	old := now.AddDate(0, 0, -30).Format(memory.DateLayout)
@@ -240,6 +246,7 @@ func TestMemoryCheckCLIReportsEveryRule(t *testing.T) {
 // TestMemoryCheckWarnsOnAnchorsOlderThanHead: an old anchor is a warning,
 // never a problem; the head's own anchor is silent.
 func TestMemoryCheckWarnsOnAnchorsOlderThanHead(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	repo := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
@@ -289,6 +296,7 @@ func TestMemoryCheckWarnsOnAnchorsOlderThanHead(t *testing.T) {
 // staleAnchorCommits or more commits behind its branch is no longer a hint:
 // the warning asks for the fact to be re-read or moved into the repo.
 func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	repo := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
@@ -332,6 +340,7 @@ func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
 // each anchor names its repo and is compared with that repo's head only;
 // a bare anchor no longer says which repo it is about and is a problem.
 func TestMemoryCheckTwoReposComparesEachAnchorWithItsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w := twoRepoWorkspace(t)
 	shop := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, shop, "rev-parse", "--short", "main"))
@@ -372,6 +381,7 @@ func TestMemoryCheckTwoReposComparesEachAnchorWithItsOwnRepo(t *testing.T) {
 // TestMemoryCheckNoRepo: a project without a repo can still be checked;
 // every repo-state line is a problem, and nothing is compared with git.
 func TestMemoryCheckNoRepo(t *testing.T) {
+	t.Parallel()
 	w := noRepoWorkspace(t)
 	writeMemoryFiles(t, w, memory.Header, memory.ProjectTemplate("shop"))
 	code, out, errw := memoryCheckCLI(t, w)
@@ -386,6 +396,7 @@ func TestMemoryCheckNoRepo(t *testing.T) {
 }
 
 func TestMemoryCheckAbsentFilesAreAbsent(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	_ = os.Remove(w.ProjectDoc("shop"))
 	_ = os.Remove(w.WorkspaceDoc())
@@ -399,6 +410,7 @@ func TestMemoryCheckAbsentFilesAreAbsent(t *testing.T) {
 }
 
 func TestMemoryUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	for _, args := range [][]string{{"memory"}, {"memory", "bogus"}, {"memory", "check"}, {"memory", "check", "a", "b"}} {
 		if code := testCLI().mainRun(args, &out, &errw); code != 2 {
@@ -410,6 +422,7 @@ func TestMemoryUsage(t *testing.T) {
 // The two memory nudges (B9), in both caller modes.
 
 func TestCrewStopNudgeOnlyForTheMate(t *testing.T) {
+	t.Parallel()
 	res := spawn.StopResult{Agent: "crew-k3", TabClosed: true, Branch: "mate/k3", Teardown: spawn.TeardownClean, State: "finished"}
 	outcome := res.CrewLine("shop", "k3") + "\n"
 
@@ -447,6 +460,7 @@ func TestCrewStopReadsTheCallerFromTheEnvironment(t *testing.T) {
 }
 
 func TestSendCorrectionNudgeOnlyForTheMateAndABriefedCrew(t *testing.T) {
+	t.Parallel()
 	w, _ := autoTurnFixture(t)
 	var mate, user, unbriefed bytes.Buffer
 	printSendCorrectionNudge(&mate, w, "shop", "k3", store.SourceMate)

@@ -16,6 +16,7 @@ import (
 // TestPeekPrintsTheRawPane is the happy path: a live crew's pane comes back
 // verbatim on stdout, with no header and no interpretation.
 func TestPeekPrintsTheRawPane(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -37,6 +38,7 @@ func TestPeekPrintsTheRawPane(t *testing.T) {
 // something worth showing - the tail of crews/<id>.status - and peek must
 // print that instead of failing.
 func TestPeekFallsBackToStatusLogWhenTheAgentIsAbsent(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -71,6 +73,7 @@ func TestPeekFallsBackToStatusLogWhenTheAgentIsAbsent(t *testing.T) {
 // ScreenProfile names. Codex reads recent-unwrapped, so its screens read
 // through ReadVisible catch a reader that spells the source itself.
 func TestCrewReadersReadThroughTheProfilesSource(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -106,6 +109,7 @@ func TestCrewReadersReadThroughTheProfilesSource(t *testing.T) {
 // TestPeekClampsLines checks the 1..200 clamp docs/mvp.md task 13 sets on
 // --lines, independent of any runtime.
 func TestPeekClampsLines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in   int
 		want int

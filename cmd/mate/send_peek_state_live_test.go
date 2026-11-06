@@ -32,6 +32,7 @@ import (
 // crew's own needs-decision as parked, `mate peek` must show the crew's
 // pane without waking it, and `mate send "A"` must be the thing that
 // unblocks it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveSendPeekStateCrew(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

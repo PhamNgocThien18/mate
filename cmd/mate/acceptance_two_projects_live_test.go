@@ -78,6 +78,7 @@ const (
 // A failure of this test is a manual bug, not a test bug: the fix belongs in
 // assets/mate/AGENTS.md.tmpl or assets/crew/brief.md.tmpl, never in an
 // assertion made weaker.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

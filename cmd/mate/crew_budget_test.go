@@ -36,6 +36,7 @@ func runBudget(w *store.Workspace, args ...string) (string, string, error) {
 // and the reason, re-arms the daemon's line, and answers the open budget
 // items. The second is the captain's: refused without --captain.
 func TestCrewBudgetExtendsOnceThenAsksForTheCaptain(t *testing.T) {
+	t.Parallel()
 	w := budgetWorkspace(t)
 	out, stderr, err := runBudget(w, "--extend", "3000000", "--reason", "tests left")
 	if err != nil {
@@ -74,6 +75,7 @@ func TestCrewBudgetExtendsOnceThenAsksForTheCaptain(t *testing.T) {
 // --extend is the new ceiling: one that is not above the current one is
 // refused and changes nothing.
 func TestCrewBudgetRefusesACeilingThatIsNotHigher(t *testing.T) {
+	t.Parallel()
 	w := budgetWorkspace(t)
 	if _, _, err := runBudget(w, "--extend", "500000", "--reason", "x"); err == nil {
 		t.Fatal("an extension below the current ceiling was accepted")

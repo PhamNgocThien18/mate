@@ -117,6 +117,7 @@ func allCrewIDs() map[string]bool {
 }
 
 func TestBacklogOldestFirstColumnsAndFooter(t *testing.T) {
+	t.Parallel()
 	w, now := backlogFixtureWorkspace(t)
 
 	var out bytes.Buffer
@@ -169,6 +170,7 @@ func TestBacklogOldestFirstColumnsAndFooter(t *testing.T) {
 }
 
 func TestBacklogAllIncludesClosedCrews(t *testing.T) {
+	t.Parallel()
 	w, now := backlogFixtureWorkspace(t)
 
 	var out bytes.Buffer
@@ -191,6 +193,7 @@ func TestBacklogAllIncludesClosedCrews(t *testing.T) {
 }
 
 func TestBacklogEmptyProjectPrintsOneLine(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -221,6 +224,7 @@ func TestBacklogEmptyProjectPrintsOneLine(t *testing.T) {
 // console tree" means. It runs over every recognised state the fixture
 // carries, including the incident-derived `blocked`.
 func TestBacklogStateMatchesQueryLoad(t *testing.T) {
+	t.Parallel()
 	w, now := backlogFixtureWorkspace(t)
 
 	snap, err := query.Load(context.Background(), w, consoleHarnesses(), nil)
@@ -271,6 +275,7 @@ func TestBacklogStateMatchesQueryLoad(t *testing.T) {
 }
 
 func TestBacklogCLIEntriesRemainVisibleToRecall(t *testing.T) {
+	t.Parallel()
 	w, _ := consoleFixture(t, "shop")
 	if err := os.WriteFile(w.BacklogFile("shop"), []byte(memory.BacklogHeader()), 0644); err != nil {
 		t.Fatal(err)
@@ -315,6 +320,7 @@ func trackerPlugin(t *testing.T, w *store.Workspace, read bool) {
 // rewrites the entry to that pointer; entries without --tracker are
 // written as before. Without a tracker plugin --tracker is refused.
 func TestBacklogTrackerWritesAPointerLine(t *testing.T) {
+	t.Parallel()
 	w, _ := backlogFixtureWorkspace(t)
 	writeFixture(t, w.BacklogFile("shop"), memory.BacklogHeader())
 	var out, errs bytes.Buffer

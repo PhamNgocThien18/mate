@@ -13,6 +13,7 @@ import (
 )
 
 func TestRunUnknownMateSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"mate", "bogus"}, &out, &errw)
 	var ue *usageError
@@ -22,6 +23,7 @@ func TestRunUnknownMateSubcommandIsUsageError(t *testing.T) {
 }
 
 func TestMateSubcommandsRequireExactlyOneProject(t *testing.T) {
+	t.Parallel()
 	for _, sub := range []string{"start", "stop", "status"} {
 		var out, errw bytes.Buffer
 		err := testCLI().run([]string{"mate", sub}, &out, &errw)
@@ -33,6 +35,7 @@ func TestMateSubcommandsRequireExactlyOneProject(t *testing.T) {
 }
 
 func TestMateStartRejectsAnUnknownHarness(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"mate", "start", "shop", "--harness", "gemini"}, &out, &errw)
 	var ue *usageError
@@ -44,6 +47,7 @@ func TestMateStartRejectsAnUnknownHarness(t *testing.T) {
 // A harness that is registered but cannot run a Mate is a usage error that
 // names the capability it lacks, before any workspace is looked for.
 func TestMateStartRefusesACrewOnlyHarness(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"mate", "start", "shop", "--harness", "grok"}, &out, &errw)
 	var ue *usageError
@@ -55,6 +59,7 @@ func TestMateStartRefusesACrewOnlyHarness(t *testing.T) {
 // mate status is the one subcommand that answers without a Herdr server: a
 // project whose meta names no agent is stopped, and it says so in one line.
 func TestMateStatusPrintsOneLineForAStoppedProject(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -92,6 +97,7 @@ func TestMateStatusPrintsOneLineForAStoppedProject(t *testing.T) {
 // checks flag parsing (the rest needs a Herdr server), consistent with
 // TestMateStartRejectsAnUnknownHarness below.
 func TestMateStartAcceptsFreshFlag(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"mate", "start", "shop", "--fresh", "--workspace", t.TempDir()}, &out, &errw)
 	var ue *usageError

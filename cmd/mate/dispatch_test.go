@@ -279,6 +279,7 @@ func TestDotRunsCoreAndConsoleOpensConsole(t *testing.T) {
 }
 
 func TestCmdVersionPrintsVersion(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	if err := cmdVersion(nil, &out, &errw); err != nil {
 		t.Fatalf("cmdVersion: %v", err)
@@ -289,6 +290,7 @@ func TestCmdVersionPrintsVersion(t *testing.T) {
 }
 
 func TestRunTopLevelVersionFlag(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	if err := testCLI().run([]string{"--version"}, &out, &errw); err != nil {
 		t.Fatalf("run: %v", err)
@@ -299,6 +301,7 @@ func TestRunTopLevelVersionFlag(t *testing.T) {
 }
 
 func TestRunConsoleSubcommandNeedsATerminal(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -317,6 +320,7 @@ func TestRunConsoleSubcommandNeedsATerminal(t *testing.T) {
 }
 
 func TestRunConsoleSubcommandRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"console", "a", "b"}, &out, &errw)
 	var ue *usageError
@@ -326,6 +330,7 @@ func TestRunConsoleSubcommandRejectsExtraArgs(t *testing.T) {
 }
 
 func TestRunUnknownCommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"bogus"}, &out, &errw)
 	var ue *usageError
@@ -335,6 +340,7 @@ func TestRunUnknownCommandIsUsageError(t *testing.T) {
 }
 
 func TestRunUnknownProjectSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"project", "bogus"}, &out, &errw)
 	var ue *usageError
@@ -344,6 +350,7 @@ func TestRunUnknownProjectSubcommandIsUsageError(t *testing.T) {
 }
 
 func TestMainRunExitCodes(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	if code := testCLI().mainRun([]string{"--version"}, &out, &errw); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
@@ -367,7 +374,11 @@ func TestMainRunExitCodes(t *testing.T) {
 	}
 }
 
+// noEnv is an environment with nothing set.
+func noEnv(string) string { return "" }
+
 func TestFindWorkspaceDirWalksUp(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -378,16 +389,7 @@ func TestFindWorkspaceDirWalksUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldwd)
-	if err := os.Chdir(nested); err != nil {
-		t.Fatal(err)
-	}
-
-	dir, err := findWorkspaceDir("")
+	dir, err := findWorkspaceDirIn("", noEnv, func() (string, error) { return nested, nil })
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}
@@ -405,30 +407,23 @@ func TestFindWorkspaceDirWalksUp(t *testing.T) {
 }
 
 func TestFindWorkspaceDirNoneFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldwd)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := findWorkspaceDir(""); err == nil {
+	if _, err := findWorkspaceDirIn("", noEnv, func() (string, error) { return dir, nil }); err == nil {
 		t.Fatal("want error when no workspace is found")
 	}
 }
 
 func TestFindWorkspaceDirEnvVar(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	t.Setenv("MATE_WORKSPACE", ws)
-
-	dir, err := findWorkspaceDir("")
+	env := testCLI().withEnv("MATE_WORKSPACE", ws).getenv
+	noCwd := func() (string, error) { return "", errors.New("the environment names the workspace; no cwd is read") }
+	dir, err := findWorkspaceDirIn("", env, noCwd)
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}
@@ -446,14 +441,14 @@ func TestFindWorkspaceDirEnvVar(t *testing.T) {
 }
 
 func TestFindWorkspaceDirFlagWinsOverEnv(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	t.Setenv("MATE_WORKSPACE", t.TempDir())
-
-	dir, err := findWorkspaceDir(ws)
+	env := testCLI().withEnv("MATE_WORKSPACE", t.TempDir()).getenv
+	dir, err := findWorkspaceDirIn(ws, env, os.Getwd)
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}

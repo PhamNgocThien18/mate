@@ -18,6 +18,7 @@ import (
 // Declare and Observe in isolation; these check that the CLI hands them the
 // right inputs, and in particular that the two columns stay independent.
 func TestStateOfCrewGathersTheInputs(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -108,6 +109,7 @@ func TestStateOfCrewGathersTheInputs(t *testing.T) {
 // `unknown` left the vocabulary with mvp.md section 4b, so the command
 // refuses rather than inventing a seventh answer.
 func TestStateOfCrewWithNoMetaAtAll(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -125,6 +127,7 @@ func TestStateOfCrewWithNoMetaAtAll(t *testing.T) {
 // tokensSuffix (mvp.md M5 task 27): empty with no database at all, and
 // " · tokens: … · ctx: …%" once the ledger has a row for the crew.
 func TestTokensSuffix(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	if err := w.WriteCrewMeta("shop", "k3", map[string]string{"state": "spawned"}); err != nil {
 		t.Fatalf("WriteCrewMeta: %v", err)
@@ -152,6 +155,7 @@ func TestTokensSuffix(t *testing.T) {
 }
 
 func TestCrewStateUsageErrors(t *testing.T) {
+	t.Parallel()
 	var ue *usageError
 	if err := cmdState(nil, nil, discard{}); !errors.As(err, &ue) {
 		t.Fatalf("cmdState with no args: err = %v, want *usageError", err)

@@ -34,6 +34,7 @@ func runMateSessionWith(t *testing.T, reg harness.Registry, w *store.Workspace, 
 // clear, compact and anything unknown lost the digest (or never had it) and
 // get all of it; resume kept its conversation and gets the live state only.
 func TestSessionHookPrintsWhatEachSourceCallsFor(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	for _, tc := range []struct {
 		payload  string
@@ -68,6 +69,7 @@ func TestSessionHookPrintsWhatEachSourceCallsFor(t *testing.T) {
 // session id and transcript are in mate.meta as soon as the session starts,
 // not only after the first turn's Stop hook; every other key is kept.
 func TestSessionHookRecordsTheSessionID(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	if err := w.WriteMateMeta("shop", map[string]string{
 		spawn.MetaHarness: "claude", spawn.MetaAgent: "mate-shop", spawn.MetaSessionID: "old", spawn.MetaPane: "p1",
@@ -89,6 +91,7 @@ func TestSessionHookRecordsTheSessionID(t *testing.T) {
 // ClaudeSessionHookMaxBytes with part 1 whole and a line saying what to run;
 // Codex, with its limit raised, gets the same digest whole.
 func TestSessionHookFitsWhatEachHarnessReads(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	var big strings.Builder
 	big.WriteString("# Memory\n\n## Captain\n")
@@ -111,6 +114,7 @@ func TestSessionHookFitsWhatEachHarnessReads(t *testing.T) {
 }
 
 func TestSessionHookRefusesAnUnknownHarness(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	err := testCLI().cmdHook([]string{harness.SessionHookName, "--harness", "pi-ish"}, strings.NewReader(""), &stdout, &stderr)
 	if err == nil || stdout.Len() != 0 {
@@ -131,6 +135,7 @@ func (c codexWithoutHooks) Capabilities() harness.Capabilities {
 // declares no verified hooks prints no digest of a guessed size: it tells
 // the Mate to recall by hand and says why on stderr.
 func TestSessionHookAsksTheHarnessForItsDigestSize(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	reg, err := harness.NewRegistry(nil, codexWithoutHooks{})
 	if err != nil {

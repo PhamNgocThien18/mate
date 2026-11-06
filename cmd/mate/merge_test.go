@@ -59,6 +59,7 @@ func mergeCLIWorkspace(t *testing.T) (*store.Workspace, string) {
 }
 
 func TestCmdMergePrintsOneLineAndFinishesTheCrew(t *testing.T) {
+	t.Parallel()
 	w, root := mergeCLIWorkspace(t)
 
 	var out, errw bytes.Buffer
@@ -97,6 +98,7 @@ func TestCmdMergePrintsOneLineAndFinishesTheCrew(t *testing.T) {
 // into the Mate's pane, and which no flag can override. A Mate merges only
 // reviewed work (docs/mvp.md M19); the captain is never gated.
 func TestCmdMergeReadsTheCallerFromThePaneEnvironment(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	var out, errw bytes.Buffer
 	err := testCLI().withEnv("MATE_CALLER", "mate").cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
@@ -124,6 +126,7 @@ func TestCmdMergeReadsTheCallerFromThePaneEnvironment(t *testing.T) {
 }
 
 func TestCmdMergeWantsTwoArguments(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	var out, errw bytes.Buffer
 	err := testCLI().cmdMerge([]string{"--workspace", root, "shop"}, &out, &errw)
@@ -134,6 +137,7 @@ func TestCmdMergeWantsTwoArguments(t *testing.T) {
 }
 
 func TestRunDispatchesMerge(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := testCLI().run([]string{"merge", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
@@ -147,6 +151,7 @@ func TestRunDispatchesMerge(t *testing.T) {
 // `project yolo` and `project mode` were removed by docs/mvp.md M19; a Mate
 // quoting an old manual is told what replaced them.
 func TestCmdProjectYoloAndModeAreGone(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	for _, sub := range []string{"yolo", "mode"} {
 		var out, errw bytes.Buffer
@@ -201,6 +206,7 @@ const passWithFindings = "## Summary\nFine, two things to tidy.\n## Findings\n- 
 // refusal prints them; a backlog line under ## Queued or a tracker id is
 // accepted, checked, and recorded in the crew's meta.
 func TestCmdMergeWantsFollowupsForAPassingReviewsFindings(t *testing.T) {
+	t.Parallel()
 	refuse := func(t *testing.T, w *store.Workspace, root string, args []string, want ...string) {
 		t.Helper()
 		var out, errw bytes.Buffer

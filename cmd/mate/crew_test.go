@@ -16,6 +16,7 @@ import (
 )
 
 func TestRunUnknownCrewSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"crew", "bogus"}, &out, &errw)
 	var ue *usageError
@@ -25,6 +26,7 @@ func TestRunUnknownCrewSubcommandIsUsageError(t *testing.T) {
 }
 
 func TestCrewSpawnRequiresProjectIDAndBrief(t *testing.T) {
+	t.Parallel()
 	cases := [][]string{
 		{"crew", "spawn"},
 		{"crew", "spawn", "shop"},
@@ -42,6 +44,7 @@ func TestCrewSpawnRequiresProjectIDAndBrief(t *testing.T) {
 }
 
 func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -96,6 +99,7 @@ func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
 }
 
 func TestCrewListStateColumnShowsTheDeclaredState(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -161,6 +165,7 @@ func TestCrewListStateColumnShowsTheDeclaredState(t *testing.T) {
 }
 
 func TestCrewStopReportLineDescribesEachOutcome(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		res  spawn.StopResult
@@ -228,6 +233,7 @@ func TestCrewStopReportLineDescribesEachOutcome(t *testing.T) {
 }
 
 func TestCrewStopRequiresProjectAndID(t *testing.T) {
+	t.Parallel()
 	cases := [][]string{
 		{"crew", "stop"},
 		{"crew", "stop", "shop"},
@@ -245,6 +251,7 @@ func TestCrewStopRequiresProjectAndID(t *testing.T) {
 // Handed-back crews leave the default list without being closed; --all
 // still lists them, and a new working status brings them back.
 func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
+	t.Parallel()
 	w, err := store.Init(t.TempDir(), workspaceDefaults())
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +309,7 @@ func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
 }
 
 func TestCrewRelaunchReportNamesTheLaunchProfileAndEndsTheTurn(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	writeCrewRelaunchReport(&out, spawn.RelaunchResult{
 		Project: "shop", Crew: "k3", Agent: "crew-k3", Pane: "p9", Harness: claude.KindClaude,

@@ -11,6 +11,7 @@ import (
 // `mate project review` prints the setting, records on or off, and refuses
 // anything else; wake's hand-back item carries the same word (CON-101).
 func TestProjectReviewRecordsTheCaptainsChoice(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	code, out, _ := runMate(t, "project", "review", "shop", "--workspace", w.Root())
 	if code != 0 || !strings.Contains(out, "review: undecided - ask the captain") {
@@ -33,6 +34,7 @@ func TestProjectReviewRecordsTheCaptainsChoice(t *testing.T) {
 }
 
 func TestWakeSaysWhatTheProjectsReviewSettingAsks(t *testing.T) {
+	t.Parallel()
 	for review, want := range map[string]string{
 		"":              "reviews: none yet; project review undecided: ask the captain",
 		store.ReviewOn:  "reviews: none yet; project review on: start one",

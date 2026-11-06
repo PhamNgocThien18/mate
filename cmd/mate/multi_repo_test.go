@@ -74,6 +74,7 @@ func cliHead(t *testing.T, repo, rev string) string {
 }
 
 func TestDashboardBranchExistsAsksTheCrewsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w, _ := twoRepoCLIWorkspace(t)
 	deps := dashboardDeps(w)
 	for _, c := range []struct {
@@ -93,6 +94,7 @@ func TestDashboardBranchExistsAsksTheCrewsOwnRepo(t *testing.T) {
 }
 
 func TestMergeAndStopActOnEachCrewsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w, root := twoRepoCLIWorkspace(t)
 	apiTip := cliHead(t, cliRepo(w, "api"), "mate/k3")
 	webMain := cliHead(t, cliRepo(w, "web"), "main")
@@ -126,6 +128,7 @@ func TestMergeAndStopActOnEachCrewsOwnRepo(t *testing.T) {
 }
 
 func TestCrewSpawnRefusesWhenTheRepoIsNotSettled(t *testing.T) {
+	t.Parallel()
 	w, root := twoRepoCLIWorkspace(t)
 	brief := filepath.Join(root, "brief.md")
 	if err := os.WriteFile(brief, []byte(brieftest.Ship("work")), 0o644); err != nil {

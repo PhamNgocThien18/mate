@@ -38,6 +38,7 @@ import (
 // A green unit suite is not evidence for this: the fixture database was
 // built from captured transcripts, and the thing under test here is a
 // dashboard reading a timeline that a live Herdr run wrote while it ran.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveDashboardMatchesUsage(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

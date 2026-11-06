@@ -13,6 +13,7 @@ import (
 )
 
 func TestCmdProjectAddListRemove(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	repoA := filepath.Join(ws, "shop", "shop")
 	repoB := filepath.Join(ws, "blog", "blog")
@@ -111,6 +112,7 @@ func TestCmdProjectAddListRemove(t *testing.T) {
 }
 
 func TestCmdProjectAddFlagsAfterPositionalArgs(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -143,6 +145,7 @@ func TestCmdProjectAddFlagsAfterPositionalArgs(t *testing.T) {
 }
 
 func TestCmdProjectListEmptyWorkspace(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -158,6 +161,7 @@ func TestCmdProjectListEmptyWorkspace(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets GIT_CEILING_DIRECTORIES in the process environment through outsideAnyCheckout.
 func TestCmdProjectAddRejectsNonGitDir(t *testing.T) {
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
@@ -186,6 +190,7 @@ func outsideAnyCheckout(t *testing.T, dir string) {
 }
 
 func TestCmdProjectAddRejectsPathOutsideWorkspace(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -205,6 +210,7 @@ func TestCmdProjectAddRejectsPathOutsideWorkspace(t *testing.T) {
 }
 
 func TestCmdProjectAddRejectsDuplicateName(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -229,6 +235,7 @@ func TestCmdProjectAddRejectsDuplicateName(t *testing.T) {
 }
 
 func TestCmdProjectAddRejectsBadName(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -247,6 +254,7 @@ func TestCmdProjectAddRejectsBadName(t *testing.T) {
 }
 
 func TestCmdProjectAddDefaultBranchOverride(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -275,6 +283,7 @@ func TestCmdProjectAddDefaultBranchOverride(t *testing.T) {
 }
 
 func TestCmdProjectRemoveUnknownProject(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -308,6 +317,7 @@ func initProjectWorkspace(t *testing.T, repos ...string) string {
 // M9); the summary line says how to add one, and repo-only flags without a
 // repo are a usage error rather than silently dropped.
 func TestCmdProjectAddWithoutRepo(t *testing.T) {
+	t.Parallel()
 	ws := initProjectWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := cmdProjectAdd([]string{"--workspace", ws, "plan"}, &out, &errw); err != nil {
@@ -335,6 +345,7 @@ func TestCmdProjectAddWithoutRepo(t *testing.T) {
 // TestCmdProjectRepoAddListRemove walks a project from no repo to two and
 // back to one through the CLI.
 func TestCmdProjectRepoAddListRemove(t *testing.T) {
+	t.Parallel()
 	ws := initProjectWorkspace(t, "shop/services/api", "shop/web")
 	var out, errw bytes.Buffer
 	if err := cmdProjectAdd([]string{"--workspace", ws, "shop"}, &out, &errw); err != nil {

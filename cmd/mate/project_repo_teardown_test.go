@@ -8,6 +8,7 @@ import (
 // `mate project repo teardown` prints, records and clears the command a
 // crew stop runs in the worktree (CON-113), and refuses an unknown repo.
 func TestProjectRepoTeardownRecordsTheCommand(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	cfg, err := w.LoadProject("shop")
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 // TestMigrateIsTheCaptains: a Mate or a Crew that runs `mate migrate` is
 // refused before the workspace is even opened, as `project mode` was.
 func TestMigrateIsTheCaptains(t *testing.T) {
+	t.Parallel()
 	for _, caller := range []string{"mate", "crew"} {
 		var stdout, stderr bytes.Buffer
 		code := testCLI().withEnv("MATE_CALLER", caller).mainRun([]string{"migrate", t.TempDir(), "--dry-run"}, &stdout, &stderr)
@@ -27,6 +28,7 @@ func TestMigrateIsTheCaptains(t *testing.T) {
 }
 
 func TestMigrateUsage(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	if code := testCLI().mainRun([]string{"migrate", "a", "b"}, &stdout, &stderr); code != 2 {
 		t.Fatalf("two arguments: exit %d, want 2 (usage)\n%s", code, stderr.String())
@@ -35,6 +37,7 @@ func TestMigrateUsage(t *testing.T) {
 
 // TestMigrateCommandMovesAnOldWorkspace drives the command's core over a
 // one-repo old workspace: the dry run changes nothing, the run moves.
+// Not parallel: it sets PATH in the process environment.
 func TestMigrateCommandMovesAnOldWorkspace(t *testing.T) {
 	w, err := store.Init(t.TempDir(), store.Defaults{})
 	if err != nil {
@@ -96,6 +99,7 @@ func TestMigrateCommandMovesAnOldWorkspace(t *testing.T) {
 // still naming the old one, cannot reach the console's link repair, so
 // mate migrate makes it. The dry run says so and changes nothing; the run
 // repairs root and owner, rewrites the brief, then moves the repo.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment.
 func TestMigrateRepairsAMovedWorkspaceFirst(t *testing.T) {
 	w, err := store.Init(filepath.Join(t.TempDir(), "old"), store.Defaults{})
 	if err != nil {
@@ -237,6 +241,7 @@ func gitOnlyPath(t *testing.T) string {
 // TestCrewStopOpensTheOldLayout: migrate refuses an open crew and names
 // mate crew stop; that command opens the old layout, closes the crew, and
 // the migrate that follows moves the repo. No herdr is on PATH.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment through gitOnlyPath.
 func TestCrewStopOpensTheOldLayout(t *testing.T) {
 	w, root := oldShopWorkspace(t)
 	if err := os.MkdirAll(w.CrewDir("shop", "k1"), 0o755); err != nil {
@@ -267,6 +272,7 @@ func TestCrewStopOpensTheOldLayout(t *testing.T) {
 // records a pane makes migrate refuse; mate mate stop opens the old layout
 // (it fails asking Herdr, not on the layout), and the refusal names the way
 // out: with herdr on PATH, mate mate stop stops it and migrate moves.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment through gitOnlyPath.
 func TestMateStopOpensTheOldLayout(t *testing.T) {
 	w, root := oldShopWorkspace(t)
 	if err := w.WriteMateMeta("shop", map[string]string{"harness": "claude", "pane": "w1:p1", "tab": "w1:t1", "agent": "mate-shop"}); err != nil {

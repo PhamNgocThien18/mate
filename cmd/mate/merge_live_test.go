@@ -172,6 +172,7 @@ func assertMergedAndFinished(t *testing.T, w *store.Workspace, project, crew, br
 // The merge is driven through the engine's Act - the exact ActionFunc cmdConsole
 // installs - with the request the menu's merge entry builds, so what is
 // proved is the path a keystroke takes, not a second implementation of it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -249,6 +250,7 @@ func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
 // The wiring is task 19/20's (consolePilot's daemon over the real Herdr
 // adapter). Nothing in this test merges anything: the only way `main` can
 // carry the crew's commit at the end is that the Mate ran the command.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMateMergesReviewedWork(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

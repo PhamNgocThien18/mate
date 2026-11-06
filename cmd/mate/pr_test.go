@@ -99,6 +99,7 @@ func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
 }
 
 func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
+	t.Parallel()
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
 	c := usePRStarter(st)
@@ -131,6 +132,7 @@ func TestPRWatchRefusesWhatItCannotWatch(t *testing.T) {
 }
 
 func TestPRWatchOfAnEndedPullRequestStartsNothing(t *testing.T) {
+	t.Parallel()
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
 	c := usePRStarter(st)
@@ -149,6 +151,7 @@ func TestPRWatchOfAnEndedPullRequestStartsNothing(t *testing.T) {
 // A closed pull request is watched again: it may have been reopened
 // (docs/mvp.md M19), and only a merge ends a pull request for good.
 func TestPRWatchOfAClosedPullRequestWatchesAgain(t *testing.T) {
+	t.Parallel()
 	ws, w := prWorkspace(t)
 	st := &recordingStarter{pid: 4242}
 	c := usePRStarter(st)

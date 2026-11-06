@@ -56,6 +56,7 @@ func setAuto(t *testing.T, w *store.Workspace, on bool) {
 }
 
 func TestCrewSpawnEndsWithTheTurnLineInEveryMode(t *testing.T) {
+	t.Parallel()
 	w, fx := autoTurnFixture(t)
 	for _, auto := range []bool{false, true} {
 		setAuto(t, w, auto)
@@ -75,6 +76,7 @@ func TestCrewSpawnEndsWithTheTurnLineInEveryMode(t *testing.T) {
 }
 
 func TestStateEndsWithTheTurnLineInEveryMode(t *testing.T) {
+	t.Parallel()
 	w, fx := autoTurnFixture(t)
 	result, err := stateOfCrew(context.Background(), w, fx.deps, "shop", "k3")
 	if err != nil {
@@ -91,6 +93,7 @@ func TestStateEndsWithTheTurnLineInEveryMode(t *testing.T) {
 }
 
 func TestMateSendEndsWithTheTurnLineInEveryMode(t *testing.T) {
+	t.Parallel()
 	w, fx := autoTurnFixture(t)
 	report, err := sendToCrew(context.Background(), w, fx.deps, "shop", "k3", "use blue", store.SourceMate, send.Options{})
 	if err != nil {

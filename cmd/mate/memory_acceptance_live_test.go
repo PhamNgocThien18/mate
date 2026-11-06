@@ -72,6 +72,7 @@ var memoryLessonRE = regexp.MustCompile(`(?i)line[ -]?numbers?|path:line|file:li
 // outbox sender started as cmdConsole starts them, manual mode. A failure is
 // a prompting bug - the manual, the stow skill or a nudge - never a reason
 // to weaken an assertion.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMemorySurvivesRestart(t *testing.T) {
 	for _, v := range []struct {
 		name  string

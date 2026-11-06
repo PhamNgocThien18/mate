@@ -104,6 +104,7 @@ func mustOrder(t *testing.T, out string, needles ...string) {
 // `mate project facts`, `mate memory check`'s anchor warning, budget line
 // and problems, and this binary's path in the cut notice.
 func TestRecallQuotesTheRealCommands(t *testing.T) {
+	t.Parallel()
 	w, now, first := recallFixture(t)
 	path := matehost.WorkPath(w.MateDir("shop"))
 	hook, err := matehost.AddWork(path, matehost.WorkAssigned, "Pre-push hook", "", now)
@@ -144,6 +145,7 @@ func TestRecallQuotesTheRealCommands(t *testing.T) {
 }
 
 func TestRecallCLI(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	var out, errw strings.Builder
 	if code := testCLI().mainRun([]string{"recall", "shop", "--live", "--workspace", w.Root()}, &out, &errw); code != 0 {

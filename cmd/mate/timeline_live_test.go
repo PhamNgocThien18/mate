@@ -39,6 +39,7 @@ import (
 //
 // The observer and the database handle are the ones cmdConsole builds, so
 // what is being proved is the shipped wiring and not a second one.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveTimelineExplainsTheAcceptance(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

@@ -11,6 +11,7 @@ import (
 // `mate project next-work` prints the setting, picking when project.yaml
 // says nothing, records pick or ask, and refuses anything else (CON-120).
 func TestProjectNextWorkRecordsTheCaptainsChoice(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	code, out, _ := runMate(t, "project", "next-work", "shop", "--workspace", w.Root())
 	if code != 0 || !strings.HasPrefix(out, "next work: pick - ") {
@@ -35,6 +36,7 @@ func TestProjectNextWorkRecordsTheCaptainsChoice(t *testing.T) {
 // The Mate's merge ends with the next-work setting, because a landed task
 // is when it decides what runs next; the captain's merge prints one line.
 func TestCmdMergeTellsTheMateWhatComesNext(t *testing.T) {
+	t.Parallel()
 	w, root := mergeCLIWorkspace(t)
 	cfg, err := w.LoadProject("shop")
 	if err != nil {

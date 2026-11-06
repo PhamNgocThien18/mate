@@ -24,6 +24,7 @@ func writeTemp(t *testing.T, text string) string {
 }
 
 func TestBriefCheckAcceptsAGoodBrief(t *testing.T) {
+	t.Parallel()
 	path := writeTemp(t, brieftest.Ship("work"))
 	var out, errw bytes.Buffer
 	if code := testCLI().mainRun([]string{"brief", "check", path}, &out, &errw); code != 0 {
@@ -37,6 +38,7 @@ func TestBriefCheckAcceptsAGoodBrief(t *testing.T) {
 // TestBriefCheckRefusesTheOldBuyesp32Brief runs the CLI on the brief the
 // Mate actually wrote, and on the report's rewrite of it.
 func TestBriefCheckRefusesTheOldBuyesp32Brief(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	code := testCLI().mainRun([]string{"brief", "check", "../../internal/brief/testdata/buyesp32-old-task.md"}, &out, &errw)
 	if code != 1 {
@@ -64,6 +66,7 @@ func TestBriefCheckRefusesTheOldBuyesp32Brief(t *testing.T) {
 }
 
 func TestBriefCheckScoutFlag(t *testing.T) {
+	t.Parallel()
 	path := writeTemp(t, brieftest.Ship("work"))
 	var out, errw bytes.Buffer
 	if code := testCLI().mainRun([]string{"brief", "check", "--scout", path}, &out, &errw); code != 1 {
@@ -81,6 +84,7 @@ func TestBriefCheckScoutFlag(t *testing.T) {
 }
 
 func TestBriefCheckUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	if code := testCLI().mainRun([]string{"brief", "check"}, &out, &errw); code != 2 {
 		t.Fatalf("no file: exit %d, want 2", code)
@@ -91,6 +95,7 @@ func TestBriefCheckUsage(t *testing.T) {
 // ## Captain's words in the app's own copy of the brief, and the crew gets
 // one verified line naming that file.
 func TestBriefAppendAppendsAndTellsTheCrew(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -134,6 +139,7 @@ func TestBriefAppendAppendsAndTellsTheCrew(t *testing.T) {
 // TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief: there is
 // nobody to tell, so the brief must not start disagreeing with the work.
 func TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -159,6 +165,7 @@ func TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief(t *testing.T) {
 // line; the words stay appended and the result carries the exact line to
 // send by hand, so a retry never appends twice.
 func TestBriefAppendKeepsTheWordsWhenTheSendIsRefused(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -175,6 +182,7 @@ func TestBriefAppendKeepsTheWordsWhenTheSendIsRefused(t *testing.T) {
 }
 
 func TestBriefAppendUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	for _, args := range [][]string{{"brief", "append", "shop"}, {"brief", "append", "shop", "k3", "words"}} {
 		if code := testCLI().mainRun(args, &out, &errw); code != 2 {
@@ -184,6 +192,7 @@ func TestBriefAppendUsage(t *testing.T) {
 }
 
 func TestProjectFactsCLI(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	empty := filepath.Join(ws, "shop", "shop")
 	full := filepath.Join(ws, "blog", "blog")
@@ -235,6 +244,7 @@ func TestProjectFactsCLI(t *testing.T) {
 // session (CON-73): the brief is appended, the pane is not typed into, and
 // the session input's third part is the words.
 func TestBriefAppendOnARestingCrewOpensAFreshSession(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -278,6 +288,7 @@ func TestBriefAppendOnARestingCrewOpensAFreshSession(t *testing.T) {
 // --fresh forces a fresh session on a crew still working; without it the
 // working crew gets the plain line.
 func TestBriefAppendFreshOnAWorkingCrew(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)

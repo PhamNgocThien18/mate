@@ -72,6 +72,7 @@ func wakeAt(t *testing.T, w *store.Workspace, now time.Time, advance bool) strin
 // the captain about /harness-review, however many wakes see it; a peek
 // opens none, and a closed one is not asked again for frictionAskAgain.
 func TestWakeAsksOnceForAHarnessReviewOverBudget(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	writeFriction(t, w, "shop", overBudgetFriction())
 	now := time.Date(2026, 11, 4, 20, 0, 0, 0, time.UTC)
@@ -113,6 +114,7 @@ func TestWakeAsksOnceForAHarnessReviewOverBudget(t *testing.T) {
 }
 
 func TestWakeSaysNothingOfFrictionWithinBudgetOrWithoutALog(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	now := time.Date(2026, 11, 4, 20, 0, 0, 0, time.UTC)
 	if text := wakeAt(t, w, now, true); strings.Contains(text, "friction") {
@@ -130,6 +132,7 @@ func TestWakeSaysNothingOfFrictionWithinBudgetOrWithoutALog(t *testing.T) {
 // The repo's review.md may raise the budget at onboarding; the check
 // reads it rather than the kit's default.
 func TestFrictionCheckReadsTheReposBudget(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	file := writeFriction(t, w, "shop", overBudgetFriction())
 	review := filepath.Join(filepath.Dir(file), "workflows", "review.md")

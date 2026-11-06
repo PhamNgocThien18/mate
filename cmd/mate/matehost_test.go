@@ -13,6 +13,7 @@ import (
 
 // `mate mate repl` is a subcommand of `mate mate`, with a project.
 func TestMateREPLWantsAProject(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	err := testCLI().run([]string{"mate", "repl"}, &out, &errw)
 	var usage *usageError
@@ -31,6 +32,7 @@ func TestMateREPLWantsAProject(t *testing.T) {
 // The REPL process the host runs is told to quit when the host stops, and
 // the host does not wait on it for longer than replQuitWait.
 func TestREPLProcessEndsWithTheHost(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "mate")
 	args := filepath.Join(dir, "args")

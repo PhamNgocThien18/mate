@@ -56,6 +56,7 @@ func usageWorkspace(t *testing.T) *store.Workspace {
 // Each form of the command reaches its own page: the first line names it,
 // and --top reaches the ledger as a cut (a second task makes one).
 func TestUsageHandsEachFormToItsPage(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	handle, err := db.Open(w)
 	if err != nil {
@@ -85,6 +86,7 @@ func TestUsageHandsEachFormToItsPage(t *testing.T) {
 // A workspace whose console never ran has no mate.db: the command says so
 // and prints nothing.
 func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	var stdout, stderr strings.Builder
 	err := testCLI().run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
@@ -97,6 +99,7 @@ func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
 }
 
 func TestUsageUnknownProjectIsAUsageError(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	var stdout, stderr strings.Builder
 	err := testCLI().run([]string{"usage", "nope", "--workspace", w.Root()}, &stdout, &stderr)
@@ -106,6 +109,7 @@ func TestUsageUnknownProjectIsAUsageError(t *testing.T) {
 }
 
 func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	for name, args := range map[string][]string{
 		"why without a crew":      {"usage", "shop", "--why", "--workspace", w.Root()},
@@ -132,6 +136,7 @@ func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
 // known. internal/usage's TestUsageKeepsAbsoluteContextWithoutAModelWindow
 // is the ledger's half of what was one test before CON-168.
 func TestConsoleKeepsAbsoluteContextWithoutAModelWindow(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	handle, err := db.Open(w)
 	if err != nil {

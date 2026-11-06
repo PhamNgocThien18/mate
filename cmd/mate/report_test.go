@@ -6,6 +6,7 @@ import (
 )
 
 func TestReportSummaryKeepsLimitationsAndDoesNotReadTheWholeReport(t *testing.T) {
+	t.Parallel()
 	text := "# Findings\n## Summary\nKhông tái hiện được lỗi.\nEvidence: log.txt\n\n## Detail\n" + strings.Repeat("long", 50000)
 	got, err := reportSummary(text)
 	if err != nil {

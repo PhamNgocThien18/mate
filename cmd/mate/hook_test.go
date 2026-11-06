@@ -35,6 +35,7 @@ func mateDirFor(t *testing.T, project string) (root, mateDir string) {
 }
 
 func TestCmdHookMatePromptWritesSentLogFromCwd(t *testing.T) {
+	t.Parallel()
 	root, mateDir := mateDirFor(t, "shop")
 	c := testCLI().inDir(mateDir)
 
@@ -64,6 +65,7 @@ func TestCmdHookMatePromptWritesSentLogFromCwd(t *testing.T) {
 }
 
 func TestCmdHookMateStopUpdatesMetaFromCwd(t *testing.T) {
+	t.Parallel()
 	root, mateDir := mateDirFor(t, "shop")
 	c := testCLI().inDir(mateDir)
 
@@ -97,6 +99,7 @@ func TestCmdHookMateStopUpdatesMetaFromCwd(t *testing.T) {
 }
 
 func TestCmdHookEnvOverridesCwd(t *testing.T) {
+	t.Parallel()
 	root, mateDir := mateDirFor(t, "shop")
 	// A cwd that resolves to no workspace at all: the env vars alone must be
 	// enough to find the right one.
@@ -127,6 +130,7 @@ func TestCmdHookEnvOverridesCwd(t *testing.T) {
 }
 
 func TestCmdHookMatePromptMalformedJSONExitsZeroAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	root, mateDir := mateDirFor(t, "shop")
 	c := testCLI().inDir(mateDir)
 
@@ -152,6 +156,7 @@ func TestCmdHookMatePromptMalformedJSONExitsZeroAndWritesNothing(t *testing.T) {
 }
 
 func TestCmdHookNoWorkspaceExitsZero(t *testing.T) {
+	t.Parallel()
 	c := testCLI().inDir(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
@@ -165,6 +170,7 @@ func TestCmdHookNoWorkspaceExitsZero(t *testing.T) {
 }
 
 func TestCmdHookUnknownSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	err := testCLI().cmdHook([]string{"bogus"}, strings.NewReader(""), &stdout, &stderr)
 	var ue *usageError

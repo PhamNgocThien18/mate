@@ -8,6 +8,7 @@ import (
 )
 
 func TestCmdInitCreatesWorkspace(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	if err := cmdInit([]string{dir}, &stdout, &stderr); err != nil {
@@ -25,6 +26,7 @@ func TestCmdInitCreatesWorkspace(t *testing.T) {
 	}
 }
 
+// Not parallel: it changes the process working directory.
 func TestCmdInitDefaultsToCurrentDirectory(t *testing.T) {
 	dir := t.TempDir()
 	oldwd, err := os.Getwd()
@@ -46,6 +48,7 @@ func TestCmdInitDefaultsToCurrentDirectory(t *testing.T) {
 }
 
 func TestCmdInitRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	if err := cmdInit([]string{"a", "b"}, &stdout, &stderr); err == nil {
 		t.Fatal("want error for extra arguments")

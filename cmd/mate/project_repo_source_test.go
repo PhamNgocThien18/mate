@@ -47,6 +47,7 @@ func commitCount(t *testing.T, dir string) string {
 	return out
 }
 
+// Not parallel: it sets GIT_AUTHOR_* and GIT_COMMITTER_* in the process environment through gitIdentity.
 func TestRepoAddClonesAnEmptyRemoteAndGivesItAFirstCommit(t *testing.T) {
 	gitIdentity(t)
 	ws := initProjectWorkspace(t)
@@ -81,6 +82,7 @@ func TestRepoAddClonesAnEmptyRemoteAndGivesItAFirstCommit(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets GIT_AUTHOR_* and GIT_COMMITTER_* in the process environment through gitIdentity.
 func TestRepoAddLeavesARepoWithHistoryAlone(t *testing.T) {
 	gitIdentity(t)
 	ws := initProjectWorkspace(t)
@@ -102,6 +104,7 @@ func TestRepoAddLeavesARepoWithHistoryAlone(t *testing.T) {
 }
 
 func TestRepoAddRefusesToCloneOverSomething(t *testing.T) {
+	t.Parallel()
 	ws := initProjectWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := cmdProjectAdd([]string{"--workspace", ws, "shop"}, &out, &errw); err != nil {
@@ -117,6 +120,7 @@ func TestRepoAddRefusesToCloneOverSomething(t *testing.T) {
 }
 
 func TestGitURLRecognisesRemotesNotPaths(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]bool{
 		"git@github.com:nguyenngocanh94/hellovietnambackend.git": true,
 		"https://github.com/org/repo.git":                        true,
@@ -146,6 +150,7 @@ func TestGitURLRecognisesRemotesNotPaths(t *testing.T) {
 // tree of docs/mvp.md section 3: `project add` makes `<root>/<project>/`,
 // with or without a repo, a URL is cloned into it, and nothing else appears
 // at the workspace root.
+// Not parallel: it sets GIT_AUTHOR_* and GIT_COMMITTER_* in the process environment through gitIdentity.
 func TestProjectAddMakesTheDirectoryAndRepoAddFillsIt(t *testing.T) {
 	gitIdentity(t)
 	ws := initProjectWorkspace(t)
@@ -180,6 +185,7 @@ func TestProjectAddMakesTheDirectoryAndRepoAddFillsIt(t *testing.T) {
 // TestRepoAddRefusesAPathOutsideTheProject: a repo by path must already be
 // under the project's directory, and the refusal says where to move it.
 func TestRepoAddRefusesAPathOutsideTheProject(t *testing.T) {
+	t.Parallel()
 	ws := initProjectWorkspace(t, "loose", "blog/web")
 	var out, errw bytes.Buffer
 	if err := cmdProjectAdd([]string{"--workspace", ws, "shop"}, &out, &errw); err != nil {
@@ -204,6 +210,7 @@ func TestRepoAddRefusesAPathOutsideTheProject(t *testing.T) {
 // TestRepoAddOnTheOldLayoutClonesNothing: a workspace not yet migrated does
 // not open, so no clone is made and no directory is left behind.
 func TestRepoAddOnTheOldLayoutClonesNothing(t *testing.T) {
+	t.Parallel()
 	ws := initProjectWorkspace(t)
 	var out, errw bytes.Buffer
 	if err := cmdProjectAdd([]string{"--workspace", ws, "shop"}, &out, &errw); err != nil {
@@ -234,6 +241,7 @@ func TestRepoAddOnTheOldLayoutClonesNothing(t *testing.T) {
 // TestRepoAddRefusedWritesNothingIntoTheRepo: a repo with no commit outside
 // the project's directory is refused before the empty first commit, so the
 // captain's repo is left as it was.
+// Not parallel: it sets GIT_AUTHOR_* and GIT_COMMITTER_* in the process environment through gitIdentity.
 func TestRepoAddRefusedWritesNothingIntoTheRepo(t *testing.T) {
 	gitIdentity(t)
 	ws := initProjectWorkspace(t)

@@ -27,6 +27,7 @@ func runMateAs(t *testing.T, c cli, args ...string) (int, string, string) {
 }
 
 func TestPluginHelpPrintsSyntaxAndSetup(t *testing.T) {
+	t.Parallel()
 	code, out, _ := runMate(t, "plugin", "--help")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
@@ -52,6 +53,7 @@ func TestPluginHelpPrintsSyntaxAndSetup(t *testing.T) {
 }
 
 func TestPluginAddIsTheCaptains(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 	for _, caller := range []string{"mate", "crew"} {
@@ -74,6 +76,7 @@ func TestPluginAddIsTheCaptains(t *testing.T) {
 }
 
 func TestPluginAddListDoctor(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 
@@ -112,6 +115,7 @@ func TestPluginAddListDoctor(t *testing.T) {
 }
 
 func TestPluginAddRefusals(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, map[string]map[string]string{"board": {"blog": "z"}})
 	pkg := filepath.Join(w.Root(), "pkg")
 	before, err := os.ReadFile(pluginsFile(w))
@@ -150,6 +154,7 @@ func TestPluginAddRefusals(t *testing.T) {
 }
 
 func TestPluginDoctorFailsAndAsksTheHarness(t *testing.T) {
+	t.Parallel()
 	// A harness that cannot give a Mate MCP servers, found through the
 	// catalog's own capability rather than by name.
 	var refusing harness.Kind
@@ -194,6 +199,7 @@ func TestPluginDoctorFailsAndAsksTheHarness(t *testing.T) {
 }
 
 func TestPluginMateHarnessPrefersARunningMate(t *testing.T) {
+	t.Parallel()
 	w, err := store.Init(t.TempDir(), store.Defaults{MateHarness: "Alpha"})
 	if err != nil {
 		t.Fatal(err)
@@ -227,6 +233,7 @@ func TestPluginMateHarnessPrefersARunningMate(t *testing.T) {
 }
 
 func TestPluginWorkspaceAddListDoctor(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, nil)
 	pkg := filepath.Join(w.Root(), "pkg")
 	code, out, stderr := runMate(t, "plugin", "add", pkg, "--as", "board", "--set", "id=workspace", "--key", "b", "--workspace", w.Root())

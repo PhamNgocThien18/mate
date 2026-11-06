@@ -50,6 +50,8 @@ import (
 //  6. the row now says "assigned HH:MM" and is still in the inbox, because
 //     handing the question over is not answering the crew (unless the Mate
 //     has already answered it, which is the rule that closes it)
+//
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAssignQueuesWhileTheMateIsBusy(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

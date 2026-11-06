@@ -29,6 +29,7 @@ import (
 // day-long run's evidence is committed; off is neither. Without a key, or on any mistake, the observer is the fixture's,
 // with one line saying why when the setting asked for Jev.
 func TestConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
 	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
@@ -92,6 +93,7 @@ func TestConfiguredObserver(t *testing.T) {
 // The chain configuredObserver builds names pane states, and keeps the
 // screens it asked Jev about under the workspace's .mate/screens.
 func TestConfiguredObserverNamesPaneStatesAndKeepsScreens(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
 	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
@@ -120,6 +122,7 @@ func errText(err error) string {
 // A command's deps carry the configured observer; a mistake in the setting
 // is one line on stderr and the fixture observer.
 func TestLiveDepsCarryTheConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	var stderr bytes.Buffer
 	if deps := liveDeps(ws, &stderr); deps.Observer != nil || stderr.Len() != 0 {
@@ -153,6 +156,7 @@ func (o *seesBusy) Observe(context.Context, harness.ScreenProfile, string) (scre
 // console's watcher read the pane through: each refuses or reports busy on
 // a pane that shows an empty composer, because the observer says busy.
 func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
+	t.Parallel()
 	t.Run("mate send", func(t *testing.T) {
 		w := liveCrewWorkspace(t, "shop")
 		rt := runtime.NewFake()
@@ -272,6 +276,7 @@ func callersOf(t *testing.T) map[string]map[string]bool {
 // the session), and in the core (`mate`, `mate core run`), which sets the
 // observer itself. spawn.LiveDeps is called by baseDeps alone.
 func TestCommandsThatReadAPaneUseTheConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	calls := callersOf(t)
 	for _, fn := range []string{"cmdSend", "cmdBriefAppend", "cmdMateStart", "cmdMateRefresh", "cmdMateStop", "cmdProjectRemove",
 		"cmdCrewSpawn", "cmdCrewRelaunch", "cmdReview", "cmdState", "cmdPeek", "runPRWatch"} {

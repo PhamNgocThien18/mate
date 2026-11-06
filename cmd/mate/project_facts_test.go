@@ -47,6 +47,7 @@ func projectFactsCLI(t *testing.T, w *store.Workspace) (int, string, string) {
 // TestProjectFactsNoRepo: a project without a repo is not an error; the
 // facts are that it has none, and how one is added.
 func TestProjectFactsNoRepo(t *testing.T) {
+	t.Parallel()
 	w := noRepoWorkspace(t)
 	code, out, errw := projectFactsCLI(t, w)
 	if code != 0 {
@@ -61,6 +62,7 @@ func TestProjectFactsNoRepo(t *testing.T) {
 // TestProjectFactsOneRepo: one block, naming the repo, whose head line
 // spells out the anchor a fact recorded now carries.
 func TestProjectFactsOneRepo(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	head := strings.TrimSpace(gitOut(t, w.RepoDir("shop/shop"), "rev-parse", "--short", "main"))
 	code, out, errw := projectFactsCLI(t, w)
@@ -83,6 +85,7 @@ func TestProjectFactsOneRepo(t *testing.T) {
 // TestProjectFactsTwoRepos: one block per repo, in registration order,
 // separated by one blank line, each with its own branch and anchor.
 func TestProjectFactsTwoRepos(t *testing.T) {
+	t.Parallel()
 	w := twoRepoWorkspace(t)
 	head := strings.TrimSpace(gitOut(t, w.RepoDir("shop/shop"), "rev-parse", "--short", "main"))
 	code, out, errw := projectFactsCLI(t, w)

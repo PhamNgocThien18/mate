@@ -90,6 +90,7 @@ func connectTo(t *testing.T, w *store.Workspace) *coreclient.Client {
 // counts a console as open by that header, and only then types a Manual
 // project's queued lines into its Mate (CON-212, CON-214).
 func TestTheConsoleSaysItIsTheConsole(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	core := newSocketCore(t, w, func(rw http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -126,6 +127,7 @@ func TestTheConsoleSaysItIsTheConsole(t *testing.T) {
 // console ends after its wait with an error, so the header says stale and
 // the next tick reads again, rather than one read hanging for ever.
 func TestAConsoleReadOfAHungCoreEnds(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	hang := make(chan struct{})
 	t.Cleanup(func() { close(hang) })
@@ -167,6 +169,7 @@ func TestAConsoleReadOfAHungCoreEnds(t *testing.T) {
 // to its end after its client went is the core's (internal/core's
 // client_test.go); this fake core just goes on.
 func TestQuittingDuringAnActionLeavesItToTheCore(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	release := make(chan struct{})
 	finished := make(chan struct{})
