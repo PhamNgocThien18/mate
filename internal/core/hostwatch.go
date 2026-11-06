@@ -47,13 +47,12 @@ type hostWatch struct {
 	// when the question was cut short.
 	alive func(ctx context.Context, project string) (alive, asked bool)
 	// restart starts project's Mate again when mate.meta still records the
-	// dead host pid (recovery.RestartHost); acted is false when there was
-	// nothing left to do.
+	// dead host pid (recovery.RestartHost, under recover.lock and then the
+	// engine's action lock on the Project); acted is false when there was
+	// nothing left to do, or an action of a UI held the Mate and decides.
 	restart func(ctx context.Context, project, pid string) (recovery.Item, bool)
-	// hold takes the engine's action lock on project for the restart; ok
-	// is false while an action of a UI holds it, which then decides.
-	hold func(project string) (release func(), ok bool)
-	// changed drops the engine's cached snapshot once a restart returned.
+	// changed drops the engine's cached snapshot once what the loop says
+	// about a Mate changed.
 	changed func()
 	// tell sends the captain the notification for a Mate given up on.
 	tell func(ctx context.Context, project, line string)
@@ -76,6 +75,10 @@ type hostWatch struct {
 type watchedHost struct {
 	// pid is the host mate.meta records; another one is another host.
 	pid string
+	// started is the pid of the host the loop itself last started. A host
+	// of any other pid was started by someone else - the captain, a UI's
+	// restart, recovery - and begins a new count.
+	started string
 	// suspect is true once the host was found dead, until it is found
 	// alive or started again.
 	suspect bool
@@ -88,6 +91,9 @@ type watchedHost struct {
 	// gaveUp is true once the limit was reached, until mate.meta records
 	// another host (a start of the captain's) or none.
 	gaveUp bool
+	// dirty is true when what the loop says about this Mate changed in
+	// this check, so the cached snapshot is dropped once it is published.
+	dirty bool
 }
 
 // Start begins the loop and returns at once; it cannot fail.
@@ -146,13 +152,21 @@ func (h *hostWatch) check(ctx context.Context) {
 		watched[ref.Name] = true
 		h.checkOne(ctx, ref.Name, meta[store.MetaMatePID])
 	}
-	for project := range h.mates {
+	dirty := false
+	for project, m := range h.mates {
 		if !watched[project] {
 			// Stopped, removed, or no longer a host of its own.
+			dirty = dirty || m.notice != ""
 			delete(h.mates, project)
+			continue
 		}
+		dirty = dirty || m.dirty
+		m.dirty = false
 	}
 	h.publish()
+	if dirty {
+		h.changed()
+	}
 }
 
 // checkOne looks at project's host, which mate.meta records as pid.
@@ -163,12 +177,13 @@ func (h *hostWatch) checkOne(ctx context.Context, project, pid string) {
 		h.mates[project] = m
 	}
 	if m.pid != pid {
-		// Another host: the loop's own restart, recovery's, or a start of
-		// the captain's, which gives a Mate given up on a new count.
-		if m.gaveUp {
+		// Another host. One the loop did not start - the captain's, a UI's
+		// restart, recovery's - begins a new count and ends a give-up.
+		dirty := m.dirty || m.notice != ""
+		if pid != m.started {
 			*m = watchedHost{}
 		}
-		m.pid, m.suspect, m.notice = pid, false, ""
+		m.pid, m.suspect, m.notice, m.dirty = pid, false, "", dirty
 	}
 	if m.gaveUp {
 		return
@@ -189,23 +204,20 @@ func (h *hostWatch) checkOne(ctx context.Context, project, pid string) {
 	now := h.now()
 	m.restarts = slices.DeleteFunc(m.restarts, func(at time.Time) bool { return now.Sub(at) >= hostRestartWindow })
 	if len(m.restarts) >= hostRestartLimit {
-		m.gaveUp = true
+		m.gaveUp, m.dirty = true, true
 		m.notice = fmt.Sprintf("Mate %s: host died %d times in %dm; not restarting", project, len(m.restarts)+1, int(hostRestartWindow/time.Minute))
 		h.say(m.notice + "; start it again by hand")
 		h.tell(ctx, project, m.notice+"; start it again by hand")
 		return
 	}
-	release, ok := h.hold(project)
-	if !ok {
-		return
-	}
 	item, acted := h.restart(ctx, project, pid)
-	release()
-	h.changed()
 	if !acted {
 		return
 	}
-	m.restarts = append(m.restarts, now)
+	m.restarts, m.dirty = append(m.restarts, now), true
+	if meta, err := h.ws.ReadMateMeta(project); err == nil {
+		m.started = meta[store.MetaMatePID]
+	}
 	if item.Err != nil {
 		m.notice = fmt.Sprintf("Mate %s: host pid %s died; restart failed: %s", project, pid, firstLine(item.Err.Error()))
 		h.say(m.notice)
@@ -265,13 +277,16 @@ func (e *Engine) newHostWatch() *hostWatch {
 			return spawn.HostAlive(ctx, ws, project)
 		},
 		restart: func(ctx context.Context, project, pid string) (recovery.Item, bool) {
-			return recovery.RestartHost(ctx, ws, deps, project, pid)
-		},
-		hold: func(project string) (func(), bool) {
-			if e.locks.take(project, project, coreapi.ActionRestartMate) != nil {
-				return nil, false
+			// The action lock is tried only under recover.lock: a recovery
+			// pass may hold that one for minutes, and a UI's stop or start
+			// on this Mate must not be refused as busy meanwhile.
+			hold := func() (func(), bool) {
+				if e.locks.take(project, project, coreapi.ActionRestartMate) != nil {
+					return nil, false
+				}
+				return func() { e.locks.release(project) }, true
 			}
-			return func() { e.locks.release(project) }, true
+			return recovery.RestartHost(ctx, ws, deps, project, pid, hold)
 		},
 		changed: e.Invalidate,
 		tell:    e.tellHostGivenUp,
@@ -312,7 +327,12 @@ func withHostWatch(snap query.Snapshot, notices map[string]string) query.Snapsho
 		if !ok {
 			continue
 		}
-		project.Mate.Error = query.KnownField(query.ErrorReason(line))
+		reason := line
+		if prior := project.Mate.Error; prior.IsKnown() && prior.Value != "" {
+			// Recovery's word stays beside it.
+			reason = string(prior.Value) + "; " + line
+		}
+		project.Mate.Error = query.KnownField(query.ErrorReason(reason))
 		lines = append(lines, line)
 	}
 	if len(lines) > 0 {

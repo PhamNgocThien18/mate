@@ -87,9 +87,9 @@ A core that starts finds each host alive on its socket and leaves it be.
 
 While it runs, the core watches every host that `mate.meta` records
 (`pid`, no pane) every 5 seconds (CON-226). A host found dead twice in a row,
-under the same `pid`, is started again on its session through recovery,
-under `.mate/recover.lock` and the action lock of its Project, and
-`core.log` gets a line:
+under the same `pid`, is started again on its session through recovery:
+under `.mate/recover.lock` first, then the action lock of its Project, and
+only while `mate.meta` still records that `pid`. `core.log` gets a line:
 
 ```
 mate core: Mate shop: host pid 4242 died; started again (1 of 3 in 10m), resumed its session
@@ -102,10 +102,14 @@ mate core: Mate shop: host pid 4242 died; started again (1 of 3 in 10m), resumed
 | A UI is stopping, starting or restarting that Mate | Nothing this time: that action decides. |
 | A Mate in a Herdr pane (Codex, pi, `mate.mode: pane`) | Nothing: Herdr reports it. |
 | A Manual project | The same as an Auto one: starting the host types nothing into the Mate. |
-| A fourth death within 10 minutes | Starts nothing more. A notification, unless `MATE_NOTIFICATIONS=off`, and the notice `Mate shop: host died 4 times in 10m; not restarting` on the console's status line, on the Mate's row and in `mate core status`. A start by hand gives a new count. |
+| A fourth death within 10 minutes | Starts nothing more. A notification, unless `MATE_NOTIFICATIONS=off`, and the notice `Mate shop: host died 4 times in 10m; not restarting` on the console's status line, on the Mate's row and in `mate core status` (when the engine is the core's; a console's engine serves no socket to ask). |
+| A host the core did not start (a start by hand, a UI's restart, recovery) | A new count, even before the core gave up. |
 
 The count lives in the core's memory: a restarted core counts from zero, and
-its recovery brings back a host that died meanwhile.
+its recovery brings back a host that died meanwhile. `mate mate stop` and
+`mate mate start` from a shell do not take the core's action lock: a stop
+that lands in the instant the core restarts the same host can leave the new
+host running, or have it started once more; stop again.
 
 ## After installing a new mate
 

@@ -109,10 +109,15 @@ func TestRestartHostStartsOnlyTheHostFoundDead(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-served })
 
 	// Another pid recorded: a start already replaced the host found dead.
-	if _, acted := RestartHost(context.Background(), w, d, "shop", "4141"); acted || starts != 0 {
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4141", nil); acted || starts != 0 {
 		t.Fatalf("acted = %v, starts = %d for a pid mate.meta no longer records", acted, starts)
 	}
-	it, acted := RestartHost(context.Background(), w, d, "shop", "4242")
+	// The caller's lock on the Mate is held elsewhere: that one decides.
+	refused := func() (func(), bool) { return nil, false }
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4242", refused); acted || starts != 0 {
+		t.Fatalf("acted = %v, starts = %d with the caller's hold refused", acted, starts)
+	}
+	it, acted := RestartHost(context.Background(), w, d, "shop", "4242", nil)
 	if !acted || it.Err != nil || !it.Resumed || starts != 1 {
 		t.Fatalf("item = %+v, acted = %v, starts = %d; want the Mate back on its session", it, acted, starts)
 	}
@@ -121,14 +126,14 @@ func TestRestartHostStartsOnlyTheHostFoundDead(t *testing.T) {
 		t.Fatalf("meta = %v", meta)
 	}
 	// The new host answers: nothing to do.
-	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343"); acted || starts != 1 {
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343", nil); acted || starts != 1 {
 		t.Fatalf("acted = %v, starts = %d for a host that answers", acted, starts)
 	}
 	// A stop cleared the record: nothing to do either.
 	if err := w.WriteMateMeta("shop", map[string]string{spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless, spawn.MetaSessionID: sessionA}); err != nil {
 		t.Fatal(err)
 	}
-	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343"); acted || starts != 1 {
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343", nil); acted || starts != 1 {
 		t.Fatalf("acted = %v, starts = %d for a Mate that was stopped", acted, starts)
 	}
 }
