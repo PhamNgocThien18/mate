@@ -88,8 +88,9 @@ func (c *FakeClock) Set(t time.Time) {
 }
 
 // SamePath reports whether a and b name the same location, resolving
-// symlinks when both sides exist. v1 kept this in internal/fsboundary; the
-// Herdr adapter's workspace and pane cwd checks are the only callers here.
+// symlinks when both sides exist. v1 kept this in internal/fsboundary; its
+// callers are the start spec's cwd check and the Herdr adapter's workspace
+// and pane cwd checks (internal/runtime/herdr).
 func SamePath(a, b string) bool {
 	ca := filepath.Clean(strings.TrimSpace(a))
 	cb := filepath.Clean(strings.TrimSpace(b))

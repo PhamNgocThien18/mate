@@ -61,7 +61,7 @@ var platformAdapters = []platformEntry{
 	},
 	{
 		file: "internal/runtime/herdr/herdr_session_stream.go", uses: []string{`import "github.com/creack/pty"`, `import "golang.org/x/sys/unix"`, "syscall.Kill"},
-		reason: "runs a Herdr session stream on a pseudo-terminal and polls it; its syscall.Kill on the stream's process group could be platform.SignalGroup, debt left in a file CON-184 does not touch (CON-190 moves it)",
+		reason: "runs a Herdr session stream on a pseudo-terminal and polls it; its syscall.Kill on the stream's process group could be platform.SignalGroup, debt left in a file CON-184 does not touch (CON-190 moved it here)",
 	},
 }
 

@@ -318,7 +318,7 @@ They add local rules to the repo-wide layer rule, which
 | `internal/platform/ratchet_test.go` | Outside `internal/platform`, no `syscall.Flock`/`LOCK_*`/`O_NOFOLLOW`/`Kill`/`Getpgid`, `Setsid`/`Setpgid`, `runtime.GOOS`, import of `x/sys/unix` or `creack/pty`, or `"osascript"`, except the files in `platformAdapters` |
 | `internal/coreapi/boundary_test.go` | `internal/coreapi` imports the standard library and `internal/query` only |
 | `internal/core/boundary_test.go` | Nothing `internal/core` links, transitively, is under `cmd/` or `internal/ui/` |
-| `internal/runtime/herdr/boundary_test.go` | Outside `internal/runtime/herdr`, only `internal/spawn` (which builds the live adapter in `LiveDeps`) imports it in a non-test file; the rest of mate reaches Herdr through `runtime.Adapter` and `runtime.ReadAdapter` |
+| `internal/runtime/herdr/boundary_test.go` | Outside `internal/runtime/herdr`, only `internal/spawn` (which builds the live adapter in `LiveDeps`) imports it in a non-test file; the rest of mate reaches Herdr through `runtime.Adapter`, `runtime.ReadAdapter` and `runtime.SessionStream` |
 
 ## 5. Where to make a change
 
