@@ -187,6 +187,10 @@ const (
 	codexTrustAcceptV156   = "1. Trust and continue"
 	codexTrustQuitV156     = "2. Quit"
 	codexDialogFooterV156  = "enter continue · esc quit"
+	// 0.167.0 returns to the Agent Command Center instead of quitting.
+	// The accept option and its selection key are unchanged.
+	codexTrustBackV167    = "2. Back to Agent Command Center"
+	codexDialogFooterV167 = "enter continue · esc back"
 	// CodexComposerPlaceholder is the empty composer's placeholder text; its
 	// presence is what classifies a Codex pane as ready.
 	CodexComposerPlaceholder = "Ask Codex to do anything"
@@ -246,6 +250,20 @@ func codexStartup() harness.StartupProfile {
 				Marker: codexHighlightMarker,
 				// The question opens a paragraph that wraps to three
 				// lines at 93 columns; a narrower pane wraps it to more.
+				QuestionWindow: 6,
+				SelectKeys:     []string{"1"},
+				TargetLabel:    codexTrustAcceptV156,
+			},
+			{
+				Screen:   harness.StartupScreenTrustDialog,
+				Question: codexTrustQuestionV156,
+				Options: []harness.DialogOption{
+					{Label: codexTrustAcceptV156},
+					{Label: codexTrustBackV167},
+				},
+				Target:         0,
+				Footer:         codexDialogFooterV167,
+				Marker:         codexHighlightMarker,
 				QuestionWindow: 6,
 				SelectKeys:     []string{"1"},
 				TargetLabel:    codexTrustAcceptV156,

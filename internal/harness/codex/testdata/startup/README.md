@@ -1,5 +1,18 @@
 # Codex startup screens
 
+Reproduced 2026-11-06 on Ubuntu WSL2 with Codex 0.167.0, using a PTY,
+an isolated `CODEX_HOME` (auth.json copied, no operator config), and a scratch
+git repository. Launched with MATE's `--dangerously-bypass-approvals-and-sandbox`
+and `-c check_for_update_on_startup=false`, plus `--no-daemon --no-alt-screen`.
+No model prompt was submitted. Herdr 0.9.5 is installed, but this capture is
+transcribed from the PTY's rendered text, not a Herdr read:
+
+- `codex-0.167.0-trust-dialog.txt`: option 2 is now **Back to Agent Command
+  Center**, and the footer is `enter continue · esc back`. The existing
+  0.156.1 recognizer rejects both changed labels. The question and option 1
+  remain unchanged. Negative selections and malformed variants are synthesized
+  in `TestStartupTrustDialogV167`.
+
 Claude Code's are in `internal/harness/claude/testdata/startup`.
 
 Captured 2026-09-14 through `herdr agent read <name> --source recent-unwrapped --lines 40`
