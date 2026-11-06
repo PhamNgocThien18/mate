@@ -241,6 +241,14 @@ func HostLiveness(ctx context.Context, w *store.Workspace) map[string]bool {
 	return out
 }
 
+// HostAlive asks one project's host of its own whether it is alive, by the
+// rule HostLiveness asks every one of them (CON-226: the core watches each
+// host with it). asked is false when ctx ended before the host answered.
+// The caller has read in mate.meta that the Mate is such a host.
+func HostAlive(ctx context.Context, w *store.Workspace, project string) (alive, asked bool) {
+	return hostAlive(ctx, w, project)
+}
+
 // hostAlive is whether project's host of its own is alive: it answers on
 // its socket, or, wedged, its process still holds the host lock (a stop
 // ends it; a start would be refused). A host that died lets the lock go

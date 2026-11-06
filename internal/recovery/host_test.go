@@ -68,3 +68,72 @@ func TestRunRestartsADeadHostWithoutHerdr(t *testing.T) {
 		t.Fatalf("meta = %v", meta)
 	}
 }
+
+// The core's watch restarts one dead host through RestartHost (CON-226):
+// only while mate.meta still records the host it found dead and that host
+// still does not answer, and then on the Mate's own session.
+func TestRestartHostStartsOnlyTheHostFoundDead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(claude.ClaudeConfigDirEnv, "")
+	root, err := os.MkdirTemp("/tmp", "rh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	w := crewWorkspace(t, filepath.Join(root, "ws"))
+	if err := w.WriteMateMeta("shop", map[string]string{
+		spawn.MetaHarness: "claude", spawn.MetaAgent: "mate-shop", spawn.MetaMode: spawn.ModeHeadless,
+		spawn.MetaPID: "4242", spawn.MetaSocket: matehost.SocketPath(w.MateDir("shop")), spawn.MetaSessionID: sessionA,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake := runtime.NewFake()
+	d := deps(t, fake, fake.Names)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan struct{})
+	starts := 0
+	d.Hosts = spawn.HostFuncs{Start: func(spec spawn.HostSpec) (int, <-chan struct{}, error) {
+		starts++
+		l, err := matehost.ReadLaunch(spec.Dir)
+		if err != nil {
+			return 0, nil, err
+		}
+		host := matehost.New(&matehost.Runner{Launch: l, Turns: claude.Claude{}}, matehost.Options{PID: 4343})
+		go func() {
+			defer close(served)
+			_ = host.Serve(ctx, matehost.SocketPath(spec.Dir), nil)
+		}()
+		return 4343, nil, nil
+	}}
+	t.Cleanup(func() { cancel(); <-served })
+
+	// Another pid recorded: a start already replaced the host found dead.
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4141", nil); acted || starts != 0 {
+		t.Fatalf("acted = %v, starts = %d for a pid mate.meta no longer records", acted, starts)
+	}
+	// The caller's lock on the Mate is held elsewhere: that one decides.
+	refused := func() (func(), bool) { return nil, false }
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4242", refused); acted || starts != 0 {
+		t.Fatalf("acted = %v, starts = %d with the caller's hold refused", acted, starts)
+	}
+	it, acted := RestartHost(context.Background(), w, d, "shop", "4242", nil)
+	if !acted || it.Err != nil || !it.Resumed || starts != 1 {
+		t.Fatalf("item = %+v, acted = %v, starts = %d; want the Mate back on its session", it, acted, starts)
+	}
+	meta, _ := w.ReadMateMeta("shop")
+	if meta[spawn.MetaPID] != "4343" || meta[spawn.MetaSessionID] != sessionA {
+		t.Fatalf("meta = %v", meta)
+	}
+	// The new host answers: nothing to do.
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343", nil); acted || starts != 1 {
+		t.Fatalf("acted = %v, starts = %d for a host that answers", acted, starts)
+	}
+	// A stop cleared the record: nothing to do either.
+	if err := w.WriteMateMeta("shop", map[string]string{spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless, spawn.MetaSessionID: sessionA}); err != nil {
+		t.Fatal(err)
+	}
+	if _, acted := RestartHost(context.Background(), w, d, "shop", "4343", nil); acted || starts != 1 {
+		t.Fatalf("acted = %v, starts = %d for a Mate that was stopped", acted, starts)
+	}
+}

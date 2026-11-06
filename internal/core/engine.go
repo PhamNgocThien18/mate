@@ -163,14 +163,18 @@ const StopWait = 45 * time.Second
 //
 // Start starts the reading of workspace.yaml, the watcher, then the sender,
 // then the pilot - so the daemon never queues a digest no sender would type
-// - then recovery, and last what serves the captain: the dashboard, then
-// the notifications, which link to it. The order is the one runConsole kept
-// in its own body before CON-207 and CON-208. Stop cancels them all at
-// once, waits for them together within StopWait, and closes the timeline
-// once they have all stopped.
+// - then recovery and the watch over the headless hosts (CON-226), and last
+// what serves the captain: the dashboard, then the notifications, which
+// link to it. The order is the one runConsole kept in its own body before
+// CON-207 and CON-208, with the host watch added after recovery. Stop
+// cancels them all at once, waits for them together within StopWait, and
+// closes the timeline once they have all stopped.
 type Engine struct {
-	o         Options
-	recovery  *recoveryRun
+	o        Options
+	recovery *recoveryRun
+	// hosts watches each headless Mate's host of its own (CON-226); nil
+	// without a workspace or a Herdr runtime to start a Mate through.
+	hosts     *hostWatch
 	reload    *tickLoop
 	dashboard *dashboardPart
 	notify    *notifyLoop
@@ -248,6 +252,10 @@ func New(o Options) *Engine {
 	}
 	if o.Workspace != nil {
 		e.reload = configReload(o.Workspace)
+		if o.Spawn.Runtime != nil {
+			// spawn.StartMate, which the restart runs, refuses without one.
+			e.hosts = e.newHostWatch()
+		}
 		if o.Dashboard != nil {
 			e.dashboard = &dashboardPart{ws: o.Workspace, o: *o.Dashboard, deps: e.dashboardDeps}
 		}
@@ -328,6 +336,9 @@ func (e *Engine) parts() []part {
 	}
 	if e.recovery != nil {
 		out = append(out, part{"recovery", e.recovery})
+	}
+	if e.hosts != nil {
+		out = append(out, part{"host watch", e.hosts})
 	}
 	if e.dashboard != nil {
 		out = append(out, part{"Office/City server", e.dashboard})
