@@ -123,6 +123,16 @@ type Deps struct {
 	Observer screen.Observer
 	// DeliverTimeout bounds one delivery; zero means DefaultDeliverTimeout.
 	DeliverTimeout time.Duration
+	// ConsolePresent says whether a console is open on the workspace. The
+	// loop (Drain) types into a Manual project's Mate only while it says
+	// true; an Auto project's Mate gets its lines either way (CON-203,
+	// decided 2026-11-05). Attempt, called by itself, is not gated. Nil is
+	// a console always open.
+	ConsolePresent func() bool
+}
+
+func (d Deps) consolePresent() bool {
+	return d.ConsolePresent == nil || d.ConsolePresent()
 }
 
 func (d Deps) now() time.Time {
@@ -620,7 +630,16 @@ func (s *Sender) Drain(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("outbox: %s: %w", ref.Name, err))
 			continue
 		}
-		if !anyQueued(items) {
+		head, ok := oldestQueued(items)
+		if !ok {
+			continue
+		}
+		// With no console open a Manual project's Mate is left alone: its
+		// captain took the composer, and nothing is typed into it until a
+		// console is back or M21 turns auto mode on again. A digest at the
+		// head is still tried, which withdraws it as it would with a
+		// console (withdrawn) rather than keeping every line behind it.
+		if !s.ws.Auto(ref.Name) && !s.deps.consolePresent() && head.Source != store.OutboxSourceDigest {
 			continue
 		}
 		if _, err := s.Attempt(ctx, ref.Name); err != nil {
@@ -630,13 +649,14 @@ func (s *Sender) Drain(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func anyQueued(items []store.OutboxItem) bool {
+// oldestQueued is the item Attempt would try, when one is queued.
+func oldestQueued(items []store.OutboxItem) (store.OutboxItem, bool) {
 	for _, item := range items {
 		if item.Queued() {
-			return true
+			return item, true
 		}
 	}
-	return false
+	return store.OutboxItem{}, false
 }
 
 // Start runs Drain every Interval on its own goroutine until Stop or a
