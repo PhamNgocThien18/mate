@@ -104,8 +104,16 @@ func coreHere(ws *store.Workspace, ctl coreControl, stdout io.Writer, run func()
 }
 
 // runCoreForeground runs ws's engine over the live dependencies until
-// SIGINT, SIGTERM or SIGHUP.
+// SIGINT, SIGTERM or SIGHUP. Its output goes to core.log as well as to the
+// terminal (decided 2026-11-06), so a core's log is in one place however
+// it was started.
 func runCoreForeground(ws *store.Workspace, stdout, stderr io.Writer) error {
+	stdout, stderr, closeLog, err := coreLogTee(ws, stdout, stderr, os.Stdout)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
+
 	// The live dependencies the console builds (runConsole): the `herdr`
 	// findTool resolves, and the observer `.mate/.env` asks for.
 	deps := baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))
@@ -198,6 +206,7 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 		tcpErr = serving.Err.Error()
 	}
 	fmt.Fprint(stdout, officeCityLines(serving.URL, serving.LANURL, tcpErr))
+	fmt.Fprint(stdout, herdrLogLines(ws))
 	if line, err := engine.Notifications(); err != nil {
 		fmt.Fprintf(stderr, "mate core: notifications: %v\n", err)
 	} else if line != "" {

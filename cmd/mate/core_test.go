@@ -93,7 +93,7 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 	}
 	// The block a dev server prints (decided 2026-11-06): who, where, and
 	// the two pages, before Ctrl+C.
-	if want := "mate core · pid " + strconv.Itoa(os.Getpid()) + " · " + homeShort(w.Root()) + "\nOffice  " + h.URL + "office/\nCity    " + h.URL + "city/\nCtrl+C to stop\n"; !strings.HasPrefix(stdout.String(), want) {
+	if want := "mate core · pid " + strconv.Itoa(os.Getpid()) + " · " + homeShort(w.Root()) + "\nOffice  " + h.URL + "office/\nCity    " + h.URL + "city/\nHerdr   " + w.Session() + "\nLog     " + w.CoreLogFile() + "\nCtrl+C to stop\n"; !strings.HasPrefix(stdout.String(), want) {
 		t.Errorf("stdout = %q, want it to start with %q", stdout.String(), want)
 	}
 	if status := unixGet(t, w.CoreSocket(), "/api/workspace"); status != http.StatusOK {

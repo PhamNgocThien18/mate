@@ -214,6 +214,8 @@ func TestCoreStartStatusStop(t *testing.T) {
 		"  notice   observer: fake\n",
 		"Office  http://127.0.0.1:7777/office/\n",
 		"City    http://127.0.0.1:7777/city/\n",
+		"Herdr   " + w.Session() + "\n",
+		"Log     " + w.CoreLogFile() + "\n",
 	} {
 		if !strings.Contains(status, want) {
 			t.Errorf("status lacks %q:\n%s", want, status)
@@ -475,7 +477,8 @@ func TestBareMateBesideARunningEngine(t *testing.T) {
 	if code := mainRun([]string{w.Root()}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
-	for _, want := range []string{"mate core: already running\n", "mate core · pid 4242 · ", "Office  http://127.0.0.1:7777/office/\n", "City    http://127.0.0.1:7777/city/\n"} {
+	for _, want := range []string{"mate core: already running\n", "mate core · pid 4242 · ", "Office  http://127.0.0.1:7777/office/\n", "City    http://127.0.0.1:7777/city/\n",
+		"Herdr   " + w.Session() + "\n", "Log     " + w.CoreLogFile() + "\n"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout.String())
 		}
@@ -553,5 +556,66 @@ func TestOfficeCityLines(t *testing.T) {
 	}
 	if got := strconv.Quote(homeShort("/nowhere/ws")); got != `"/nowhere/ws"` {
 		t.Errorf("homeShort = %s", got)
+	}
+}
+
+// The foreground core writes its output to the terminal and to core.log,
+// rotated past 10 MB as start does; the core start ran, whose output
+// already is core.log, adds nothing, nor does a `mate core run` beside a
+// running engine, whose log is not rotated under it.
+func TestForegroundCoreAlsoWritesCoreLog(t *testing.T) {
+	w := coreWorkspace(t)
+	if w.Session() == "" {
+		t.Fatal("the workspace names no Herdr session")
+	}
+	if err := os.WriteFile(w.CoreLogFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(w.CoreLogFile(), coreLogMax+1); err != nil {
+		t.Fatal(err)
+	}
+	var term, termErr bytes.Buffer
+	stdout, stderr, closeLog, err := coreLogTee(w, &term, &termErr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(stdout, "out line")
+	fmt.Fprintln(stderr, "err line")
+	closeLog()
+	if term.String() != "out line\n" || termErr.String() != "err line\n" {
+		t.Fatalf("terminal got %q and %q", term.String(), termErr.String())
+	}
+	log, _ := os.ReadFile(w.CoreLogFile())
+	if !strings.Contains(string(log), "--- mate core run ") || !strings.HasSuffix(string(log), "out line\nerr line\n") {
+		t.Fatalf("core.log = %q, want both lines", log)
+	}
+	if fi, err := os.Stat(w.CoreLogFile() + ".1"); err != nil || fi.Size() != coreLogMax+1 {
+		t.Fatalf("core.log.1 = %v, %v; want the big log moved", fi, err)
+	}
+
+	// The detached core: its standard output is core.log itself.
+	self, err := os.OpenFile(w.CoreLogFile(), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer self.Close()
+	if out, errw, _, err := coreLogTee(w, &term, &termErr, self); err != nil || out != io.Writer(&term) || errw != io.Writer(&termErr) {
+		t.Fatalf("tee over core.log itself = %v; want the writers unchanged", err)
+	}
+
+	// Beside a running engine: nothing rotated, nothing added.
+	if err := os.Truncate(w.CoreLogFile(), coreLogMax+1); err != nil {
+		t.Fatal(err)
+	}
+	l, err := w.LockCore(store.CoreHolder{PID: 4242, Owner: store.CoreOwnerCore})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Unlock()
+	if out, _, _, err := coreLogTee(w, &term, &termErr, nil); err != nil || out != io.Writer(&term) {
+		t.Fatalf("tee beside an engine = %v; want the writers unchanged", err)
+	}
+	if fi, _ := os.Stat(w.CoreLogFile()); fi.Size() != coreLogMax+1 {
+		t.Fatal("core.log rotated under a running engine")
 	}
 }

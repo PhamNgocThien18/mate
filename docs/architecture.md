@@ -280,7 +280,7 @@ true yet.
 | `console.lock` | `store` | the console (flock; `core_lock: true` since CON-211) | a second console, which asks to replace it; `mate core run`, which refuses beside a console that has no `core_lock` |
 | `core.lock` | `store` | the engine, in `mate core` or a console (flock; JSON `pid`, `owner`, `started`, `version`, `binary`, `build`, `socket`, `url`, `lan_url`, `tcp_error`) | a second engine, which is refused; `mate reindex`, to name who holds `mate.db` |
 | `core.sock` | `store` path, `core` serves | `mate core run` (unix socket, 0600) | `internal/coreclient` (`/api/core`, `/api/snapshot`, `/api/act`, CON-212); the Office/City routes over HTTP |
-| `core.log`, `core.log.1` | `store` path | the output of a core `mate core start` ran; `start` moves a log over 10 MB to `core.log.1` | the captain |
+| `core.log`, `core.log.1` | `store` path | every core's output: `mate core start` points the core's output there, a foreground core (`mate`, `mate core run`) appends what it prints; either moves a log over 10 MB to `core.log.1` before opening it | the captain |
 | `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, `mate recall`, refresh; every query outside `db` and `timeline` is in `timeline/read` |
 | `notifications.json` | `notifications` | the engine's notification loop (`internal/core/notify.go`) | the same loop (flock on `notifications.json.lock`) |
 | `projects/<p>/project.yaml`, `PROJECT.md` | `store` | `mate project …`; the Mate (`PROJECT.md`) | spawn, query, `mate recall` |

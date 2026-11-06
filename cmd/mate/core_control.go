@@ -333,6 +333,7 @@ func (c coreControl) printStatus(ws *store.Workspace, h store.CoreHolder, stdout
 		fmt.Fprintf(stdout, "  notice   %s\n", n)
 	}
 	fmt.Fprint(stdout, officeCityLines(h.URL, h.LANURL, h.TCPError))
+	fmt.Fprint(stdout, herdrLogLines(ws))
 	if binaryChanged(h) {
 		fmt.Fprintln(stdout, "stale: the mate binary changed after this core started; run `mate core restart`")
 	}
@@ -354,6 +355,56 @@ func officeCityLines(url, lanURL, tcpErr string) string {
 		s += fmt.Sprintf("LAN     %s/office/\n", strings.TrimRight(lanURL, "/"))
 	}
 	return s
+}
+
+// herdrLogLines are the block's last two lines (decided 2026-11-06): the
+// workspace's Herdr session, the one `herdr session attach` takes, and the
+// absolute path of core.log.
+func herdrLogLines(ws *store.Workspace) string {
+	s := ""
+	if session := ws.Session(); session != "" {
+		s += "Herdr   " + session + "\n"
+	}
+	return s + "Log     " + ws.CoreLogFile() + "\n"
+}
+
+// coreLogTee is the core's output in the foreground: stdout and stderr,
+// each also appended to core.log, which is opened as `start` opens it
+// (openCoreLog, rotated past 10 MB). Nothing is added when self, this
+// process's standard output, already is core.log - the core `start` ran,
+// whose output goes there - nor when an engine runs, which writes core.log
+// and is not rotated under it (runCore then refuses). close closes the log.
+func coreLogTee(ws *store.Workspace, stdout, stderr io.Writer, self *os.File) (io.Writer, io.Writer, func(), error) {
+	none := func() {}
+	if _, held, err := ws.CoreRunning(); err != nil || held {
+		return stdout, stderr, none, nil
+	}
+	if self != nil {
+		if out, err := self.Stat(); err == nil {
+			if log, err := os.Stat(ws.CoreLogFile()); err == nil && os.SameFile(out, log) {
+				return stdout, stderr, none, nil
+			}
+		}
+	}
+	log, err := openCoreLog(ws)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	fmt.Fprintf(log, "--- mate core run %s ---\n", time.Now().Format(time.RFC3339))
+	return bothWriter{stdout, log}, bothWriter{stderr, log}, func() { _ = log.Close() }, nil
+}
+
+// bothWriter writes to a and to b, and fails only when both do: a terminal
+// that went away does not stop the log, nor a full disk the terminal.
+type bothWriter struct{ a, b io.Writer }
+
+func (w bothWriter) Write(p []byte) (int, error) {
+	_, errA := w.a.Write(p)
+	_, errB := w.b.Write(p)
+	if errA != nil && errB != nil {
+		return 0, errA
+	}
+	return len(p), nil
 }
 
 // listenAddr finds the address in a bind error: "listen tcp <addr>: ...".

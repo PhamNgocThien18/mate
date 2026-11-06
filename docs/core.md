@@ -28,8 +28,17 @@ directory above the current one that holds `.mate/`.
 mate core · pid 4121 · ~/work/ws
 Office  http://127.0.0.1:7777/office/
 City    http://127.0.0.1:7777/city/
+Herdr   mate-7b09de89
+Log     /Users/me/work/ws/.mate/core.log
 Ctrl+C to stop
 ```
+
+`Herdr` is the workspace's Herdr session (`session:` in `workspace.yaml`),
+the one `herdr session attach <name>` takes. `Log` is the absolute path of
+`.mate/core.log`: in the foreground the core's output goes to the terminal
+and is appended to that file too, so a core's log is in the same place
+however it was started. `mate core status`, and `mate` beside a running
+core, print both lines as well.
 
 A dashboard that also reaches the LAN (`dashboard.allow_remote` in
 `console.yaml`) adds a `LAN` line. When the port is taken the block says
@@ -68,7 +77,7 @@ new core, which writes its own record over the old one.
 | -- | -- |
 | `core.lock` | Held by the running engine. JSON: `pid`, `owner` (`core` or `console`), `started`, `version`, `binary`, `build` (sha256 of the binary when it started), `socket`, `url`, `lan_url`, `tcp_error`. The file stays after the engine ends. |
 | `core.sock` | The core's unix socket (0600): Office/City's routes and the clients' API (`/api/core`, `/api/snapshot`, `/api/act`, CON-212). Removed when the core stops. |
-| `core.log` | The output of a core run by `mate core start`. `start` moves a log larger than 10 MB to `core.log.1` before it opens the log, keeping that one old log. A core that is running is never rotated. |
+| `core.log` | The output of every core: `mate core start` sends the core's output there, and a core in the foreground (`mate`, `mate core run`) appends what it prints to the terminal. Before it opens the log, either moves a log larger than 10 MB to `core.log.1`, keeping that one old log. The log of a core that is running is never rotated. |
 
 ## After installing a new mate
 
