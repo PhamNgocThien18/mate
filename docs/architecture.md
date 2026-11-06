@@ -266,7 +266,9 @@ without a console, and the two refuse to run side by side.
 Paths are relative to `.mate/`; `<p>` is a project, `<c>` a crew. Path
 helpers live in `internal/store/layout.go`. `internal/store` says it is the
 only package that touches `.mate/`; the Owner column shows where that is not
-true yet.
+true yet. Splitting `store.Workspace` by responsibility, with narrow
+interfaces on the side of each reader, is planned in
+[plans/store-split-2026-11-06.md](plans/store-split-2026-11-06.md) (CON-173).
 
 | File | Owner | Written by | Read by |
 | -- | -- | -- | -- |
