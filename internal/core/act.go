@@ -24,7 +24,8 @@ import (
 // It takes the action's target first (lockOf). While another action holds
 // that target, from whichever UI, Act refuses with a *coreapi.BusyError
 // and starts nothing. The chat runs here, on the headless Mate's host
-// (talk); every other action runs Options.Act, cmd/mate's. Once the action
+// (talk); the Mate's and the Project's actions run here too (ownAction,
+// CON-231); every other action runs Options.Act, cmd/mate's. Once the action
 // has returned, whatever it returned, the cached snapshot is dropped
 // (Invalidate) - an action that failed halfway can have changed something
 // too - and only then is the target released, so the next action on it
@@ -57,10 +58,59 @@ func (e *Engine) Act(ctx context.Context, req coreapi.ActionRequest) (string, er
 			return line, err
 		}
 	}
+	if run := e.own(req); run != nil {
+		if e.o.Workspace == nil {
+			return "", errNoWorkspace
+		}
+		return run(ctx, req)
+	}
 	if e.o.Act == nil {
 		return "", fmt.Errorf("%s is not wired in this engine", req.Action)
 	}
 	return e.o.Act(ctx, req)
+}
+
+// errNoWorkspace is an action of the engine's own on an engine built with
+// no workspace, refused the way the chat refuses (mateHost).
+var errNoWorkspace = errors.New("the engine has no workspace to act in")
+
+// ownAction is the engine's own body for req (CON-231): the Mate's actions
+// (act_mate.go) and the Project's (act_project.go). It is nil for every
+// other action, which Options.Act runs until CON-232 moves the rest in: a
+// crew's actions, the box's and Jev's. An onboard of the workspace adds a
+// Project; any other onboard starts the Project's Mate.
+func (e *Engine) ownAction(req coreapi.ActionRequest) coreapi.ActionFunc {
+	switch req.Action {
+	case coreapi.ActionStart, coreapi.ActionResume:
+		return e.startMate
+	case coreapi.ActionOnboard:
+		if req.TargetKind == "workspace" {
+			return e.addProject
+		}
+		return e.startMate
+	case coreapi.ActionStop:
+		if req.TargetKind == "crew" {
+			return nil
+		}
+		return e.stopMate
+	case coreapi.ActionRepair:
+		return e.repairMate
+	case coreapi.ActionMode:
+		return e.toggleMode
+	case coreapi.ActionRestartMate:
+		return e.restartMate
+	case coreapi.ActionClearComposer:
+		return e.clearComposer
+	case coreapi.ActionRemoveProject:
+		return e.removeProject
+	case coreapi.ActionOpenNews:
+		return e.openNews
+	case coreapi.ActionOpenWork:
+		return e.openWork
+	case coreapi.ActionOkayWork:
+		return e.okayWork
+	}
+	return nil
 }
 
 // chat are the actions that talk to a headless Mate (CON-142): they run on

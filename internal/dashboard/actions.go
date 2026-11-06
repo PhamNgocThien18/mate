@@ -52,7 +52,7 @@ type ActionRequest struct {
 // coreRequest is a page's press in the shape the console's action sheet
 // sends the same action (CON-206): the target kinds are the ones its
 // entries build (internal/ui/console's actionRequest, restartMateChoice,
-// onboardChoice), so cmd/mate's consoleAction branches on a press from
+// onboardChoice), so the engine's Act (internal/core) branches on a press from
 // either the same way. The chat keeps its own actions, with the text in
 // Input as a reply's line is and the news in News; the work board's tick
 // is the work sheet's okay_work, with the row in Input. Nothing else a

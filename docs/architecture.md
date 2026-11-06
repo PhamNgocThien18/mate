@@ -12,7 +12,8 @@ mate is splitting its core into a process of its own (CON-203). Done so far:
 shared snapshot, Office/City and notifications (CON-208), the one entry
 for every UI's actions (CON-209), a stop within one fixed bound
 (CON-210), `mate core run` with `core.lock` (CON-211), and its clients'
-API on `.mate/core.sock` with `internal/coreclient` (CON-212); `internal/refresh`
+API on `.mate/core.sock` with `internal/coreclient` (CON-212); the Mate's
+and the Project's actions (CON-231); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
 `internal/usage` (CON-168); `internal/recall` (CON-167). Every
@@ -165,8 +166,16 @@ and acts through `coreapi.ActionFunc`: `Engine.Act` (`internal/core/act.go`).
 keys (`tuiAction`, `cmd/mate/console_actions.go`) and every
 `POST /api/actions` of Office and City. It runs the chat (`say`,
 `interrupt`, `answer`, `fork`, `fork_close`) itself on the headless Mate's
-host, and every other action through `Options.Act`, cmd/mate's
-`engineActions` (**Target**: CON-215 plans moving them in). It holds one
+host. It also runs the Mate's and the Project's actions itself
+(`ownAction`, `internal/core/act_mate.go` and `act_project.go`, CON-231):
+`start`, `resume`, `onboard`, `stop` of a Mate, `repair`, `mode`,
+`restart_mate`, `clear_composer`, `remove_project`, `open_news`,
+`open_work` and `okay_work`, over `Options.Workspace` and `Options.Spawn`.
+A restart held for the captain's second press (`restartHolds`) is the
+engine's, in memory only: any UI confirms it, and only a new engine
+forgets it. Every other action, a crew's, the box's and Jev's, runs
+through `Options.Act`, cmd/mate's `engineActions` (**Target**: CON-232
+moves them in). It holds one
 lock per target while an action runs: the Project, `project/crew` when the
 request names a crew, the workspace for adding a Project; the chat,
 `peek`, `explain_notice`, `okay_work`, `open_news` and `open_work` take

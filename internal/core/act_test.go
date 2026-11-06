@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -44,6 +46,14 @@ func (h *heldActs) act(ctx context.Context, req coreapi.ActionRequest) (string, 
 		}
 	}
 	return "did " + string(req.Action), nil
+}
+
+// locksOnly is e with every action run by Options.Act, the engine's own
+// bodies (ownAction) left out: a test of the locks holds any action in
+// heldActs, the Mate's stop and a new Project's onboard included.
+func locksOnly(e *Engine) *Engine {
+	e.own = func(coreapi.ActionRequest) coreapi.ActionFunc { return nil }
+	return e
 }
 
 func (h *heldActs) count() int {
@@ -106,7 +116,7 @@ func TestActRefusesASecondActionOnABusyTarget(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHeldActs()
-			e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
+			e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
 			defer e.Stop()
 			done := hold(t, e, h, tc.first)
 			_, err := e.Act(context.Background(), tc.second)
@@ -144,7 +154,7 @@ func TestChatAndPeekRunDuringAStopOrAMerge(t *testing.T) {
 	w := hostWorkspace(t)
 	calls := fakeHost(t, w.MateDir("shop"))
 	h := newHeldActs()
-	e := New(Options{Workspace: w, Act: h.act})
+	e := locksOnly(New(Options{Workspace: w, Act: h.act}))
 	defer e.Stop()
 	stopped := hold(t, e, h, stopMate)
 	merged := hold(t, e, h, mergeCrew)
@@ -256,20 +266,40 @@ func TestTheHostHoldsTheCaptainsWords(t *testing.T) {
 }
 
 // A tick with no headless Mate's host to hold it - no Mate, no host to
-// dial, a host older than work-okay - runs at once through Options.Act, as
-// before the undo.
-func TestTheTickRunsInTheConsoleWithoutAHost(t *testing.T) {
-	okay := coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"}
+// dial, a host older than work-okay - runs at once in the engine, as it
+// ran in the console before the undo, and never reaches Options.Act
+// (CON-231).
+func TestTheTickRunsInTheEngineWithoutAHost(t *testing.T) {
 	old := hostWorkspace(t)
 	serveFakeHost(t, old.MateDir("shop"), func(hostCall) string { return `{"error":"unknown op \"work-okay\""}` })
 	for name, w := range map[string]*store.Workspace{"no Mate": shopWorkspace(t), "no host": hostWorkspace(t), "an older host": old} {
+		path := matehost.WorkPath(w.MateDir("shop"))
+		now := time.Now()
+		id, err := matehost.AddWork(path, matehost.WorkAssigned, "Buy button", "", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := matehost.DoneWork(path, id, "", now); err != nil {
+			t.Fatal(err)
+		}
 		h := newHeldActs()
 		e := New(Options{Workspace: w, Act: h.act})
-		if _, err := e.Act(context.Background(), okay); err != nil {
-			t.Errorf("%s: okay = %v", name, err)
+		okay := coreapi.ActionRequest{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: strconv.Itoa(id)}
+		line, err := e.Act(context.Background(), okay)
+		if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); err != nil || line != want {
+			t.Errorf("%s: okay = %q, %v; want %q", name, line, err, want)
 		}
-		if got := h.count(); got != 1 {
-			t.Errorf("%s: Options.Act ran %d times, want the tick once", name, got)
+		if got := h.count(); got != 0 {
+			t.Errorf("%s: Options.Act ran %d times, want the engine's own tick", name, got)
+		}
+		list, err := matehost.LoadWork(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range list {
+			if row.ID == id && row.Status != matehost.WorkOkayed {
+				t.Errorf("%s: row %d is %s after the tick, want okayed", name, id, row.Status)
+			}
 		}
 		e.Stop()
 	}
@@ -313,7 +343,7 @@ func TestTheChatRefusesAMateItCannotReach(t *testing.T) {
 // free again.
 func TestActPassesTheCallersContextAndAlwaysCleansUp(t *testing.T) {
 	h := newHeldActs()
-	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
+	e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
 	defer e.Stop()
 	computed := 0
 	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
@@ -366,7 +396,7 @@ func TestActPassesTheCallersContextAndAlwaysCleansUp(t *testing.T) {
 // named "workspace".
 func TestAddingAProjectDoesNotHoldAProjectNamedWorkspace(t *testing.T) {
 	h := newHeldActs()
-	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
+	e := locksOnly(New(Options{Workspace: shopWorkspace(t), Act: h.act}))
 	defer e.Stop()
 	done := hold(t, e, h, addProject)
 	if _, err := e.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionMode, Target: "workspace", TargetKind: "project"}); err != nil {
@@ -378,13 +408,13 @@ func TestAddingAProjectDoesNotHoldAProjectNamedWorkspace(t *testing.T) {
 	}
 }
 
-// With no Options.Act, an action other than the chat says so and runs
-// nothing.
+// With no Options.Act, an action the engine does not run itself says so
+// and runs nothing.
 func TestActWithoutAnActionFunction(t *testing.T) {
 	e := New(Options{Workspace: shopWorkspace(t)})
 	defer e.Stop()
-	if _, err := e.Act(context.Background(), stopMate); err == nil {
-		t.Fatal("stop with no action function went through")
+	if _, err := e.Act(context.Background(), mergeCrew); err == nil || err.Error() != "merge is not wired in this engine" {
+		t.Fatalf("merge with no action function = %v, want it not wired", err)
 	}
 }
 

@@ -291,8 +291,8 @@ func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	}
 }
 
-// The console's TUI and its pages press one action function, so they
-// share one restartHolds: a restart the console held because the Mate's
+// The console's TUI and its pages press one engine's Act, so they share
+// its restartHolds (CON-231): a restart the console held because the Mate's
 // composer holds unsent text is confirmed by the same restart pressed on a
 // page within the window, as a second press in the console would be
 // (CON-141, CON-205). The page's restart runs the Mate headless.
@@ -319,5 +319,31 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	}
 	if got := mateMode(t, w); got != spawn.ModeHeadless {
 		t.Fatalf("the Mate restarted from a page runs %s, want headless", got)
+	}
+}
+
+// The other way round: a restart a page held is confirmed by the console's
+// press within the window, since the hold is the engine's, not the UI's
+// (CON-231).
+func TestARestartHeldOnAPageIsConfirmedInTheConsole(t *testing.T) {
+	w, deps, rt := headlessFixture(t)
+	paneMate(t, w, deps, rt, true)
+	rt.SetReadOutput(mateAgent(t, w), claudePendingScreen)
+	tui, web := consoleUIs(t, w, deps, splitTerminal)
+	ctx := context.Background()
+
+	out, err := web(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project", HeadlessOnly: true})
+	if err != nil || !strings.HasPrefix(out, "held: ") {
+		t.Fatalf("the page's press = %q, %v; want it held for the unsent text", out, err)
+	}
+	out, err = tui(ctx, coreapi.ActionRequest{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"})
+	if err != nil {
+		t.Fatalf("the console's press: %v", err)
+	}
+	if !strings.HasPrefix(out, "not stowed: the composer held unsent text; restarted on your confirmation; stopped ") {
+		t.Fatalf("the console's press = %q, want the page's hold taken as the confirmation", out)
+	}
+	if len(rt.SentText) != 0 {
+		t.Fatalf("the confirmed restart typed over the captain's text: %+v", rt.SentText)
 	}
 }

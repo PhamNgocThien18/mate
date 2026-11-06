@@ -56,7 +56,7 @@ func newBoxFixture(t *testing.T) boxFixture {
 	if !ok {
 		t.Fatalf("consoleFixture runtime is %T, want *runtime.Fake", deps.Runtime)
 	}
-	action := consoleAction(ws, deps)
+	action := engineAction(t, ws, deps)
 
 	if _, err := action(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate",
@@ -512,7 +512,7 @@ func TestConsoleBoxQueuesBehindTheTwoNewRefusals(t *testing.T) {
 
 	f := newBoxFixture(t)
 	f.deps.Observer = dialogObserver{}
-	out, err := consoleAction(f.ws, f.deps)(context.Background(), f.resolveRequest(t))
+	out, err := engineAction(t, f.ws, f.deps)(context.Background(), f.resolveRequest(t))
 	if err != nil {
 		t.Fatalf("resolve under a dialog: %v", err)
 	}

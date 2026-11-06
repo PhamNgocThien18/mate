@@ -109,7 +109,7 @@ func TestConsoleRestartMateStartsAMateThatWasAlreadyGone(t *testing.T) {
 // (found 2026-09-24 writing task 38's acceptance).
 func TestConsoleRestartMateKeepsItsHarness(t *testing.T) {
 	ws, deps := consoleFixture(t, "shop")
-	action := consoleAction(ws, deps)
+	action := engineAction(t, ws, deps)
 	if _, err := action(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate", Harness: query.HarnessKind("codex"),
 	}); err != nil {
@@ -153,13 +153,13 @@ func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
 		t.Fatalf("clear composer action: %v", err)
 	}
 	t.Logf("clear composer action: %s", out)
-	if !strings.Contains(out, clearComposerKey) || !strings.Contains(out, "nothing was sent") {
+	if !strings.Contains(out, "ctrl+u") || !strings.Contains(out, "nothing was sent") {
 		t.Fatalf("clear line = %q, want it to name the key and say nothing was sent", out)
 	}
 
 	keys := f.rt.SentKeys
-	if len(keys) != 1 || len(keys[0].Keys) != 1 || keys[0].Keys[0] != clearComposerKey {
-		t.Fatalf("SendKeys calls = %+v, want exactly one %q", keys, clearComposerKey)
+	if len(keys) != 1 || len(keys[0].Keys) != 1 || keys[0].Keys[0] != "ctrl+u" {
+		t.Fatalf("SendKeys calls = %+v, want exactly one %q", keys, "ctrl+u")
 	}
 	if keys[0].Handle.Name != f.mate.Name {
 		t.Fatalf("SendKeys went to %q, want the Mate %q", keys[0].Handle.Name, f.mate.Name)

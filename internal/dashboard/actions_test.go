@@ -315,7 +315,7 @@ func TestABusyTargetIsAConflict(t *testing.T) {
 	}
 }
 
-// TestAPressIsTheConsoleSheetsRequest: cmd/mate's consoleAction branches
+// TestAPressIsTheConsoleSheetsRequest: the engine's Act (internal/core) branches
 // on the target kind, so a page's press reaches Act as the request the
 // console's sheet builds for the same action (CON-141). The chat keeps its
 // own words, with the text in Input and the news in News, and the work

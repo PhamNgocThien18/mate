@@ -58,8 +58,7 @@ func TestConsoleLoadAddsItsKeysToTheSharedSnapshot(t *testing.T) {
 // through Act would be seen only once the two seconds are over.
 func TestConsoleReadsAFreshSnapshotAfterAnAction(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
-	raw := engineActions(w, deps, nil)
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: raw})
+	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: engineActions(w, deps, nil)})
 	defer engine.Stop()
 	load := consoleLoad(engine.Snapshot, nil, func() string { return "" })
 	tui := tuiAction(engine.Act, nil)
@@ -86,8 +85,10 @@ func TestConsoleReadsAFreshSnapshotAfterAnAction(t *testing.T) {
 	if got := mode(); got != query.ModeManual {
 		t.Fatalf("mode %q right after the console's action, want manual", got)
 	}
-	// The same action run without Invalidate: the cached snapshot stands.
-	press(raw)
+	// The same action run without this engine's Invalidate - through
+	// another engine, whose Act drops only its own snapshot: the cached
+	// snapshot stands.
+	press(engineAction(t, w, deps))
 	if !w.Auto("shop") {
 		t.Fatal("the action did not release the manual hold")
 	}
