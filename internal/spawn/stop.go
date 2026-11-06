@@ -138,6 +138,9 @@ func (res StopResult) CrewLine(project, crew string) string {
 // tab is then closed, and `mate.meta` keeps `session_id=` - task 10 resumes
 // the conversation from it - while `agent=` and `pane=` are dropped, because
 // nothing owns them any more.
+//
+// A headless Mate whose host runs as a process of its own (CON-225) is
+// stopped without Herdr: stopDetachedHost.
 func StopMate(ctx context.Context, w *store.Workspace, deps Deps, project string) (StopResult, error) {
 	if w == nil {
 		return StopResult{}, errUsage("spawn: a workspace is required")
@@ -164,6 +167,9 @@ func StopMate(ctx context.Context, w *store.Workspace, deps Deps, project string
 	if out.Agent == "" {
 		return out, observability.NewError(observability.CodeNotFound,
 			fmt.Sprintf("no Mate is recorded for project %s; %s names no agent", project, w.MateMeta(project)))
+	}
+	if store.MateHostDetached(meta) {
+		return stopDetachedHost(ctx, w, deps, project, meta, out)
 	}
 
 	spec, err := deps.sessionSpec(w)
@@ -230,6 +236,33 @@ func StopMate(ctx context.Context, w *store.Workspace, deps Deps, project string
 		}
 		out.TabClosed = true
 	}
+	return out, clearRunMeta(w, project, meta, deps.now())
+}
+
+// stopDetachedHost is StopMate for a headless Mate whose host runs as a
+// process of its own (CON-225). Herdr is not asked: the host's socket and
+// its host lock say whether it runs, and endHost ends it, its stop op first
+// and signals to its pid after. Confirmed means the host lock is free, so
+// no host process is left to write the transcript. There is no tab.
+func stopDetachedHost(ctx context.Context, w *store.Workspace, deps Deps, project string, meta map[string]string, out StopResult) (StopResult, error) {
+	mateDir := w.MateDir(project)
+	kind, _ := deps.Harnesses.Parse(meta[MetaHarness])
+	held, err := hostLockHeld(w, project)
+	if err != nil {
+		return StopResult{}, err
+	}
+	answers := pingHost(ctx, mateDir) == nil
+	out.AlreadyGone = !answers && !held
+	if !out.AlreadyGone {
+		if out.Forced, err = endHost(ctx, w, deps, project, hostPID(meta), answers); err != nil {
+			return StopResult{}, err
+		}
+	}
+	if id := sessionAtStop(deps, kind, mateDir, meta, ""); id != "" {
+		meta[MetaSessionID] = id
+		out.SessionID = id
+	}
+	out.Confirmed, out.TabClosed = true, true
 	return out, clearRunMeta(w, project, meta, deps.now())
 }
 

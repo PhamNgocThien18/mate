@@ -24,7 +24,8 @@ const freeAddr = "127.0.0.1:0"
 
 // dashboardEngine starts an engine over a shopWorkspace that serves the
 // dashboard on o, until the test ends; act is its Options.Act, and nil
-// keeps the dashboard read-only. compute, when it is given, is the
+// keeps the dashboard read-only; it runs every action, the engine's own
+// too (locksOnly). compute, when it is given, is the
 // engine's snapshot computation, set before anything can read it, and the
 // cache's clock then stands still: a kept snapshot never ages out, so only
 // an Invalidate drops it, however slow the machine.
@@ -32,7 +33,7 @@ func dashboardEngine(t *testing.T, o DashboardOptions, act coreapi.ActionFunc, c
 	t.Helper()
 	w := shopWorkspace(t)
 	withTimelineDB(t, w)
-	e := New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o, Act: act})
+	e := locksOnly(New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o, Act: act}))
 	for _, c := range compute {
 		e.snaps.compute = c
 		frozen := time.Now()
@@ -130,7 +131,7 @@ func TestEngineDashboardRemoteNeedsAllow(t *testing.T) {
 func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	w := shopWorkspace(t)
 	act := func(context.Context, coreapi.ActionRequest) (string, error) { return "done", nil }
-	e := New(Options{Workspace: w, Act: act, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}})
+	e := locksOnly(New(Options{Workspace: w, Act: act, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}}))
 	defer e.Stop()
 	computed := 0
 	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
@@ -160,7 +161,7 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	// The page's Act is the engine's: it shares the engine's locks with
 	// the console's presses (CON-209).
 	h := newHeldActs()
-	held := New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}})
+	held := locksOnly(New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}}))
 	defer held.Stop()
 	done := hold(t, held, h, stopMate)
 	if _, err := held.dashboardDeps().Act(ctx, stopMate); !errors.Is(err, coreapi.ErrBusy) {

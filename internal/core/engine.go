@@ -95,7 +95,9 @@ type Options struct {
 
 	// Spawn is the live dependencies a snapshot asks Herdr through, for
 	// which agents are up (query.LoadLive). With no Runtime it asks nothing
-	// and every row keeps its recorded state.
+	// and every row keeps its recorded state. The engine's own actions
+	// start, stop and read agents through it, and parse a harness against
+	// its Harnesses; with no Runtime they refuse in spawn's words.
 	Spawn spawn.Deps
 	// Harnesses is the binary's harness catalog, which every snapshot and
 	// every notification read carries.
@@ -106,10 +108,12 @@ type Options struct {
 	// Notifier sends the captain a native notification for news waiting on
 	// them, for as long as the engine runs (NativeNotifier); nil sends none.
 	Notifier notifications.Sender
-	// Act runs every action but the chat, which the engine runs itself:
-	// cmd/mate's action functions, until CON-215 moves them in. Engine.Act
-	// is its only caller, under the lock on the action's target. Nil runs
-	// no such action, and the dashboard is then read-only.
+	// Act runs every action the engine does not run itself - the chat and
+	// the Mate's and the Project's actions are its own (CON-231) -:
+	// cmd/mate's action functions for the crews, the box and Jev, until
+	// CON-232 moves them in. Engine.Act is its only caller, under the lock
+	// on the action's target. Nil runs no such action, and the dashboard is
+	// then read-only.
 	Act coreapi.ActionFunc
 	// Stderr is where Stop names the parts that had not stopped within its
 	// bound; os.Stderr when nil.
@@ -173,7 +177,13 @@ type Engine struct {
 	snaps     *snapshotCache
 	locks     actionLocks
 	acts      actionRuns
-	now       func() time.Time
+	// holds is every restart held for the captain's second press, from
+	// whichever UI (restartMate).
+	holds restartHolds
+	// own is the engine's own body for an action, or nil when Options.Act
+	// runs it: ownAction, which a test of the locks alone replaces.
+	own func(coreapi.ActionRequest) coreapi.ActionFunc
+	now func() time.Time
 	// stopWait is StopWait; a test shortens it.
 	stopWait time.Duration
 
@@ -230,6 +240,7 @@ var (
 // from here on it owns the parts: Stop, or a failed Start, releases them.
 func New(o Options) *Engine {
 	e := &Engine{o: o, now: time.Now, stopWait: StopWait}
+	e.own = e.ownAction
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.snaps = &snapshotCache{compute: e.assemble, ctx: e.ctx, maxAge: snapshotMaxAge, limit: snapshotLimit, now: time.Now}
 	if o.Recover != nil {

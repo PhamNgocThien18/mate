@@ -310,11 +310,11 @@ func pluginKeyOwner(w *store.Workspace) func(string) string {
 }
 
 // pluginMateHarness is doctor's Harness: the harness of the Mate recorded
-// as running (mate.meta still names its pane), else the workspace default,
+// as running (mate.meta still names its pane or its headless host), else the workspace default,
 // else unknown.
 func pluginMateHarness(w *store.Workspace) func(string) (string, string) {
 	return func(project string) (string, string) {
-		if meta, err := w.ReadMateMeta(project); err == nil && meta[spawn.MetaPane] != "" && meta[spawn.MetaHarness] != "" {
+		if meta, err := w.ReadMateMeta(project); err == nil && store.MateRecorded(meta) && meta[spawn.MetaHarness] != "" {
 			return strings.ToLower(meta[spawn.MetaHarness]), "running Mate"
 		}
 		if d := strings.ToLower(strings.TrimSpace(w.Defaults().MateHarness)); d != "" {

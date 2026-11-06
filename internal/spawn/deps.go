@@ -63,6 +63,11 @@ const (
 	// keeps it, so a restart comes back in the same mode unless the start
 	// or project.yaml's `mate.mode` names one (headlessMode).
 	MetaMode = store.MetaMateMode
+	// MetaPID and MetaSocket are a headless Mate's host of its own
+	// (CON-225): its pid and the socket it answers on. Such a meta has no
+	// pane, tab or workspace; a stop drops both.
+	MetaPID    = store.MetaMatePID
+	MetaSocket = store.MetaMateSocket
 )
 
 // Mate modes (StartRequest.Mode, MetaMode).
@@ -121,6 +126,9 @@ type Deps struct {
 	// HostStopWait bounds how long a stop lets a headless Mate finish its
 	// turn; zero means HostStopWait.
 	HostStopWait time.Duration
+	// Hosts starts and signals a headless Mate's host, a process of its
+	// own outside Herdr (CON-225). Nil means ExecHosts.
+	Hosts HostProcesses
 	// Harnesses are the harnesses a start may launch and a stop may meet.
 	// The zero Registry holds none, so every start is refused; cmd/mate
 	// passes catalog.Default().

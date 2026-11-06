@@ -187,12 +187,14 @@ func loadMate(ws *store.Workspace, project string, live Liveness, w *warnings) M
 	pane := meta["pane"]
 	status := MateCreated
 	// A recorded pane Herdr does not list is a Mate the machine lost, not
-	// one that is running; it is stopped, and `s` resumes it.
-	gone := pane != "" && live.Asked && !live.Alive(meta["agent"])
+	// one that is running; it is stopped, and `s` resumes it. So is a
+	// headless Mate's host of its own (CON-225) that does not answer on
+	// its socket: Herdr does not answer for that one.
+	gone := live.MateGone(project, meta)
 	switch {
 	case gone:
 		status = MateStopped
-	case pane != "":
+	case store.MateRecorded(meta):
 		status = MateRunning
 	}
 
@@ -211,6 +213,10 @@ func loadMate(ws *store.Workspace, project string, live Liveness, w *warnings) M
 		out.AgentName = KnownField(agent)
 	} else {
 		out.AgentName = AbsentField[string]("mate.meta records no agent name")
+	}
+	if store.MateHostDetached(meta) {
+		out.Binding = detachedBinding(project, meta, out.AgentName.Value, live, gone)
+		return out
 	}
 	if pane == "" {
 		out.Binding = AbsentField[BindingValue]("mate.meta records no pane; the Mate has not been started")
@@ -234,6 +240,25 @@ func loadMate(ws *store.Workspace, project string, live Liveness, w *warnings) M
 		Pane:      pane,
 	}, note)
 	return out
+}
+
+// detachedBinding is loadMate's binding for a headless Mate whose host runs
+// as a process of its own (CON-225): no Herdr handle, and the host's
+// answer on its socket in the note.
+func detachedBinding(project string, meta map[string]string, agent string, live Liveness, gone bool) Field[BindingValue] {
+	if gone {
+		return AbsentField[BindingValue]("mate.meta records the headless host (pid " + meta[store.MetaMatePID] + ") but it does not answer on its socket; the Mate is stopped")
+	}
+	note := "recorded in mate.meta; this does not prove the host is alive"
+	if _, asked := live.Host(project); asked {
+		note = "recorded in mate.meta; the host answers on its socket"
+	}
+	return KnownNote(BindingValue{
+		Status:    BindingActive,
+		AgentName: agent,
+		Runtime:   "host",
+		Session:   meta["session"],
+	}, note)
 }
 
 // loadNews reads the news a headless Mate has open from `mate/news.jsonl`,

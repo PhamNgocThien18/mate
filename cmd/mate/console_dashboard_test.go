@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,10 +27,10 @@ import (
 
 // A page's chat runs in the core, on the headless Mate's host (core's
 // Engine.Act), with the text and the news the page sent, and never reaches
-// the console's action functions; everything else runs through them. A
-// page's tick on the work board is the work sheet's okay_work (CON-206):
-// the Mate's host holds it for its undo (CON-222), and where no host
-// answers the console ticks the row and says what the console says.
+// the console's action functions. A page's tick on the work board is the
+// work sheet's okay_work (CON-206): the Mate's host holds it for its undo
+// (CON-222), and where no host answers the engine ticks the row itself
+// (CON-231) and says what the console said.
 func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
@@ -90,7 +89,7 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	mu.Unlock()
 
 	// The tick goes to the headless Mate's host too, which holds it for its
-	// undo (CON-222); with its host gone it runs in the console at once.
+	// undo (CON-222); with its host gone the engine runs it at once.
 	status, line := pagePress(t, base, fmt.Sprintf(`{"action":"okay","project":"shop","work":%d}`, id))
 	if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); status != http.StatusOK || line != want {
 		t.Fatalf("okay = %d %q, want %q", status, line, want)
@@ -104,8 +103,8 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 		t.Fatalf("okay with no host = %d %q, want %q", status, line, want)
 	}
 	mu.Lock()
-	if len(ran) != 1 || ran[0].Action != coreapi.ActionOkayWork || ran[0].Input != strconv.Itoa(id) || ran[0].Target != "shop" {
-		t.Errorf("the console's action function got %+v, want one okay_work of row %d", ran, id)
+	if len(ran) != 0 {
+		t.Errorf("the tick reached the console's action function: %+v", ran)
 	}
 	mu.Unlock()
 	list, err := matehost.LoadWork(path)
@@ -126,20 +125,21 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 // whose text its message line shows verbatim (internal/ui/console's tests).
 func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 	w := pageWorkspace(t)
-	// The first action of each pair, a merge then a restart, runs until
+	// The first action of each pair, the console's merge then the page's, runs until
 	// released; anything else that runs returns at once, so an action let
 	// through by mistake fails the test rather than hanging it.
 	entered := make(chan struct{}, 2)
-	release := map[coreapi.Action]chan struct{}{coreapi.ActionMerge: make(chan struct{}), coreapi.ActionRestartMate: make(chan struct{})}
+	release := []chan struct{}{make(chan struct{}), make(chan struct{})}
 	var mu sync.Mutex
 	var ran []coreapi.Action
 	act := func(_ context.Context, req coreapi.ActionRequest) (string, error) {
 		mu.Lock()
 		ran = append(ran, req.Action)
+		n := len(ran)
 		mu.Unlock()
-		if wait, ok := release[req.Action]; ok {
+		if req.Action == coreapi.ActionMerge && n <= len(release) {
 			entered <- struct{}{}
-			<-wait
+			<-release[n-1]
 		}
 		return "did " + string(req.Action), nil
 	}
@@ -161,7 +161,7 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 		return out
 	}
 	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
-		Mate:  query.MateNode{Actions: available("stop", "restart_mate")},
+		Mate:  query.MateNode{Actions: available("stop")},
 		Crews: []query.CrewNode{{CrewID: "buy", Actions: available("stop", "merge")}}}}}
 	base := pageServer(t, w, consoleDashboard(w, "", false, false), engine.Act, snap)
 	console := tuiAction(engine.Act, splitTerminal)
@@ -179,36 +179,37 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 	if want := "Action refused: merge is still running on shop/buy · nothing started"; status != http.StatusConflict || line != want {
 		t.Errorf("the page's stop during the console's merge = %d %q, want 409 %q", status, line, want)
 	}
-	close(release[coreapi.ActionMerge])
+	close(release[0])
 	if err := <-merged; err != nil {
 		t.Fatalf("the console's merge: %v", err)
 	}
 
-	// The page's restart first: the console's stop of the same Mate is
-	// refused while it runs.
-	restarted := make(chan int, 1)
+	// The page's merge first: the console's stop of the same crew is
+	// refused while it runs. (A restart of the Mate, the engine's own
+	// action since CON-231, is held by the same lock.)
+	pageMerged := make(chan int, 1)
 	go func() {
-		resp, err := http.Post(base+"/api/actions", "application/json", strings.NewReader(`{"action":"restart_mate","project":"shop"}`))
+		resp, err := http.Post(base+"/api/actions", "application/json", strings.NewReader(`{"action":"merge","project":"shop","crew":"buy"}`))
 		if err != nil {
-			restarted <- 0
+			pageMerged <- 0
 			return
 		}
 		resp.Body.Close()
-		restarted <- resp.StatusCode
+		pageMerged <- resp.StatusCode
 	}()
 	running()
-	_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"})
-	if want := "Action refused: restart_mate is still running on shop · nothing started"; !errors.Is(err, coreapi.ErrBusy) || err.Error() != want {
-		t.Errorf("the console's stop during the page's restart = %v, want ErrBusy %q", err, want)
+	_, err := console(ctx, coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "buy"})
+	if want := "Action refused: merge is still running on shop/buy · nothing started"; !errors.Is(err, coreapi.ErrBusy) || err.Error() != want {
+		t.Errorf("the console's stop during the page's merge = %v, want ErrBusy %q", err, want)
 	}
-	close(release[coreapi.ActionRestartMate])
-	if status := <-restarted; status != http.StatusOK {
-		t.Fatalf("the page's restart = %d, want 200", status)
+	close(release[1])
+	if status := <-pageMerged; status != http.StatusOK {
+		t.Fatalf("the page's merge = %d, want 200", status)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	if want := []coreapi.Action{coreapi.ActionMerge, coreapi.ActionRestartMate}; !slices.Equal(ran, want) {
+	if want := []coreapi.Action{coreapi.ActionMerge, coreapi.ActionMerge}; !slices.Equal(ran, want) {
 		t.Fatalf("ran %v, want only %v: a refused action starts nothing", ran, want)
 	}
 }

@@ -17,7 +17,7 @@ func TestConsoleStopCrewClosesTheTaskLikeTheCLI(t *testing.T) {
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
-	out, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	out, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})
 	if err != nil {
@@ -45,7 +45,7 @@ func TestConsoleStopCrewRefusesUnlandedWork(t *testing.T) {
 	runGitOrFatal(t, crew.Worktree, "add", "work.txt")
 	runGitOrFatal(t, crew.Worktree, "commit", "-q", "-m", "work")
 
-	_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	_, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})
 	if err == nil || !strings.Contains(err.Error(), "nothing was stopped") {

@@ -10,8 +10,11 @@ import (
 	"testing"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/harness/claude"
+	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/query"
+	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -160,5 +163,39 @@ func writeEnv(t *testing.T, ws *store.Workspace, text string) {
 	t.Helper()
 	if err := os.WriteFile(ws.EnvFile(), []byte(text), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A headless Mate has no screen: the notice explanation reads its host's
+// last turns instead, and asks Herdr nothing (CON-225).
+func TestConsoleNoticeReadsAHeadlessMatesHost(t *testing.T) {
+	w, deps, rt := headlessFixture(t)
+	history := matehost.HistoryPath(w.MateDir("shop"))
+	if err := os.MkdirAll(filepath.Dir(history), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := `{"at":"2026-11-05T10:00:00Z","source":"app","text":"wake","error":"API Error: 429 rate limit reached","done":true}` + "\n"
+	if err := os.WriteFile(history, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	playHosts(t, w, &deps, "shop", func(l matehost.Launch, pid int) *matehost.Host {
+		return matehost.New(&matehost.Runner{Launch: l, Turns: claude.Claude{}}, matehost.Options{PID: pid, History: history})
+	})
+	if _, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop", Mode: spawn.ModeHeadless}); err != nil {
+		t.Fatal(err)
+	}
+	reads := len(rt.ReadCalls)
+	classifier := noticeFunc(func(ctx context.Context, screen string) (notice.Result, error) {
+		if !strings.Contains(screen, "429 rate limit") || !strings.Contains(screen, "> wake") {
+			t.Errorf("screen = %q, want the host's last turn and its error", screen)
+		}
+		return notice.Result{Label: "quota_exhausted", Confidence: .9}, nil
+	})
+	text, err := consoleNoticeAction(w, deps, classifier, nil)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
+	if err != nil || !strings.Contains(text, "quota exhausted") {
+		t.Fatalf("result %q, %v", text, err)
+	}
+	if len(rt.ReadCalls) != reads {
+		t.Fatalf("Herdr was read: %q", rt.ReadCalls[reads:])
 	}
 }

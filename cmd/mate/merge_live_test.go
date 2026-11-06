@@ -168,7 +168,7 @@ func assertMergedAndFinished(t *testing.T, w *store.Workspace, project, crew, br
 // the captain runs `merge` from the Console's own Actions menu, and the crew
 // ends `finished` with its branch landed in `main`.
 //
-// The merge is driven through consoleAction - the exact ActionFunc cmdConsole
+// The merge is driven through the engine's Act - the exact ActionFunc cmdConsole
 // installs - with the request the menu's merge entry builds, so what is
 // proved is the path a keystroke takes, not a second implementation of it.
 func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
@@ -222,7 +222,7 @@ func TestLiveMergeFromConsoleFinishesTheCrew(t *testing.T) {
 			crew.Status, tail())
 	}
 
-	action := consoleAction(w, deps)
+	action := engineAction(t, w, deps)
 	line, err := action(ctx, coreapi.ActionRequest{
 		Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "k3",
 	})

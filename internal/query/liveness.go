@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
 // Liveness is what Herdr says about the workspace's agents at one moment. A
@@ -15,14 +16,38 @@ import (
 // state with its caveat - the answer for a one-shot read that never calls
 // Herdr. An asked Liveness with no agents is the positive answer "nothing
 // is alive".
+//
+// A headless Mate whose host runs outside Herdr (store.MateHostDetached,
+// CON-225) is not Herdr's to answer for: Hosts holds what each such host
+// said on its socket, by project, and a project missing from it was not
+// asked.
 type Liveness struct {
 	Asked  bool
 	Agents map[string]bool
+	Hosts  map[string]bool
 }
 
 // Alive reports whether Herdr listed the named agent. It is only meaningful
 // when Asked.
 func (l Liveness) Alive(agent string) bool { return l.Agents[agent] }
+
+// Host reports whether the host of project's headless Mate answered on its
+// socket, and whether it was asked at all.
+func (l Liveness) Host(project string) (alive, asked bool) {
+	alive, asked = l.Hosts[project]
+	return alive, asked
+}
+
+// MateGone reports whether the Mate meta records for project is known to
+// be gone: a recorded pane Herdr does not list, or a host of its own that
+// did not answer. A question nobody asked is never "gone".
+func (l Liveness) MateGone(project string, meta map[string]string) bool {
+	if store.MateHostDetached(meta) {
+		alive, asked := l.Host(project)
+		return asked && !alive
+	}
+	return meta["pane"] != "" && l.Asked && !l.Alive(meta["agent"])
+}
 
 // ReadLiveness asks Herdr which agents of the session are up. It never
 // starts a server: a session that is not running, or a server that is not

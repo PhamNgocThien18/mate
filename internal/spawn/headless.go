@@ -4,19 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
-	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// A headless Mate (CON-78) runs `mate mate host <project>` in its pane
-// instead of the harness's TUI. Everything up to the tab is a normal start:
-// the manual, the settings and hooks, the launch argv. The host is handed
-// that launch and runs it once per message (internal/matehost).
+// A headless Mate (CON-78) runs `mate mate host <project>` instead of the
+// harness's TUI, as a background process of its own outside Herdr
+// (CON-225, hostproc.go): no tab, no pane, no Herdr agent. Everything up
+// to the launch is a normal start: the manual, the settings and hooks, the
+// launch argv. The host is handed that launch and runs it once per message
+// (internal/matehost).
+//
+// A host an older binary started in the Mate's Herdr pane still runs
+// there, and its meta still records the pane: Herdr answers for it, and
+// its stop closes the pane, until the restart that brings it back as a
+// process of its own.
 
 // HostStopWait is how long a stop lets a headless Mate finish its turn.
 const HostStopWait = 2 * time.Minute
@@ -80,19 +88,16 @@ const headlessOnlyNote = "project.yaml's mate.mode is pane, but nothing here can
 // errNoHeadless refuses `--mode headless` on a harness that cannot run one.
 var errNoHeadless = errUsage("this harness cannot run a headless Mate: it has no headless turns (harness.HeadlessTurns)")
 
-// startHostInTab starts the host in the tab, waits until it answers on its
-// socket and Herdr lists it under the Mate's name, and records mate.meta.
-// Like startInTab, every failure is the caller's to compensate.
-func startHostInTab(ctx context.Context, w *store.Workspace, deps Deps, project string, profile harness.Profile, mateDir string, decision resumeDecision, prep harness.Prepared, servers []harness.MCPServer, session runtime.SessionHandle, tab runtime.TabHandle) (StartResult, error) {
-	runner, ok := deps.Runtime.(runtime.PaneRunner)
-	if !ok {
-		return StartResult{}, errUsage("spawn: this runtime cannot run a headless Mate's host in a pane")
-	}
-	reservation, err := runtime.AllocateAgentName(deps.Names, session.Name, AgentNamePrefix, project, runtime.FailOnCollision)
+// startHost starts the host as a process of its own, waits until it
+// answers on its socket, and records mate.meta: the host's pid and socket,
+// no pane or tab (CON-225). A failure after the process started ends it
+// and leaves no meta, as a pane start's compensate does.
+func startHost(ctx context.Context, w *store.Workspace, deps Deps, project string, profile harness.Profile, mateDir string, decision resumeDecision, prep harness.Prepared, servers []harness.MCPServer, session runtime.SessionHandle) (StartResult, error) {
+	agent, err := runtime.SanitizeAgentName(AgentNamePrefix, project)
 	if err != nil {
 		return StartResult{}, err
 	}
-	hostLaunch, launch, err := buildHostLaunch(ctx, w, deps, project, profile, mateDir, decision, prep, servers, session, reservation.Name())
+	hostLaunch, launch, err := buildHostLaunch(ctx, w, deps, project, profile, mateDir, decision, prep, servers, session, agent)
 	if err != nil {
 		return StartResult{}, err
 	}
@@ -103,16 +108,48 @@ func startHostInTab(ctx context.Context, w *store.Workspace, deps Deps, project 
 	if err != nil {
 		return StartResult{}, err
 	}
-	launchedAt := deps.now()
-	if err := runner.RunInPane(ctx, tab, []string{binary, "mate", "host", project, "--workspace", w.Root()}); err != nil {
-		return StartResult{}, err
-	}
-	handle := runtime.AgentHandle{Session: session, Name: reservation.Name(), RawID: project, Kind: profile.Kind(), Tab: tab}
-	observed, err := waitHost(ctx, deps, mateDir, handle)
+	env, err := mateEnv(deps.Harnesses, project, session)
 	if err != nil {
 		return StartResult{}, err
 	}
-	return recordHeadless(w, deps, project, profile.Kind(), mateDir, decision, session, tab, observed, hostLaunch.SessionID, launchedAt, launch)
+	launchedAt := deps.now()
+	pid, exited, err := deps.hosts().StartHost(HostSpec{
+		Argv: HostArgv(binary, w.Root(), project),
+		Dir:  mateDir,
+		Env:  hostEnv(os.Environ(), env),
+		Log:  matehost.LogPath(mateDir),
+	})
+	if err != nil {
+		return StartResult{}, err
+	}
+	res, err := waitAndRecordHost(ctx, w, deps, project, profile.Kind(), mateDir, decision, session, agent, pid, exited, hostLaunch.SessionID, launchedAt, launch)
+	if err != nil {
+		compensateHost(ctx, w, deps, project, pid)
+		return StartResult{}, err
+	}
+	return res, nil
+}
+
+// HostArgv is the command a headless Mate's host runs as.
+func HostArgv(binary, root, project string) []string {
+	return []string{binary, "mate", "host", project, "--workspace", root, "--no-repl"}
+}
+
+func waitAndRecordHost(ctx context.Context, w *store.Workspace, deps Deps, project string, kind harness.Kind, mateDir string, decision resumeDecision, session runtime.SessionHandle, agent string, pid int, exited <-chan struct{}, sessionID string, launchedAt time.Time, launch harness.LaunchSpec) (StartResult, error) {
+	if err := waitHostUp(ctx, deps, mateDir, pid, exited); err != nil {
+		return StartResult{}, err
+	}
+	return recordHeadless(w, deps, project, kind, mateDir, decision, session, agent, hostPlace{pid: pid}, sessionID, launchedAt, launch)
+}
+
+// compensateHost undoes a host start that failed after the process was
+// started: the host is ended and mate.meta removed. Its own failures are
+// swallowed: the caller must see why the start was refused.
+func compensateHost(ctx context.Context, w *store.Workspace, deps Deps, project string, pid int) {
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
+	_, _ = endHost(ctx, w, deps, project, pid, pingHost(ctx, w.MateDir(project)) == nil)
+	_ = os.Remove(w.MateMeta(project))
 }
 
 // buildHostLaunch is the launch the host of agent runs each message with:
@@ -160,12 +197,11 @@ func buildHostLaunch(ctx context.Context, w *store.Workspace, deps Deps, project
 var ErrNoReload = errors.New("the Mate cannot change session in place")
 
 // ReloadMate gives a live headless Mate a fresh harness session without
-// leaving its pane (context refresh, CON-133): the directory is rendered
+// stopping its host (context refresh, CON-133): the directory is rendered
 // again and a fresh launch prepared, as a fresh StartMate would, and the
-// host switches to it between turns. Herdr's pane, terminal and agent name
-// stay as they were, so whoever is attached to the Mate stays attached;
-// stopping and starting it closed the pane and ended every attach with
-// "terminal ... not found".
+// host switches to it between turns. The host, its pid and every REPL
+// connected to it stay as they were; a host an older binary runs in its
+// Herdr pane keeps its pane, so whoever is attached stays attached.
 //
 // A *matehost.BusyError means a turn runs or waits: nothing changed.
 // ErrNoReload means the caller must stop and start the Mate instead.
@@ -180,7 +216,7 @@ func ReloadMate(ctx context.Context, w *store.Workspace, deps Deps, project stri
 	if err != nil {
 		return StartResult{}, err
 	}
-	if meta[MetaMode] != ModeHeadless || meta[MetaAgent] == "" || meta[MetaPane] == "" {
+	if meta[MetaMode] != ModeHeadless || meta[MetaAgent] == "" {
 		return StartResult{}, ErrNoReload
 	}
 	mateDir := w.MateDir(project)
@@ -236,46 +272,40 @@ func ReloadMate(ctx context.Context, w *store.Workspace, deps Deps, project stri
 	if err := matehost.WriteLaunch(mateDir, hostLaunch); err != nil {
 		return StartResult{}, err
 	}
-	tab := runtime.TabHandle{Session: session, WorkspaceID: meta[MetaWorkspace], TabID: meta[MetaTab], PaneID: meta[MetaPane], Cwd: mateDir, Label: MateTabLabel}
-	observed := runtime.ObservedAgent{Handle: runtime.AgentHandle{Session: session, Name: meta[MetaAgent], RawID: project, Kind: kind, Tab: tab}}
-	return recordHeadless(w, deps, project, kind, mateDir, fresh, session, tab, observed, hostLaunch.SessionID, launchedAt, launch)
-}
-
-// waitHost waits, within the readiness timeout, for the host to answer on
-// its socket and for Herdr to list it under the reserved name.
-func waitHost(ctx context.Context, deps Deps, mateDir string, handle runtime.AgentHandle) (runtime.ObservedAgent, error) {
-	ctx, cancel := context.WithTimeout(ctx, deps.readinessTimeout())
-	defer cancel()
-	client := matehost.Dial(mateDir)
-	var last error
-	for {
-		if last = client.Ping(ctx); last == nil {
-			obs, err := deps.Runtime.InspectAgent(ctx, handle)
-			if err == nil {
-				return obs, nil
-			}
-			last = err
-		}
-		if err := deps.sleep()(ctx, 100*time.Millisecond); err != nil {
-			return runtime.ObservedAgent{}, observability.WrapError(observability.CodeUnknown,
-				fmt.Sprintf("the headless Mate's host did not come up as agent %s within %s", handle.Name, deps.readinessTimeout()), last)
-		}
+	place := hostPlace{pid: hostPID(meta)}
+	if meta[MetaPane] != "" {
+		place = hostPlace{tab: runtime.TabHandle{Session: session, WorkspaceID: meta[MetaWorkspace], TabID: meta[MetaTab], PaneID: meta[MetaPane], Cwd: mateDir, Label: MateTabLabel}}
 	}
+	return recordHeadless(w, deps, project, kind, mateDir, fresh, session, meta[MetaAgent], place, hostLaunch.SessionID, launchedAt, launch)
 }
 
-func recordHeadless(w *store.Workspace, deps Deps, project string, kind harness.Kind, mateDir string, decision resumeDecision, session runtime.SessionHandle, tab runtime.TabHandle, observed runtime.ObservedAgent, sessionID string, launchedAt time.Time, launch harness.LaunchSpec) (StartResult, error) {
+// hostPlace is where a headless Mate's host runs: a process of its own,
+// by pid (CON-225), or the Herdr pane an older binary started it in, by
+// tab.
+type hostPlace struct {
+	pid int
+	tab runtime.TabHandle
+}
+
+func recordHeadless(w *store.Workspace, deps Deps, project string, kind harness.Kind, mateDir string, decision resumeDecision, session runtime.SessionHandle, agent string, place hostPlace, sessionID string, launchedAt time.Time, launch harness.LaunchSpec) (StartResult, error) {
 	startedAt := deps.now()
 	meta := map[string]string{
 		MetaHarness:    string(kind),
-		MetaAgent:      observed.Handle.Name,
-		MetaPane:       tab.PaneID,
-		MetaTab:        tab.TabID,
-		MetaWorkspace:  tab.WorkspaceID,
+		MetaAgent:      agent,
 		MetaSession:    session.Name,
 		MetaSessionID:  sessionID,
 		MetaStartedAt:  startedAt.Format(time.RFC3339),
 		MetaLaunchedAt: launchedAt.Format(time.RFC3339),
 		MetaMode:       ModeHeadless,
+	}
+	tab := place.tab
+	if tab.PaneID != "" {
+		meta[MetaPane], meta[MetaTab], meta[MetaWorkspace] = tab.PaneID, tab.TabID, tab.WorkspaceID
+	} else {
+		meta[MetaSocket] = matehost.SocketPath(mateDir)
+		if place.pid > 0 {
+			meta[MetaPID] = strconv.Itoa(place.pid)
+		}
 	}
 	if launch.Model() != "" {
 		meta[MetaModel] = launch.Model()
@@ -284,9 +314,9 @@ func recordHeadless(w *store.Workspace, deps Deps, project string, kind harness.
 		meta[MetaEffort] = string(launch.Effort())
 	}
 	res := StartResult{
-		Project: project, Harness: kind, Agent: observed.Handle.Name, Session: session.Name,
-		Workspace: tab.WorkspaceID, Tab: tab.TabID, Pane: tab.PaneID, SessionID: sessionID,
-		StartedAt: startedAt, MateDir: mateDir, Status: observed.Status, ResumeNote: decision.Note,
+		Project: project, Harness: kind, Agent: agent, Session: session.Name,
+		Workspace: tab.WorkspaceID, Tab: tab.TabID, Pane: tab.PaneID, PID: place.pid, SessionID: sessionID,
+		StartedAt: startedAt, MateDir: mateDir, ResumeNote: decision.Note,
 		Headless: true,
 	}
 	if decision.Resume {
@@ -300,14 +330,13 @@ func recordHeadless(w *store.Workspace, deps Deps, project string, kind harness.
 	return res, nil
 }
 
-// stopHost asks a headless Mate's host to finish its turn and exit. What it
-// returns is why the stop was not the host's own clean exit, empty when it
-// was; the caller then confirms the agent is gone or closes the pane.
+// stopHost asks a headless Mate's host in its Herdr pane, which an older
+// binary started, to finish its turn and exit. What it returns is why the
+// stop was not the host's own clean exit, empty when it was; the caller
+// then confirms the agent is gone or closes the pane. A host of its own is
+// ended by endHost.
 func stopHost(ctx context.Context, deps Deps, mateDir string, handle runtime.AgentHandle) string {
-	wait := deps.HostStopWait
-	if wait <= 0 {
-		wait = HostStopWait
-	}
+	wait := deps.hostStopWait()
 	killed, err := matehost.Dial(mateDir).Stop(ctx, wait, false)
 	switch {
 	case err != nil:
@@ -327,9 +356,6 @@ func stopHost(ctx context.Context, deps Deps, mateDir string, handle runtime.Age
 	return "the headless host was still listed after it was asked to stop"
 }
 
-// hostExitPolls bounds stopHost's wait for the host to leave: 10 seconds.
-const hostExitPolls = 100
-
 // HostClient is the headless Mate's host, if project's Mate runs headless.
 func HostClient(w *store.Workspace, project string) (matehost.Client, bool) {
 	if !w.MateHeadless(project) {
@@ -339,33 +365,37 @@ func HostClient(w *store.Workspace, project string) (matehost.Client, bool) {
 }
 
 // adoptInterruptedHost is adoptInterruptedStart for a headless Mate: a host
-// left running in the Mate directory by a start that was interrupted, and
-// still answering on its socket, is recorded instead of started again (its
-// host lock would refuse a second one).
+// left running in the Mate directory by a start that was interrupted
+// before it wrote mate.meta, and still answering on its socket, is
+// recorded instead of started again (its host lock would refuse a second
+// one). ok is false when no host answers.
 func adoptInterruptedHost(ctx context.Context, w *store.Workspace, deps Deps, project string, kind harness.Kind, mateDir string, session runtime.SessionHandle) (StartResult, bool, error) {
-	name, err := runtime.SanitizeAgentName(AgentNamePrefix, project)
+	client := matehost.Dial(mateDir)
+	client.Timeout = hostPingTimeout
+	st, err := client.State(ctx)
 	if err != nil {
-		return StartResult{}, false, err
-	}
-	obs, err := deps.Runtime.InspectAgent(ctx, runtime.AgentHandle{Session: session, Name: name, RawID: project})
-	if err != nil {
-		if runtime.IsAgentNotFound(err) {
-			return StartResult{}, false, nil
-		}
-		return StartResult{}, false, err
-	}
-	if !sameDir(obs.Cwd, mateDir) || matehost.Dial(mateDir).Ping(ctx) != nil {
-		return StartResult{}, false, observability.NewError(observability.CodeAlreadyExists, fmt.Sprintf(
-			"Herdr already runs an agent named %s in pane %s of session %s that is not this project's headless Mate host; stop it in Herdr, then start again",
-			name, obs.Handle.Tab.PaneID, session.Name))
+		return StartResult{}, false, nil
 	}
 	l, err := matehost.ReadLaunch(mateDir)
 	if err != nil {
 		return StartResult{}, false, err
 	}
+	// The host runs the harness its launch names, whatever this start
+	// asked for.
+	if launched, err := deps.Harnesses.Parse(l.Harness); err == nil {
+		kind = launched
+	}
+	agent := l.Agent
+	if agent == "" {
+		if agent, err = runtime.SanitizeAgentName(AgentNamePrefix, project); err != nil {
+			return StartResult{}, false, err
+		}
+	}
+	// A host of an older binary gives no pid: it is adopted all the same,
+	// and its stop op is then the only way to end it.
 	decision := resumeDecision{Note: fmt.Sprintf(
-		"adopted the headless host %s, left running in pane %s by a start that was interrupted before it finished", name, obs.Handle.Tab.PaneID)}
-	res, err := recordHeadless(w, deps, project, kind, mateDir, decision, session, obs.Handle.Tab, obs, l.SessionID, deps.now(), harness.LaunchSpec{})
+		"adopted the headless host (pid %d), left running by a start that was interrupted before it finished", st.PID)}
+	res, err := recordHeadless(w, deps, project, kind, mateDir, decision, session, agent, hostPlace{pid: st.PID}, l.SessionID, deps.now(), harness.LaunchSpec{})
 	res.Adopted = err == nil
 	return res, true, err
 }

@@ -81,6 +81,8 @@ type State struct {
 	// Held is what the captain sent that waits out its undo, oldest first
 	// (hold.go, CON-222).
 	Held []Held `json:"held,omitempty"`
+	// PID is the host process's (Options.PID), zero when it gave none.
+	PID int `json:"pid,omitempty"`
 }
 
 // Event is what the host tells its REPL.
@@ -119,19 +121,14 @@ type Event struct {
 	Seq int64
 }
 
-// Reporter tells Herdr what the host is doing (herdrReporter).
-type Reporter interface {
-	Report(state string)
-}
-
 // Host serialises the Mate's messages: one turn at a time, captain
 // messages queued behind it, app lines refused while it runs.
 type Host struct {
-	runner   *Runner
-	history  string
-	reporter Reporter
-	now      func() time.Time
-	notify   func(Event)
+	runner  *Runner
+	history string
+	pid     int
+	now     func() time.Time
+	notify  func(Event)
 
 	mu       sync.Mutex
 	run      *Run
@@ -185,9 +182,12 @@ type Options struct {
 	// History is the file items are appended to; empty keeps none.
 	History string
 	// News is the news log (NewsPath); empty keeps none.
-	News     string
-	Reporter Reporter
-	Now      func() time.Time
+	News string
+	// PID is the host process's pid, given in every State so whoever
+	// finds the host on its socket can name the process (CON-225). Zero
+	// gives none.
+	PID int
+	Now func() time.Time
 	// Topics is where sessions keep their files (TopicsPath); Forks runs
 	// them, nil when the harness cannot; Allow are the commands a session
 	// may run (ForkAllow); MateBin is the mate binary the Mate's manual
@@ -204,7 +204,7 @@ type Options struct {
 
 // New makes a host for runner.
 func New(runner *Runner, opts Options) *Host {
-	h := &Host{runner: runner, history: opts.History, newsPath: opts.News, reporter: opts.Reporter, now: opts.Now, idle: make(chan struct{}),
+	h := &Host{runner: runner, history: opts.History, newsPath: opts.News, pid: opts.PID, now: opts.Now, idle: make(chan struct{}),
 		sessions: map[int]*session{}, forks: opts.Forks, allow: opts.Allow, mateBin: opts.MateBin, topicsDir: opts.Topics,
 		subs: map[*lineStream]struct{}{}, subQueue: subscribeQueue, subWriteTimeout: subscribeWriteTimeout}
 	if h.now == nil {
@@ -350,7 +350,6 @@ func (h *Host) start(msg message) error {
 	h.idle = make(chan struct{})
 	ev := h.eventLocked(item)
 	h.mu.Unlock()
-	h.report("working")
 	h.emit(ev)
 	go h.wait(run, item)
 	return nil
@@ -404,9 +403,6 @@ func (h *Host) wait(run *Run, item *Item) {
 	close(h.idle)
 	ev := h.eventLocked(&done)
 	h.mu.Unlock()
-	if next == nil {
-		h.report("idle")
-	}
 	h.emit(ev)
 	if next != nil {
 		if err := h.start(*next); errors.Is(err, ErrBusy) {
@@ -546,7 +542,7 @@ func (h *Host) State() State {
 }
 
 func (h *Host) stateLocked() State {
-	s := State{Busy: h.run != nil, Queued: len(h.queue), Draft: h.draft, Stopping: h.stopping, Held: h.heldLocked()}
+	s := State{Busy: h.run != nil, Queued: len(h.queue), Draft: h.draft, Stopping: h.stopping, Held: h.heldLocked(), PID: h.pid}
 	if h.cur != nil {
 		s.TurnSource, s.TurnStartedAt = h.cur.Source, h.started
 	}
@@ -554,9 +550,10 @@ func (h *Host) stateLocked() State {
 }
 
 // Reload makes every turn from now on run l: a fresh session for the same
-// Mate, in the pane the host already runs in (context refresh, CON-133).
-// Closing the pane to start again ended every `herdr agent attach` on it,
-// the console's stage among them. It is refused while a turn runs or
+// Mate, in the host already running (context refresh, CON-133), so every
+// REPL connected to it stays connected; stopping and starting it once
+// closed the Mate's pane and every `herdr agent attach` on it. It is
+// refused while a turn runs or
 // waits, a captain message held for its undo included, so no turn is
 // split across two sessions and nothing writes the old transcript once it
 // returns.
@@ -881,12 +878,6 @@ func (h *Host) emit(ev Event) {
 	h.publish(ev)
 	if fn != nil {
 		fn(ev)
-	}
-}
-
-func (h *Host) report(state string) {
-	if h.reporter != nil {
-		h.reporter.Report(state)
 	}
 }
 

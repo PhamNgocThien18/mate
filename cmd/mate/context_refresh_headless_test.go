@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,10 +16,11 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// A headless Mate is refreshed in the pane it runs in (CON-133). Stopping
-// and starting it closed that pane, and every `herdr agent attach` on it -
-// the console's stage among them - ended with "terminal ... not found".
-func TestContextRefreshKeepsTheHeadlessMatesPane(t *testing.T) {
+// A headless Mate is refreshed in the host it runs in (CON-133): stopping
+// and starting it once closed its pane and ended every attach on it, and
+// today would end every REPL connected to its host. Its host runs outside
+// Herdr (CON-225), and the refresh does not ask Herdr for anything either.
+func TestContextRefreshKeepsTheHeadlessMatesHost(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(claude.ClaudeConfigDirEnv, "")
 	w, deps := consoleFixture(t, "shop")
@@ -46,19 +48,14 @@ func TestContextRefreshKeepsTheHeadlessMatesPane(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rt := deps.Runtime.(*runtime.Fake)
-	// The fake runtime plays `mate mate host`: a host on the Mate's socket
-	// whose turns run a stand-in claude that answers every message.
+	// playHosts plays `mate mate host`: a host on the Mate's socket whose
+	// turns run a stand-in claude that answers every message.
 	notes := make(chan string, 4)
-	rt.OnRunInPane = func(tab runtime.TabHandle, argv []string) error {
-		mateDir := w.MateDir("shop")
-		l, err := matehost.ReadLaunch(mateDir)
-		if err != nil {
-			return err
-		}
-		prog := filepath.Join(mateDir, "fake-claude")
+	played := playHosts(t, w, &deps, "shop", func(l matehost.Launch, pid int) *matehost.Host {
+		prog := filepath.Join(l.Dir, "fake-claude")
 		script := "#!/bin/sh\ncat >/dev/null\necho '{\"type\":\"result\",\"result\":\"stowed\",\"session_id\":\"" + l.SessionID + "\"}'\n"
 		if err := os.WriteFile(prog, []byte(script), 0o755); err != nil {
-			return err
+			t.Error(err)
 		}
 		l.Program = prog
 		host := matehost.New(&matehost.Runner{
@@ -66,16 +63,14 @@ func TestContextRefreshKeepsTheHeadlessMatesPane(t *testing.T) {
 			Turns:  claude.Claude{},
 			Lock:   func() (func(), bool, error) { return func() {}, true, nil },
 			Opened: func(string, string) bool { return false },
-		}, matehost.Options{})
+		}, matehost.Options{PID: pid})
 		host.Subscribe(func(ev matehost.Event) {
 			if ev.Note != "" {
 				notes <- ev.Note
 			}
 		})
-		rt.SeedAgent(runtime.AgentHandle{Session: tab.Session, Name: l.Agent, RawID: "shop", Kind: claude.KindClaude, Tab: tab}, runtime.AgentIdle)
-		go func() { _ = host.Serve(ctx, matehost.SocketPath(mateDir), nil) }()
-		return nil
-	}
+		return host
+	})
 	before, err := spawn.StartMate(ctx, w, deps, spawn.StartRequest{Project: "shop", Mode: spawn.ModeHeadless})
 	if err != nil {
 		t.Fatal(err)
@@ -114,16 +109,16 @@ func TestContextRefreshKeepsTheHeadlessMatesPane(t *testing.T) {
 		t.Fatalf("refresh: %v %v", changed, err)
 	}
 	for _, c := range rt.Calls[calls:] {
-		if c == "RemoveTab" || c == "CreateAgentTab" || c == "RunInPane" || strings.HasPrefix(c, "StopAgent") {
-			t.Fatalf("the refresh called %s, want the pane kept: %q", c, rt.Calls[calls:])
+		if c == "RemoveTab" || c == "CreateAgentTab" || c == "RunInPane" || strings.HasPrefix(c, "StopAgent") || c == "InspectAgent" {
+			t.Fatalf("the refresh called %s, want Herdr left alone: %q", c, rt.Calls[calls:])
 		}
 	}
 	meta, err := w.ReadMateMeta("shop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if meta[spawn.MetaSessionID] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" || meta[spawn.MetaPane] != before.Pane || meta[spawn.MetaAgent] != before.Agent {
-		t.Fatalf("meta = %v, want a fresh session in pane %s", meta, before.Pane)
+	if meta[spawn.MetaSessionID] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" || meta[spawn.MetaPID] != fmt.Sprint(before.PID) || meta[spawn.MetaAgent] != before.Agent || played.count() != 1 {
+		t.Fatalf("meta = %v, host starts %d, want a fresh session in host %d", meta, played.count(), before.PID)
 	}
 	archive, err := store.ReadMeta(filepath.Join(w.MateDir("shop"), "sessions", before.SessionID+".meta"))
 	if err != nil || archive["session_id"] != before.SessionID {

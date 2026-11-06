@@ -24,7 +24,7 @@ func TestConsoleNewProjectRegistersTheRepoItWasGiven(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 
-	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	line, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "beta/services/beta",
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 		{"plain", "not a git repository"},
 		{"missing", "no such file"},
 	} {
-		_, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+		_, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 			Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "gamma", Repo: tc.repo,
 		})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -85,7 +85,7 @@ func TestConsoleNewProjectRefusalsMatchTheCLI(t *testing.T) {
 // and the result line says how to add one.
 func TestConsoleNewProjectWithoutARepo(t *testing.T) {
 	w, deps := consoleFixture(t, "alpha")
-	line, err := consoleAction(w, deps)(context.Background(), coreapi.ActionRequest{
+	line, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionOnboard, TargetKind: "workspace", Input: "beta", Repo: "  ",
 	})
 	if err != nil {

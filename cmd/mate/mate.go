@@ -75,7 +75,7 @@ func cmdMateStart(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if res.StaleMeta {
-		fmt.Fprintf(stderr, "note: %s recorded a Mate that Herdr no longer had; the stale record was replaced\n", res.Project)
+		fmt.Fprintf(stderr, "note: %s recorded a Mate that no longer ran; the stale record was replaced\n", res.Project)
 	}
 	if res.UpdateDialog {
 		fmt.Fprintf(stderr, "note: skipped the %s release-update prompt; it returns at the next release\n", res.Harness)
@@ -90,11 +90,8 @@ func cmdMateStart(args []string, stdout, stderr io.Writer) error {
 	if res.Resumed {
 		resumed = fmt.Sprintf("resumed session %s", res.ResumedFrom)
 	}
-	if res.Headless {
-		resumed += ", headless"
-	}
-	fmt.Fprintf(stdout, "started %s: agent %s in pane %s (session %s, harness %s, %s)\n",
-		res.Project, res.Agent, res.Pane, res.Session, res.Harness, resumed)
+	fmt.Fprintf(stdout, "started %s: agent %s %s (session %s, harness %s, %s)\n",
+		res.Project, res.Agent, res.Place(), res.Session, res.Harness, resumed)
 	return nil
 }
 
