@@ -218,7 +218,7 @@ func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
 			t.Errorf("runConsole does not call %s", want)
 		}
 	}
-	for _, engine := range []string{"core.New", "core.Lock", "engineOptions", "engineActions", "consoleDashboard",
+	for _, engine := range []string{"core.New", "core.Lock", "engineOptions", "consoleDashboard",
 		"core.NativeNotifier", "configuredObserver", "consoleNoticeClient", "consoleWatcher", "consoleWatcherWithTimeline",
 		"consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open", "quitAbandoned", "waitAbandoned"} {
 		if calls[engine] {
@@ -230,21 +230,21 @@ func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
 			t.Errorf("runConsole calls %s; the console starts and stops nothing of the core's", call)
 		}
 	}
-	// `grep -n "core.New(" cmd/mate/console*.go` (CON-214): no console
-	// file builds an engine.
+	// CON-214's grep of the console's files for the engine's constructor:
+	// no console file builds an engine, its tests included since CON-232
+	// (they build theirs through testEngine). The word is put together so
+	// that this file does not match the grep itself.
+	newEngine := "core.New" + "("
 	files, err := filepath.Glob("console*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
 		data, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(data), "core.New(") {
+		if strings.Contains(string(data), newEngine) {
 			t.Errorf("%s builds an engine", name)
 		}
 	}

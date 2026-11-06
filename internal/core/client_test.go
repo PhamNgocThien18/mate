@@ -21,7 +21,6 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/coreclient"
-	"github.com/nguyenngocanh94/mate/internal/dashboard"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -47,14 +46,14 @@ func socketEngine(t *testing.T, w *store.Workspace, o Options, addr ...string) *
 	return startEngine(t, New(o))
 }
 
-// transportEngine is socketEngine with every action run by Options.Act
-// (locksOnly): for a test of what the socket carries, not of the engine's
-// own bodies (CON-231), which have tests of their own.
+// transportEngine is socketEngine with a dashboard of its own, every action
+// run by o's Options.Act: for a test of what the socket carries, not of the
+// engine's own bodies (CON-231, CON-232), which have tests of their own.
 func transportEngine(t *testing.T, w *store.Workspace, o Options) *Engine {
 	t.Helper()
 	o.Workspace, o.Harnesses, o.Owner, o.Stderr = w, testHarnesses, OwnerCore, io.Discard
 	o.Dashboard = &DashboardOptions{Addr: freeAddr, Socket: w.CoreSocket()}
-	return startEngine(t, locksOnly(New(o)))
+	return startEngine(t, New(o))
 }
 
 // startEngine starts e and stops it when the test ends.
@@ -143,8 +142,8 @@ func TestClientCoreIsTheEnginesRecord(t *testing.T) {
 	w := shortWorkspace(t)
 	withTimelineDB(t, w)
 	socketEngine(t, w, Options{
-		Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}},
-		Notices:   []string{"observer: jev.yaml is broken"},
+		Notice:  jevSays("none"),
+		Notices: []string{"observer: jev.yaml is broken"},
 	})
 	st, err := dial(t, w).Core(context.Background())
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
+	"github.com/nguyenngocanh94/mate/internal/observability"
 )
 
 // Act runs one action a UI asks for and returns the one line that UI shows
@@ -24,12 +25,15 @@ import (
 // It takes the action's target first (lockOf). While another action holds
 // that target, from whichever UI, Act refuses with a *coreapi.BusyError
 // and starts nothing. The chat runs here, on the headless Mate's host
-// (talk); the Mate's and the Project's actions run here too (ownAction,
-// CON-231); every other action runs Options.Act, cmd/mate's. Once the action
-// has returned, whatever it returned, the cached snapshot is dropped
-// (Invalidate) - an action that failed halfway can have changed something
-// too - and only then is the target released, so the next action on it
-// reads what this one did.
+// (talk); every other action runs here too (ownAction): the Mate's and the
+// Project's (CON-231), a Crew's, the box's and Jev's (CON-232). An action
+// the engine has no body for - explain_notice without Jev (Options.Notice)
+// - is refused as "not wired in this build". Options.Act, a test's
+// stand-in, runs every action but the chat in place of the engine's own.
+// Once the action has returned, whatever it returned, the cached snapshot
+// is dropped (Invalidate) - an action that failed halfway can have changed
+// something too - and only then is the target released, so the next action
+// on it reads what this one did.
 //
 // ctx is the caller's: the console cancels it when it quits in the middle
 // of an action, and a page's press does not end with its request
@@ -58,27 +62,32 @@ func (e *Engine) Act(ctx context.Context, req coreapi.ActionRequest) (string, er
 			return line, err
 		}
 	}
-	if run := e.own(req); run != nil {
-		if e.o.Workspace == nil {
-			return "", errNoWorkspace
-		}
-		return run(ctx, req)
+	if e.o.Act != nil {
+		// A test of the locks: its stand-in runs every action but the
+		// chat and a tick the host took.
+		return e.o.Act(ctx, req)
 	}
-	if e.o.Act == nil {
-		return "", fmt.Errorf("%s is not wired in this engine", req.Action)
+	body := e.ownAction(req)
+	if body == nil {
+		return "", observability.NewError(observability.CodeUsage,
+			fmt.Sprintf("%s is not wired in this build", req.Action))
 	}
-	return e.o.Act(ctx, req)
+	if e.o.Workspace == nil {
+		return "", errNoWorkspace
+	}
+	return body(ctx, req)
 }
 
 // errNoWorkspace is an action of the engine's own on an engine built with
 // no workspace, refused the way the chat refuses (mateHost).
 var errNoWorkspace = errors.New("the engine has no workspace to act in")
 
-// ownAction is the engine's own body for req (CON-231): the Mate's actions
-// (act_mate.go) and the Project's (act_project.go). It is nil for every
-// other action, which Options.Act runs until CON-232 moves the rest in: a
-// crew's actions, the box's and Jev's. An onboard of the workspace adds a
-// Project; any other onboard starts the Project's Mate.
+// ownAction is the engine's own body for req: the Mate's actions
+// (act_mate.go) and the Project's (act_project.go, CON-231), a Crew's
+// (act_crew.go), the box's (act_box.go) and Jev's (act_notice.go, CON-232).
+// It is nil for an action it has no body for, explain_notice without
+// Options.Notice included. An onboard of the workspace adds a Project; any
+// other onboard starts the Project's Mate.
 func (e *Engine) ownAction(req coreapi.ActionRequest) coreapi.ActionFunc {
 	switch req.Action {
 	case coreapi.ActionStart, coreapi.ActionResume:
@@ -90,7 +99,7 @@ func (e *Engine) ownAction(req coreapi.ActionRequest) coreapi.ActionFunc {
 		return e.startMate
 	case coreapi.ActionStop:
 		if req.TargetKind == "crew" {
-			return nil
+			return e.stopCrew
 		}
 		return e.stopMate
 	case coreapi.ActionRepair:
@@ -109,6 +118,25 @@ func (e *Engine) ownAction(req coreapi.ActionRequest) coreapi.ActionFunc {
 		return e.openWork
 	case coreapi.ActionOkayWork:
 		return e.okayWork
+	case coreapi.ActionRestartCrew:
+		return e.relaunchCrew
+	case coreapi.ActionDiff:
+		return e.crewDiff
+	case coreapi.ActionMerge:
+		return e.mergeCrew
+	case coreapi.ActionResolve:
+		return e.resolve
+	case coreapi.ActionReply:
+		return e.reply
+	case coreapi.ActionPeek:
+		return e.peek
+	case coreapi.ActionNotice:
+		if e.o.Notice == nil {
+			// No Jev: refused as an action this build has no body for,
+			// in the words it was before CON-232.
+			return nil
+		}
+		return e.explainNotice
 	}
 	return nil
 }
@@ -349,8 +377,8 @@ func (e *Engine) mateHost(project string) (matehost.Client, error) {
 // okayOnHost hands a tick on the work board to the headless Mate's host,
 // which holds it for its undo like a message (CON-222). held is false
 // where no host takes it - no headless Mate, no host to dial, or a host
-// older than work-okay - and the tick then runs at once through
-// Options.Act, as it did before. A host that was reached and did not
+// older than work-okay - and the tick then runs at once, the engine's own
+// (okayWork), as it did before. A host that was reached and did not
 // answer in time may hold it already, so that is an error, not a second
 // tick.
 func (e *Engine) okayOnHost(ctx context.Context, req coreapi.ActionRequest) (line string, held bool, err error) {

@@ -56,7 +56,7 @@ func TestEngineStopReturnsWithinItsBoundAndNamesWhatDidNotStop(t *testing.T) {
 		rec := &recorder{}
 		release := make(chan struct{})
 		var stderr strings.Builder
-		e := locksOnly(New(Options{
+		e := New(Options{
 			Watcher:  deafWatcher{deafLoop{release}},
 			Timeline: fakeTimeline{rec},
 			Sender:   deafLoop{release},
@@ -67,7 +67,7 @@ func TestEngineStopReturnsWithinItsBoundAndNamesWhatDidNotStop(t *testing.T) {
 				return "stopped at last", nil
 			},
 			Stderr: &stderr,
-		}))
+		})
 		e.snaps.compute = func(context.Context) (query.Snapshot, error) {
 			<-release
 			return query.Snapshot{}, nil

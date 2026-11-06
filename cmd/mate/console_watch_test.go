@@ -64,7 +64,7 @@ func TestConsoleWatcherObservesASpawnedCrew(t *testing.T) {
 	if got := snap.Projects[0].Crews[0].Health; got.State != query.Absent {
 		t.Fatalf("health straight out of query.Load = %+v, want Absent: query reads files only", got)
 	}
-	engine := core.New(core.Options{Workspace: w, Watcher: core.WatchLoop(watcher), Spawn: deps, Harnesses: consoleHarnesses()})
+	engine := testEngine(t, core.Options{Workspace: w, Watcher: core.WatchLoop(watcher), Spawn: deps, Harnesses: consoleHarnesses()})
 	defer engine.Stop()
 	snap, err = engine.Snapshot(context.Background())
 	if err != nil {

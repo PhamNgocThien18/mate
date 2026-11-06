@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/core"
+	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/notifications"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -184,8 +185,8 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	opts.Claim = claim
 	opts.ConsoleSeen = seen
 	opts.Notices = notices
-	opts.Act = engineActions(ws, deps, noticeClient)
-	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
+	opts.Notice = engineNotice(noticeClient)
+	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote)
 	opts.Dashboard.Socket = ws.CoreSocket()
 	opts.Notifier = notifier
 	opts.Stderr = stderr
@@ -236,6 +237,17 @@ func jevNoticeFirst(jevErr error, notices []string) []string {
 		}
 	}
 	return out
+}
+
+// engineNotice is the engine's Jev (core.Options.Notice): client, or nil
+// when Jev is off. consoleNoticeClient says off with a nil *notice.Client,
+// and that pointer in the interface would not be nil: the pages would offer
+// Jev and explain_notice would ask a client that is not there (CON-232).
+func engineNotice(client *notice.Client) core.NoticeClassifier {
+	if client == nil {
+		return nil
+	}
+	return client
 }
 
 // coreEngineRefusal words Start's refusal for `mate core run`.

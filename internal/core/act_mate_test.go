@@ -11,10 +11,12 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
+	"github.com/nguyenngocanh94/mate/internal/observability"
 )
 
-// ownActions is one request for each action the engine runs itself
-// (CON-231), on shop.
+// ownActions is one request for each action the engine runs itself but
+// the chat, on shop: the Mate's and the Project's (CON-231), a Crew's, the
+// box's and Jev's (CON-232).
 var ownActions = []coreapi.ActionRequest{
 	{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"},
 	{Action: coreapi.ActionResume, Target: "shop", TargetKind: "mate"},
@@ -29,46 +31,48 @@ var ownActions = []coreapi.ActionRequest{
 	{Action: coreapi.ActionOpenNews, Target: "shop", TargetKind: "project", Input: "7"},
 	{Action: coreapi.ActionOpenWork, Target: "shop", TargetKind: "project"},
 	{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"},
+	{Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "buy"},
+	{Action: coreapi.ActionRestartCrew, Target: "shop", TargetKind: "crew", Crew: "buy"},
+	{Action: coreapi.ActionDiff, Target: "shop", TargetKind: "crew", Crew: "buy"},
+	{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"},
+	{Action: coreapi.ActionResolve, Target: "shop", TargetKind: "project", Input: "resolve: A"},
+	{Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "buy", Input: "A"},
+	{Action: coreapi.ActionPeek, Target: "shop", TargetKind: "project", Crew: "buy"},
+	{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"},
 }
 
-// The Mate's and the Project's actions run in the engine and never reach
-// Options.Act; a crew's stop and the other actions still do (CON-232).
-func TestTheEngineRunsTheMatesAndTheProjectsActions(t *testing.T) {
-	h := newHeldActs()
-	e := New(Options{Workspace: shopWorkspace(t), Act: h.act})
-	defer e.Stop()
+// The engine runs every action itself, with no Options.Act (CON-232): none
+// is refused as not wired. explain_notice is only with Jev
+// (Options.Notice); without it, it is refused in the words it was before.
+func TestTheEngineRunsEveryActionItself(t *testing.T) {
+	w := shopWorkspace(t)
+	withJev := New(Options{Workspace: w, Notice: jevSays("none")})
+	defer withJev.Stop()
 	for _, req := range ownActions {
 		// What each one answers over no Herdr is not the point here;
 		// that it is the engine that answers is.
-		_, _ = e.Act(context.Background(), req)
-	}
-	if got := h.count(); got != 0 {
-		t.Fatalf("the engine's own actions reached Options.Act %d times: %+v", got, h.ran)
-	}
-	for _, req := range []coreapi.ActionRequest{
-		{Action: coreapi.ActionStop, Target: "shop", TargetKind: "crew", Crew: "buy"},
-		mergeCrew,
-		{Action: coreapi.ActionPeek, Target: "shop", TargetKind: "crew", Crew: "buy"},
-	} {
-		if line, err := e.Act(context.Background(), req); err != nil || line != "did "+string(req.Action) {
-			t.Errorf("%s %s = %q, %v; want Options.Act's answer", req.Action, req.TargetKind, line, err)
+		if _, err := withJev.Act(context.Background(), req); err != nil && strings.Contains(err.Error(), "not wired") {
+			t.Errorf("%s %s = %v, want the engine's own body", req.Action, req.TargetKind, err)
 		}
+	}
+	noJev := New(Options{Workspace: w})
+	defer noJev.Stop()
+	_, err := noJev.Act(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"})
+	var coded *observability.Error
+	if !errors.As(err, &coded) || coded.Code != observability.CodeUsage || err.Error() != "usage: explain_notice is not wired in this build" {
+		t.Fatalf("explain_notice with no Jev = %v, want it not wired, a usage error", err)
 	}
 }
 
 // An engine with no workspace refuses every action of its own, the way it
-// refuses the chat, and neither panics nor runs Options.Act.
+// refuses the chat, and does not panic.
 func TestTheEnginesOwnActionsNeedAWorkspace(t *testing.T) {
-	h := newHeldActs()
-	e := New(Options{Act: h.act})
+	e := New(Options{Notice: jevSays("none")})
 	defer e.Stop()
 	for _, req := range ownActions {
 		if _, err := e.Act(context.Background(), req); !errors.Is(err, errNoWorkspace) {
 			t.Errorf("%s with no workspace = %v, want %q", req.Action, err, errNoWorkspace)
 		}
-	}
-	if got := h.count(); got != 0 {
-		t.Fatalf("Options.Act ran %d times", got)
 	}
 }
 

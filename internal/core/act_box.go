@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"context"
@@ -15,26 +15,18 @@ import (
 )
 
 // The message box's three actions (mvp.md task 15, section 5), bridged from
-// internal/ui/console to internal/send, internal/spawn and internal/store.
-// This is the only place those packages are reached for a box key: the
-// Console itself imports none of them (its doc.go boundary, enforced by
-// internal/ui/console/boundary_test.go).
-//
-// TODO(task 13): `mate send`, `mate peek` and `mate state` are another
-// agent's change, landing as cmd/mate/{send,peek,state}.go. When they do,
-// boxReplyAction and boxPeekAction should call that command's own function
-// rather than send.Send/ReadAgent directly, so the console's `r` and the
-// CLI's `mate send` cannot drift on retries, settle or what they write to
-// sent.log. The shape here is deliberately the same one those commands need
-// - resolve the handle, send, record - so the merge is a call swap.
+// a UI's box keys to internal/send, internal/spawn and internal/store. They
+// ran in cmd/mate's console_box.go until CON-215's B5 (CON-232). No UI
+// imports those packages for a box key: the console's own boundary is
+// enforced by internal/ui/console/boundary_test.go.
 
 // peekLines is how much of a crew's pane `p` reads, matching mvp.md section
 // 4's "mate peek <crew> đọc 40 dòng cuối pane" and send.DefaultLines, which
 // is the window the composer classifier already judges a screen from.
 const peekLines = 40
 
-// boxResolveAction is Enter and the `[resolve]` button: hand one inbox item
-// to the Mate and ask it to answer the crew.
+// resolve is Enter and the `[resolve]` button: hand one inbox item to the
+// Mate and ask it to answer the crew.
 //
 // The line is query.BoxResolveLine's, built next to the merge that produced
 // the item: the crew's own question, the absolute path of the status file to
@@ -51,13 +43,14 @@ const peekLines = 40
 // is busy most of the time (mvp.md section 7: `[assign]` met `agent is
 // mid-turn` four or five times in a row in task 24), so the action appends
 // the line to the Mate's outbox, makes one immediate attempt so an idle Mate
-// gets it with no delay, and returns either way; the console's sender loop
-// (consoleDelivery) retries every two seconds until the composer is empty.
+// gets it with no delay, and returns either way; the engine's sender loop
+// (Options.Sender) retries every two seconds until the composer is empty.
 // sent.log is still written only once the composer cleared - by the outbox,
 // in the same words as before - so the box never shows the Mate a message no
 // agent received. The same inbox entry assigned twice is queued once
 // (req.Key, query.BoxEntry.AssignKey), and the answer says when it was.
-func boxResolveAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
+func (e *Engine) resolve(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+	ws, deps := e.o.Workspace, e.o.Spawn
 	resolve := strings.TrimSpace(req.Input)
 	if resolve == "" {
 		return "", observability.NewError(observability.CodeUsage, "no resolve line was built for this entry")
@@ -128,12 +121,13 @@ func refusalReason(err error) string {
 	return err.Error()
 }
 
-// boxReplyAction is `r`: one line into the crew's own composer.
+// reply is `r`: one line into the crew's own composer.
 //
 // No marker byte: this line is the user's, not the app's (mvp.md section 4 -
 // "Ai đó gõ một dòng trả lời vào pane crew"), and to the crew it is simply a
 // new prompt. It is recorded with Source: user for the same reason.
-func boxReplyAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
+func (e *Engine) reply(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+	ws, deps := e.o.Workspace, e.o.Spawn
 	text := strings.TrimSpace(req.Input)
 	if text == "" {
 		return "", observability.NewError(observability.CodeUsage, "a reply is one non-empty line")
@@ -159,11 +153,12 @@ func boxReplyAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, r
 	return fmt.Sprintf("replied to %s in %d enter(s)", report.Agent, report.Presses), nil
 }
 
-// boxPeekAction is `p`: the crew's last peekLines of pane, returned as text
-// for the overlay. It writes nothing - not to the pane, not to sent.log -
-// because looking at a screen is not communication, and a peek in the box
-// would be a record of the reader rather than of the crew.
-func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, req coreapi.ActionRequest) (string, error) {
+// peek is `p`: the crew's last peekLines of pane, returned as text for the
+// overlay. It writes nothing - not to the pane, not to sent.log - because
+// looking at a screen is not communication, and a peek in the box would be
+// a record of the reader rather than of the crew.
+func (e *Engine) peek(ctx context.Context, req coreapi.ActionRequest) (string, error) {
+	ws, deps := e.o.Workspace, e.o.Spawn
 	if req.Crew == "" {
 		return "", observability.NewError(observability.CodeUsage, "no crew was named for the peek")
 	}
@@ -180,16 +175,4 @@ func boxPeekAction(ctx context.Context, ws *store.Workspace, deps spawn.Deps, re
 		return "", err
 	}
 	return screen, nil
-}
-
-// boxSendRefusal reports whether an error is one of internal/send's five
-// "nothing was typed" refusals. The console shows all five the same way -
-// the reason on the outcome line and nothing else done - so this exists for
-// the tests that have to tell a refusal from a transport failure.
-func boxSendRefusal(err error) bool {
-	return errors.Is(err, send.ErrComposerPending) ||
-		errors.Is(err, send.ErrAgentBusy) ||
-		errors.Is(err, send.ErrComposerUnknown) ||
-		errors.Is(err, send.ErrDialogOpen) ||
-		errors.Is(err, send.ErrPaneChanged)
 }

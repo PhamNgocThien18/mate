@@ -21,17 +21,15 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/matehost"
 	"github.com/nguyenngocanh94/mate/internal/query"
-	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
 // A page's chat runs in the core, on the headless Mate's host (core's
-// Engine.Act), with the text and the news the page sent, and never reaches
-// the console's action functions. A page's tick on the work board is the
-// work sheet's okay_work (CON-206): the Mate's host holds it for its undo
-// (CON-222), and where no host answers the engine ticks the row itself
-// (CON-231) and says what the console said.
-func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
+// Engine.Act), with the text and the news the page sent. A page's tick on
+// the work board is the work sheet's okay_work (CON-206): the Mate's host
+// holds it for its undo (CON-222), and where no host answers the engine
+// ticks the row itself (CON-231) and says what the console said.
+func TestAPagesChatAndTickRunInTheCore(t *testing.T) {
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
 	hostGone := host.close
@@ -44,20 +42,11 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	if err := matehost.DoneWork(path, id, "", now); err != nil {
 		t.Fatal(err)
 	}
-	web := engineActions(w, spawn.Deps{}, nil)
-	var mu sync.Mutex
-	var ran []coreapi.ActionRequest
-	act := func(ctx context.Context, req coreapi.ActionRequest) (string, error) {
-		mu.Lock()
-		ran = append(ran, req)
-		mu.Unlock()
-		return web(ctx, req)
-	}
-	opts := consoleDashboard(w, "", false, false)
+	opts := consoleDashboard(w, "", false)
 	if opts.Deps.Diff == nil || opts.Deps.BranchExists == nil {
 		t.Fatalf("consoleDashboard left the CLI's answers out: %+v", opts.Deps)
 	}
-	engine := core.New(core.Options{Workspace: w, Act: act})
+	engine := testEngine(t, core.Options{Workspace: w})
 	defer engine.Stop()
 	// A running Mate offers stop, which is what lets a page talk to it.
 	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
@@ -82,11 +71,6 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 			t.Errorf("%s reached the Mate's host as %+v, want %+v", tc.body, got, tc.call)
 		}
 	}
-	mu.Lock()
-	if len(ran) != 0 {
-		t.Errorf("the chat reached the console's action function: %+v", ran)
-	}
-	mu.Unlock()
 
 	// The tick goes to the headless Mate's host too, which holds it for its
 	// undo (CON-222); with its host gone the engine runs it at once.
@@ -102,11 +86,6 @@ func TestAPagesChatRunsOnTheMatesHostAndTheRestInTheConsole(t *testing.T) {
 	if want := fmt.Sprintf("okayed work #%d of shop; it is off the board", id); status != http.StatusOK || line != want {
 		t.Fatalf("okay with no host = %d %q, want %q", status, line, want)
 	}
-	mu.Lock()
-	if len(ran) != 0 {
-		t.Errorf("the tick reached the console's action function: %+v", ran)
-	}
-	mu.Unlock()
 	list, err := matehost.LoadWork(path)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +130,7 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 			t.Fatal("the first action never ran")
 		}
 	}
-	engine := core.New(core.Options{Workspace: w, Act: act})
+	engine := testEngine(t, core.Options{Workspace: w, Act: act})
 	defer engine.Stop()
 	available := func(names ...string) []query.ActionAvailability {
 		var out []query.ActionAvailability
@@ -163,7 +142,7 @@ func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
 	snap := query.Snapshot{Projects: []query.ProjectNode{{ProjectID: "shop", Name: "shop",
 		Mate:  query.MateNode{Actions: available("stop")},
 		Crews: []query.CrewNode{{CrewID: "buy", Actions: available("stop", "merge")}}}}}
-	base := pageServer(t, w, consoleDashboard(w, "", false, false), engine.Act, snap)
+	base := pageServer(t, w, consoleDashboard(w, "", false), engine.Act, snap)
 	console := tuiAction(engine.Act, splitTerminal)
 	ctx := context.Background()
 

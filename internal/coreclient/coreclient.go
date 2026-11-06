@@ -1,7 +1,7 @@
 // Package coreclient is a client of `mate core` over the workspace's
 // `.mate/core.sock` (CON-212): the core's state, its snapshot and its
-// actions, in internal/coreapi's types. The console becomes one in CON-214
-// and `mate core status` uses one from CON-213.
+// actions, in internal/coreapi's types. The console is one (CON-214), and
+// `mate core status` uses one (CON-213).
 //
 // It is the socket's other end and nothing more: it holds no state of the
 // workspace, and every call is one HTTP request. A refusal comes back as

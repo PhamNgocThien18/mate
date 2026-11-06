@@ -70,7 +70,7 @@ func TestConsolePilotDigestsToAStartedMate(t *testing.T) {
 	if got := snap.Projects[0].Daemon; got.Sends != 0 {
 		t.Fatalf("query.Load filled Daemon = %+v; it reads files and cannot know this", got)
 	}
-	engine := core.New(core.Options{Workspace: w, Pilot: core.PilotLoop(pilot), Spawn: deps, Harnesses: consoleHarnesses()})
+	engine := testEngine(t, core.Options{Workspace: w, Pilot: core.PilotLoop(pilot), Spawn: deps, Harnesses: consoleHarnesses()})
 	defer engine.Stop()
 	merged, err := engine.Snapshot(context.Background())
 	if err != nil {
@@ -111,7 +111,7 @@ func startEngine(t *testing.T, w *store.Workspace, deps spawn.Deps) (*core.Engin
 	if err != nil {
 		t.Fatalf("engineOptions: %v", err)
 	}
-	engine := core.New(opts)
+	engine := testEngine(t, opts)
 	if err := engine.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

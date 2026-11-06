@@ -48,7 +48,7 @@ func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
 			if target == "crew" {
 				req.Crew = "k3"
 			}
-			text, err := consoleNoticeAction(f.ws, f.deps, classifier, f.action)(context.Background(), req)
+			text, err := engineNoticeAction(t, f.ws, f.deps, classifier)(context.Background(), req)
 			if err != nil || count != 1 || !strings.Contains(text, "Advisory only") || !strings.Contains(text, "quota warning") {
 				t.Fatalf("result %q, %v; calls=%d", text, err, count)
 			}
@@ -73,7 +73,7 @@ func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
 		count++
 		return notice.Result{}, errors.New("unavailable")
 	})
-	action := consoleNoticeAction(f.ws, f.deps, c, f.action)
+	action := engineNoticeAction(t, f.ws, f.deps, c)
 	_, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "workspace"})
 	if err == nil || count != 0 {
 		t.Fatal("invalid target reached classifier")
@@ -191,7 +191,7 @@ func TestConsoleNoticeReadsAHeadlessMatesHost(t *testing.T) {
 		}
 		return notice.Result{Label: "quota_exhausted", Confidence: .9}, nil
 	})
-	text, err := consoleNoticeAction(w, deps, classifier, nil)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
+	text, err := engineNoticeAction(t, w, deps, classifier)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
 	if err != nil || !strings.Contains(text, "quota exhausted") {
 		t.Fatalf("result %q, %v", text, err)
 	}

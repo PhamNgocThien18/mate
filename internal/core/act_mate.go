@@ -74,8 +74,7 @@ func (e *Engine) startMate(ctx context.Context, req coreapi.ActionRequest) (stri
 	return line, nil
 }
 
-// stopMate is stop on a Mate row. A crew's stop is Options.Act's until
-// CON-232.
+// stopMate is stop on a Mate row. A crew's stop is stopCrew (act_crew.go).
 func (e *Engine) stopMate(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 	if req.TargetKind != "mate" && req.TargetKind != "project-mate" {
 		return "", observability.NewError(observability.CodeUsage,

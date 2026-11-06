@@ -167,19 +167,28 @@ it after an action. The console TUI (`internal/ui/console`) reads it every
 and acts through `coreapi.ActionFunc`: `Engine.Act` (`internal/core/act.go`).
 
 `Engine.Act` is the one entry for an action from any UI: the console's
-keys (`tuiAction`, `cmd/mate/console_actions.go`) and every
-`POST /api/actions` of Office and City. It runs the chat (`say`,
-`interrupt`, `answer`, `fork`, `fork_close`) itself on the headless Mate's
-host. It also runs the Mate's and the Project's actions itself
-(`ownAction`, `internal/core/act_mate.go` and `act_project.go`, CON-231):
-`start`, `resume`, `onboard`, `stop` of a Mate, `repair`, `mode`,
-`restart_mate`, `clear_composer`, `remove_project`, `open_news`,
-`open_work` and `okay_work`, over `Options.Workspace` and `Options.Spawn`.
+keys (`tuiAction`, `cmd/mate/console.go`, over the socket) and every
+`POST /api/actions` of Office and City. It runs every action itself. The
+chat (`say`, `interrupt`, `answer`, `fork`, `fork_close`, `undo`) runs on
+the headless Mate's host. Every other action has its body in
+`internal/core` (`ownAction`), over `Options.Workspace` and
+`Options.Spawn`: the Mate's and the Project's (`act_mate.go`,
+`act_project.go`, CON-231: `start`, `resume`, `onboard`, `stop` of a
+Mate, `repair`, `mode`, `restart_mate`, `clear_composer`,
+`remove_project`, `open_news`, `open_work`, `okay_work`), a crew's
+(`act_crew.go`: `stop` of a crew, `restart_crew`, `diff`, `merge`), the
+box's (`act_box.go`: `resolve`, `reply`, `peek`) and Jev's
+(`act_notice.go`: `explain_notice`, CON-232). `explain_notice` asks
+`Options.Notice`, the Jev client `mate core` builds from `.mate/.env`
+(`cmd/mate/jev.go`); with Jev off it is nil, the pages do not offer the
+action, `GET /api/core` says `jev: false`, and `explain_notice` is refused
+as "explain_notice is not wired in this build". For its actions `mate core`
+passes the engine `Workspace`, `Spawn` and `Notice`, no action function;
+`Options.Act` is only a test's stand-in for every action but the chat
+and a tick the Mate's host takes.
 A restart held for the captain's second press (`restartHolds`) is the
 engine's, in memory only: any UI confirms it, and only a new engine
-forgets it. Every other action, a crew's, the box's and Jev's, runs
-through `Options.Act`, cmd/mate's `engineActions` (**Target**: CON-232
-moves them in). It holds one
+forgets it. It holds one
 lock per target while an action runs: the Project, `project/crew` when the
 request names a crew, the workspace for adding a Project; the chat,
 `peek`, `explain_notice`, `okay_work`, `open_news` and `open_work` take
@@ -235,7 +244,7 @@ How processes exchange state:
   the core runs on the socket alone. The socket alone also serves the
   clients' routes (CON-212, `internal/dashboard/client.go`; over TCP each
   is a 404): `GET /api/core` (`coreapi.CoreStatus`: `core.lock`'s record,
-  Jev as the pages' `Deps.Notice` says it, and the notices a console's
+  whether there is Jev, `Options.Notice` (CON-232), and the notices a console's
   status line shows), `GET /api/snapshot`
   (`Engine.Snapshot` in Go's default JSON, without `Commands`) and `POST
   /api/act` (a `coreapi.ActionRequest` run by `Engine.Act` under

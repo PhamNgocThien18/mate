@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/autopilot"
-	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/host"
 	"github.com/nguyenngocanh94/mate/internal/panerun"
@@ -60,17 +59,6 @@ func consoleFixture(t *testing.T, project string) (*store.Workspace, spawn.Deps)
 		NewSessionID:         func() string { return "11111111-2222-3333-4444-555555555555" },
 	}
 	return w, deps
-}
-
-// engineAction is how a test presses an action the way every UI does:
-// through an engine's Act (CON-231), the engine not started - Act needs
-// none of its loops - over w and deps, with the console's own actions as
-// its Options.Act for the ones it does not run itself yet (CON-232).
-func engineAction(t testing.TB, w *store.Workspace, deps spawn.Deps) coreapi.ActionFunc {
-	t.Helper()
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Act: engineActions(w, deps, nil)})
-	t.Cleanup(engine.Stop)
-	return engine.Act
 }
 
 // TestConsoleActionStartAndStopMoveTheMateMeta is the seam mvp.md task 09

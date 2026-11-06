@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/coreclient"
 	"github.com/nguyenngocanh94/mate/internal/db"
+	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -166,6 +167,68 @@ func TestCoreNoticesPutJevFirst(t *testing.T) {
 		if got := jevNoticeFirst(tc.jev, tc.notices); strings.Join(got, "|") != strings.Join(tc.want, "|") || len(got) != len(tc.want) {
 			t.Errorf("jevNoticeFirst(%v, %q) = %q, want %q", tc.jev, tc.notices, got, tc.want)
 		}
+	}
+}
+
+// The core has Jev only when `.mate/.env` turns it on (CON-232). Off,
+// consoleNoticeClient's nil client must not reach core.Options.Notice as a
+// non-nil interface: the core says it has no Jev, so its pages offer none,
+// and explain_notice is refused as it was before the action moved into the
+// core. On, the core says it has one.
+func TestCoreWiresJevOnlyWhenItIsOn(t *testing.T) {
+	if engineNotice(nil) != nil {
+		t.Fatal("engineNotice(nil) is a non-nil Jev")
+	}
+	if engineNotice(notice.New("k")) == nil {
+		t.Fatal("engineNotice dropped a client")
+	}
+
+	run := func(t *testing.T, w *store.Workspace) (coreapi.CoreStatus, error) {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		var stdout lockedBuffer
+		done := make(chan error, 1)
+		go func() { done <- runCore(ctx, w, fakeCoreDeps(t), nil, nil, &stdout, io.Discard) }()
+		defer func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("runCore: %v", err)
+			}
+		}()
+		waitFor(t, func() bool { return strings.Contains(stdout.String(), "Ctrl+C to stop") })
+		client, err := coreclient.Dial(w.CoreSocket(), coreclient.As(coreapi.ClientConsole))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.Close()
+		st, err := client.Core(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, actErr := client.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"})
+		return st, actErr
+	}
+
+	w := coreWorkspace(t)
+	st, err := run(t, w)
+	if st.Jev {
+		t.Error("a core with Jev off says it has Jev")
+	}
+	if err == nil || err.Error() != "usage: explain_notice is not wired in this build" {
+		t.Errorf("explain_notice with Jev off = %v, want it not wired", err)
+	}
+
+	key := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeEnv(t, w, "MATE_JEV_API_KEY_FILE="+key+"\n")
+	st, err = run(t, w)
+	if !st.Jev {
+		t.Error("a core with Jev on says it has none")
+	}
+	if err != nil && strings.Contains(err.Error(), "not wired") {
+		t.Errorf("explain_notice with Jev on = %v, want the core's own action", err)
 	}
 }
 
