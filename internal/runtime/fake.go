@@ -218,7 +218,7 @@ func (f *Fake) LookupSession(_ context.Context, spec SessionSpec) (SessionHandle
 	if f.SessionLookupErr != nil {
 		return SessionHandle{}, false, f.SessionLookupErr
 	}
-	h, err := sessionAddress(spec)
+	h, err := SessionAddress(spec)
 	if err != nil {
 		return SessionHandle{}, false, err
 	}
@@ -564,7 +564,7 @@ func (f *Fake) SetReadOutput(handle AgentHandle, screen string) {
 func (f *Fake) SendKeys(_ context.Context, handle AgentHandle, keys []string) error {
 	f.mu.Lock()
 	f.record("SendKeys")
-	if err := checkSendKeys(keys); err != nil {
+	if err := CheckSendKeys(keys); err != nil {
 		f.mu.Unlock()
 		return err
 	}
@@ -761,7 +761,7 @@ func (f *Fake) StopAgent(ctx context.Context, handle AgentHandle, stop Stop) err
 	}
 	switch stop.Mode() {
 	case StopModeGraceful:
-		clear, exit, err := stop.exitPrompt()
+		clear, exit, err := stop.ExitPrompt()
 		if err != nil {
 			return err
 		}

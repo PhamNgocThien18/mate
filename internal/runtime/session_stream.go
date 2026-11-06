@@ -79,7 +79,9 @@ type SessionChannel interface {
 	Close(ctx context.Context) error
 }
 
-func sessionStreamReadContextError(err error) error {
+// SessionStreamReadContextError turns a read deadline that ran out into
+// os.ErrDeadlineExceeded, the error a session channel's Read returns for it.
+func SessionStreamReadContextError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return os.ErrDeadlineExceeded
 	}
@@ -88,7 +90,9 @@ func sessionStreamReadContextError(err error) error {
 
 var errSessionChannelClosed = errors.New("session channel is closed")
 
-func sessionChannelClosedError(operation string) error {
+// SessionChannelClosedError is the error an operation on a closed session
+// channel returns.
+func SessionChannelClosedError(operation string) error {
 	return observability.WrapError(
 		observability.CodeStateConflict,
 		"session channel is closed; cannot "+operation,

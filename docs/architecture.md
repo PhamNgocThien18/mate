@@ -16,7 +16,8 @@ API on `.mate/core.sock` with `internal/coreclient` (CON-212); the Mate's
 and the Project's actions (CON-231); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
-`internal/usage` (CON-168); `internal/recall` (CON-167). Every
+`internal/usage` (CON-168); `internal/recall` (CON-167); the Herdr adapter
+in `internal/runtime/herdr` (CON-190). Every
 part marked **Target** below is planned, not built; the issue named beside it
 owns the change. A PR that moves a package or a process updates the
 paragraph it changes.
@@ -39,7 +40,7 @@ names the layers its imports and importers allow.
 | 1 leaf (lá) | Types, rules, formats and OS shims that import no other layer | `assets`, `brief`, `capability`, `config`, `consolecmd`, `crewstate`, `memory`, `names`, `observability`, `platform`, `process`, `telemetry` |
 | 2 storage (lưu trữ) | The workspace store and the database and config files beside it | `store`, `db`, `plugin`, `learnings` |
 | 3 read (đọc) | Read models over stored state, and the ports they read through | `query`, `coreapi`, `box`, `timeline/scene`, `timeline/read`, `diagnostics`, `dispatch`, `harness`, `runtime` |
-| 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost`, `coreclient` |
+| 4 integration (tích hợp) | Adapters to something outside mate: harness CLIs, Herdr, the terminal host, git, `gh`, Jev, OS notifications | `harness/catalog`, `harness/claude`, `harness/codex`, `harness/grok`, `harness/pi`, `screen`, `screen/fixture`, `screen/jev`, `screen/chain`, `send`, `notice`, `host`, `panerun`, `gitx`, `github`, `facts`, `quota`, `teardown`, `notifications`, `matehost`, `coreclient`, `runtime/herdr` |
 | 5 service (dịch vụ) | Application logic that combines the layers below, and the core that runs it | `spawn`, `outbox`, `autopilot`, `watch`, `timeline`, `recovery`, `refresh`, `prwatch`, `migrate`, `mateassets`, `hook`, `wake`, `recall`, `dashboard`, `usage`, `core` |
 | 6 UI (giao diện) | What the captain looks at; Office and City are web pages in `internal/dashboard/ui/`, served by `dashboard` (service) | `ui/console` |
 | 7 binary | Wiring and CLI | `cmd/mate` |
@@ -56,7 +57,8 @@ packages below storage still read or write a file under `.mate/` (section
    (an interface several layers use) sits at or below the lowest layer that
    imports it; its concrete adapters sit in integration. Today: `process` in
    leaf (it imports nothing of mate's); `runtime` (the `Adapter`/`ReadAdapter` port) in read, because
-   `query` reads liveness through `runtime.ReadAdapter`; `harness` (the
+   `query` reads liveness through `runtime.ReadAdapter`, and its Herdr
+   adapter `runtime/herdr` in integration; `harness` (the
    contract and Registry) in read, because `runtime` and `dispatch` import
    it; `screen` (the `Observer` port) in integration, because its lowest
    user is `send`.
@@ -76,8 +78,6 @@ either an exception (it stays; the design reason is on the line) or debt
 
 Packages that mix layers, until their issue splits them:
 
-- `runtime` is the port and also the Herdr adapter (`herdr*.go`). **Target**:
-  the adapter moves to `internal/runtime/herdr`, integration (CON-190).
 - `matehost` is the headless Mate host, the Mate's REPL (`repl*.go`, UI
   code) and the owner of `news.jsonl` and `work.jsonl`. The REPL is a
   client of the host's socket (CON-223): it reaches the host only through
@@ -109,7 +109,7 @@ reusing the ledger needs `--why` split out of `usage` first.
 | Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications; refuses to open while `mate core` runs (CON-211) |
 | Core | `mate core run` (foreground; CON-213 adds start/stop) | `cmdCoreRun`, `runCore`, `cmd/mate/core.go` | The engine with no console: the same parts as the console's, plus `.mate/core.sock` and the clients' routes on it (CON-212). Stops within the engine's bound on SIGINT, SIGTERM or SIGHUP |
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone. The stage runs `herdr agent attach --takeover` for a crew or a pane Mate, and the Mate REPL for a headless Mate (CON-224) |
-| Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane: a pane Mate and every Crew. Outlives the console |
+| Herdr server | `herdr.Herdr` (`internal/runtime/herdr`), when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane: a pane Mate and every Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`). Codex and pi Mates, and `mate.mode: pane` |
 | Mate, headless | `spawn` (`startHost`, `internal/spawn/headless.go`; `ExecHosts`, `hostproc.go`) | `mate mate host <project> --no-repl`, `internal/matehost` (`Host.Live`) | One per headless Mate, a background process of its own outside Herdr (CON-225): its own session (`platform.StartNewSession`), no terminal, no tab or pane, stdout and stderr in `host.log`. Each turn is one `claude -p`. `mate.meta` records its `pid` and `socket`; whether it is alive is what `host.sock` answers (`spawn.HostLiveness`; a host that does not answer but still holds its host lock is alive and wedged). Runs until the `stop` op, SIGTERM or SIGHUP; a stop the op does not end sends SIGTERM, then SIGKILL, to the recorded pid, only while some process holds the host lock and no host answers under another pid. The escalation runs to its end even when the stop was cut short. Nothing starts it again when it dies (**Target**: CON-226, mate core watches it); recovery at the next engine start does. Run by hand in a terminal it runs the REPL as a child process, `mate mate repl <project> --in-pane`. A host an older binary started in its Herdr pane keeps that pane, and Herdr answers for it, until its next restart |
 | Mate REPL | the console's stage; the captain, in any terminal | `mate mate repl <project>`, `matehost.RunREPL` | A client of `host.sock` (CON-223): `subscribe` for events, `history` on each connection, one op per action; connects again on its own when the host restarts. Any number per Mate; they share the chat and the draft |
@@ -219,7 +219,7 @@ How processes exchange state:
   and every event list what it holds. The console drives
   each pane runner over its own socket in a temp directory
   (`panerun.SocketDir`: `stage.sock`, `pane.sock`), not under `.mate/`.
-- **Herdr.** `runtime.Herdr` runs the `herdr` executable (`process.Runner`)
+- **Herdr.** `herdr.Herdr` (`internal/runtime/herdr`) runs the `herdr` executable (`process.Runner`)
   against the server's socket (`<config>/herdr/sessions/<s>/herdr.sock`):
   start, read, send keys, attach. `send.Send` types a line into a pane only
   after the fixture observer reads an empty composer; a send never asks Jev
@@ -304,7 +304,8 @@ creates and removes; `teardown` first stops what the worktree started.
 ## 4. Boundary tests
 
 Each test fails `make check` when its rule breaks. The first four are the
-ones CON-179 names; the last three came with CON-184, CON-206 and CON-207.
+ones CON-179 names; the next three came with CON-184, CON-206 and CON-207,
+the last with CON-190.
 They add local rules to the repo-wide layer rule, which
 `internal/archtest/layers_test.go` checks (section 1).
 
@@ -317,6 +318,7 @@ They add local rules to the repo-wide layer rule, which
 | `internal/platform/ratchet_test.go` | Outside `internal/platform`, no `syscall.Flock`/`LOCK_*`/`O_NOFOLLOW`/`Kill`/`Getpgid`, `Setsid`/`Setpgid`, `runtime.GOOS`, import of `x/sys/unix` or `creack/pty`, or `"osascript"`, except the files in `platformAdapters` |
 | `internal/coreapi/boundary_test.go` | `internal/coreapi` imports the standard library and `internal/query` only |
 | `internal/core/boundary_test.go` | Nothing `internal/core` links, transitively, is under `cmd/` or `internal/ui/` |
+| `internal/runtime/herdr/boundary_test.go` | Outside `internal/runtime/herdr`, only `internal/spawn` (which builds the live adapter in `LiveDeps`) imports it in a non-test file; the rest of mate reaches Herdr through `runtime.Adapter` and `runtime.ReadAdapter` |
 
 ## 5. Where to make a change
 

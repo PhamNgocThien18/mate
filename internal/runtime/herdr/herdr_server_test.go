@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"github.com/nguyenngocanh94/mate/internal/harness"

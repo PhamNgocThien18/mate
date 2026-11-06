@@ -1,4 +1,4 @@
-package runtime_test
+package herdr_test
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 )
 
 // recordingRunner wraps a ProcessRunner and records argv so the live test
@@ -76,7 +77,7 @@ func liveLabSession(t *testing.T) (session, home string) {
 func TestLiveHerdrLookupSessionDoesNotStartServer(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("LookupSession started a herdr server")
 		return nil
@@ -113,7 +114,7 @@ func TestLiveHerdrSessionWorkspaceTabStart(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
 	rec := &recordingRunner{inner: process.ExecRunner{}}
-	rt := runtime.NewHerdr(rec)
+	rt := herdr.NewHerdr(rec)
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error {
 		return nil // lab helper owns server lifecycle; do not spawn another
@@ -286,7 +287,7 @@ func TestLiveHerdrSessionWorkspaceTabStart(t *testing.T) {
 func TestLiveHerdrDuplicateLabelSelectsMatchingCwd(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error { return nil }
 
@@ -357,7 +358,7 @@ func TestLiveHerdrDuplicateLabelSelectsMatchingCwd(t *testing.T) {
 func TestLiveHerdrFocusedCrewDoesNotDuplicateWorkspace(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error { return nil }
 
@@ -400,7 +401,7 @@ func TestLiveHerdrFocusedCrewDoesNotDuplicateWorkspace(t *testing.T) {
 	}
 	focus, err := process.ExecRunner{}.Run(ctx, process.Spec{
 		Name: "herdr",
-		Args: runtime.WithSession(session, []string{"tab", "focus", crew.TabID}),
+		Args: herdr.WithSession(session, []string{"tab", "focus", crew.TabID}),
 	})
 	if err != nil {
 		t.Fatalf("tab focus: %v", err)
@@ -427,7 +428,7 @@ func TestLiveHerdrIdentityEnvReachesStartedAgentProcess(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
 	rec := &recordingRunner{inner: process.ExecRunner{}}
-	rt := runtime.NewHerdr(rec)
+	rt := herdr.NewHerdr(rec)
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error { return nil }
 
@@ -532,7 +533,7 @@ func TestLiveHerdrIdentityEnvReachesStartedAgentProcess(t *testing.T) {
 func TestLiveHerdrReadinessDistinguishesBlockedTimeoutAndMissing(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error { return nil }
 
@@ -607,7 +608,7 @@ func TestLiveHerdrReadinessDistinguishesBlockedTimeoutAndMissing(t *testing.T) {
 	}
 }
 
-func startLiveProbe(t *testing.T, ctx context.Context, rt *runtime.Herdr, session runtime.SessionHandle, tab runtime.TabHandle, raw string) runtime.AgentHandle {
+func startLiveProbe(t *testing.T, ctx context.Context, rt *herdr.Herdr, session runtime.SessionHandle, tab runtime.TabHandle, raw string) runtime.AgentHandle {
 	t.Helper()
 	ctxPath := filepath.Join(tab.Cwd, "context.md")
 	if err := os.WriteFile(ctxPath, []byte("you are a gomate G4-05 live probe."), 0o644); err != nil {

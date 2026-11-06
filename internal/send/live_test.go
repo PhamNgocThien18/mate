@@ -16,6 +16,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/codex/codexlab"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -92,7 +93,7 @@ func TestLiveSendToClaudeThreeCases(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")
@@ -244,7 +245,7 @@ func screenOf(kind harness.Kind) harness.ScreenProfile {
 
 // waitForComposer blocks until the pane classifies as want, so the next step
 // starts from a state this test proved rather than assumed.
-func waitForComposer(ctx context.Context, t *testing.T, rt *runtime.Herdr, handle runtime.AgentHandle, want send.ComposerState) {
+func waitForComposer(ctx context.Context, t *testing.T, rt *herdr.Herdr, handle runtime.AgentHandle, want send.ComposerState) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Minute)
 	var last send.Classification

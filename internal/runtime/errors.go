@@ -366,6 +366,17 @@ func namedSocketPath(configHome, session string) (string, error) {
 	return filepath.Join(dir, "herdr.sock"), nil
 }
 
+// CheckSessionSocket refuses a named session whose socket under configHome
+// cannot be addressed: a name that is not one path segment, or a socket
+// path longer than sockaddr_un.sun_path holds.
+func CheckSessionSocket(configHome, session string) error {
+	p, err := namedSocketPath(configHome, session)
+	if err != nil {
+		return err
+	}
+	return checkUnixSocketPath(p)
+}
+
 func unixSocketPathLimit() int {
 	return len(syscall.RawSockaddrUnix{}.Path)
 }

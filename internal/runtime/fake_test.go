@@ -601,3 +601,9 @@ func TestNewAgentStartSpecAcceptsSymlinkedSpellingOfPaneCwd(t *testing.T) {
 		t.Fatal("a different pane cwd must still be refused")
 	}
 }
+
+// exitLine is a GracefulStopper of a test's own.
+type exitLine string
+
+func (exitLine) ClearKeys() []string  { return nil }
+func (e exitLine) ExitPrompt() string { return string(e) }
