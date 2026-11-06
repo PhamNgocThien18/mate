@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -30,16 +31,6 @@ func usePRStarter(st prwatch.Starter) cli {
 	return c
 }
 
-// fakeAlive makes pid 4242, the recording starter's, the one live process.
-// prwatch.Alive is a package variable of prwatch, so a test that calls
-// this is not parallel.
-func fakeAlive(t *testing.T) {
-	t.Helper()
-	oldAlive := prwatch.Alive
-	prwatch.Alive = func(pid int) bool { return pid == 4242 }
-	t.Cleanup(func() { prwatch.Alive = oldAlive })
-}
-
 const testPR = "https://github.com/acme/shop/pull/7"
 
 func prWorkspace(t *testing.T) (string, *store.Workspace) {
@@ -55,13 +46,14 @@ func prWorkspace(t *testing.T) (string, *store.Workspace) {
 	return ws, w
 }
 
-// Not parallel: the second call asks prwatch.Alive whether the watcher
-// lives, and fakeAlive swaps that package variable.
 func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
+	t.Parallel()
 	ws, w := prWorkspace(t)
-	st := &recordingStarter{pid: 4242}
+	// The watcher "started" is this test process, so the real prwatch.Alive
+	// sees it live on the second call.
+	pid := os.Getpid()
+	st := &recordingStarter{pid: pid}
 	c := usePRStarter(st)
-	fakeAlive(t)
 	var out, errw bytes.Buffer
 
 	if err := c.cmdPRWatch([]string{"--workspace", ws, "shop", "k3", testPR}, &out, &errw); err != nil {
@@ -81,7 +73,7 @@ func TestPRWatchDetachesRecordsAndReturns(t *testing.T) {
 		t.Fatalf("meta = %v", meta)
 	}
 	data, err := os.ReadFile(filepath.Join(w.CrewsDir("shop"), "k3.prwatch"))
-	if err != nil || strings.TrimSpace(string(data)) != "4242" {
+	if err != nil || strings.TrimSpace(string(data)) != strconv.Itoa(pid) {
 		t.Fatalf(".prwatch = %q, %v", data, err)
 	}
 	if !strings.Contains(out.String(), "watching "+testPR) {

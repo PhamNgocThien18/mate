@@ -313,8 +313,8 @@ func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
 		"",
 	}, "\n")
 	writeMemoryFiles(t, w, memory.Header, doc)
-	// Three commits behind is far here, so the test makes four rather than
-	// staleAnchorCommits.
+	// The threshold is 3 here, not staleAnchorCommits, so four newer
+	// commits are far.
 	rep, err := memoryCheck(context.Background(), w, gitx.New(), "shop", time.Now(), 3)
 	if err != nil {
 		t.Fatal(err)

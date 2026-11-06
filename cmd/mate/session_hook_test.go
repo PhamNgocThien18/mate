@@ -24,7 +24,7 @@ func runMateSessionWith(t *testing.T, reg harness.Registry, w *store.Workspace, 
 	t.Helper()
 	c := testCLI().withEnv("MATE_WORKSPACE", w.Root(), "MATE_PROJECT", "shop").inDir(w.MateDir("shop"))
 	var stdout, stderr bytes.Buffer
-	if err := c.hook(reg, append([]string{harness.SessionHookName}, args...), strings.NewReader(payload), &stdout, &stderr); err != nil {
+	if err := c.hookWith(reg, append([]string{harness.SessionHookName}, args...), strings.NewReader(payload), &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook %s: %v", harness.SessionHookName, err)
 	}
 	return stdout.String(), stderr.String()

@@ -18,11 +18,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// testCLI is the CLI a test runs: an empty environment, so neither the
-// shell's MATE_CALLER nor its MATE_WORKSPACE reaches a test; no current
-// directory; and no quota-axi, so no test depends on this machine's vendor
-// accounts. A test that wants more sets the field, or calls withEnv or
-// inDir.
+// testCLI is the CLI a test runs: an empty environment where the CLI reads
+// one (cli.getenv: MATE_CALLER, and a hook's MATE_WORKSPACE and
+// MATE_PROJECT), no current directory for a hook, and no quota-axi, so no
+// test depends on this machine's vendor accounts. A test that wants more
+// sets the field, or calls withEnv or inDir. Commands that find their
+// workspace through findWorkspaceDir still read the process's
+// MATE_WORKSPACE and cwd, so a test passes --workspace.
 func testCLI() cli {
 	c := newCLI()
 	c.getenv = func(string) string { return "" }

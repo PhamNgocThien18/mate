@@ -21,12 +21,12 @@ import (
 // runner invokes on the Mate pane; a human never types them, so the top-level
 // usage lists `hook` only on its internal line, without these subcommands.
 func (c cli) cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return c.hook(harnesses, args, stdin, stdout, stderr)
+	return c.hookWith(harnesses, args, stdin, stdout, stderr)
 }
 
-// hook is cmdHook over the harness registry reg, so a test can register a
-// harness of its own.
-func (c cli) hook(reg harness.Registry, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+// hookWith is cmdHook over the harness registry reg, so a test can register
+// a harness of its own.
+func (c cli) hookWith(reg harness.Registry, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate hook <mate-prompt|mate-stop|mate-session>")
 	}
