@@ -1,8 +1,9 @@
 // Command mate is the single binary for the mate workspace orchestrator.
 //
-// `mate <workspace-dir>` opens the console for a workspace (not yet
-// implemented). Every other subcommand is the agent-facing CLI that Mates
-// and Crews call from inside their Herdr panes.
+// `mate` and `mate <workspace-dir>` run the workspace's core in the
+// foreground and print its Office and City URLs; `mate console` opens the
+// console. Most other subcommands are the agent-facing CLI that Mates and
+// Crews call from inside their Herdr panes.
 package main
 
 import (

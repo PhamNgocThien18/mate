@@ -20,8 +20,12 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/ui/console"
 )
 
-// cmdConsole is `mate <workspace-dir>` (and `mate` with no arguments in
-// a workspace): the interactive Bubble Tea console.
+// cmdConsoleLaunch is `mate console [<workspace-dir>]`: the interactive
+// Bubble Tea console, and on a known host (WezTerm, Ghostty) it lays out
+// the stage column before the TUI starts, so Enter fills it. Configured
+// terminal commands open their tabs later, in the same window. Plain
+// `mate` and `mate <dir>` opened it too until 2026-11-06; they run the
+// core now (cmdCoreHere).
 //
 // This is the one place internal/ui/console's boundary (no store, no
 // runtime, no Herdr - see internal/ui/console/doc.go) is bridged to real
@@ -29,14 +33,6 @@ import (
 // console's own keys (consoleLoad); everything that would need a live agent
 // is refused with a message naming the mvp.md task that wires it, never a
 // fake success.
-func cmdConsole(dir string, stdout, stderr io.Writer) error {
-	return runConsole(dir, stdout, stderr, false)
-}
-
-// cmdConsoleLaunch is `mate console [<workspace-dir>]`: the interactive
-// console, and on a known host (WezTerm, Ghostty) it lays out the stage
-// column before the TUI starts, so Enter fills it. Configured terminal
-// commands open their tabs later, in the same window.
 func cmdConsoleLaunch(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		_, err := io.WriteString(stdout, consoleSetupHelp)
@@ -53,7 +49,7 @@ func cmdConsoleLaunch(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return runConsole(resolved, stdout, stderr, true)
+	return runConsole(resolved, stdout, stderr)
 }
 
 const consoleSetupHelp = `Usage: mate console [<workspace-dir>]
@@ -103,7 +99,7 @@ the LAN URL to open.
 Full reference: docs/console-commands.md in the Mate source repository.
 `
 
-func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
+func runConsole(dir string, stdout, stderr io.Writer) error {
 	// The build core.lock records is the file this process started from.
 	core.Build()
 	ws, err := store.Open(dir)
@@ -250,12 +246,9 @@ func runConsole(dir string, stdout, stderr io.Writer, split bool) error {
 			if err := columns.addCommandTabs(commands); err != nil {
 				return err
 			}
-			// `mate console` lays the columns out now; `mate <dir>` at the
-			// first Enter, which finds them gone and makes them.
-			if split {
-				if err := columns.layout(ctx); err != nil {
-					addNotice("no next pane: " + err.Error())
-				}
+			// The columns are laid out now, before the TUI starts.
+			if err := columns.layout(ctx); err != nil {
+				addNotice("no next pane: " + err.Error())
 			}
 		}
 	}

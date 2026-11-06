@@ -91,6 +91,11 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 	if err != nil || !held || h.Owner != core.OwnerCore || h.PID != os.Getpid() || h.URL == "" || h.Socket != w.CoreSocket() {
 		t.Fatalf("core.lock = %+v, held %v, %v", h, held, err)
 	}
+	// The block a dev server prints (decided 2026-11-06): who, where, and
+	// the two pages, before Ctrl+C.
+	if want := "mate core · pid " + strconv.Itoa(os.Getpid()) + " · " + homeShort(w.Root()) + "\nOffice  " + h.URL + "office/\nCity    " + h.URL + "city/\nHerdr   " + w.Session() + "\nLog     " + w.CoreLogFile() + "\nCtrl+C to stop\n"; !strings.HasPrefix(stdout.String(), want) {
+		t.Errorf("stdout = %q, want it to start with %q", stdout.String(), want)
+	}
 	if status := unixGet(t, w.CoreSocket(), "/api/workspace"); status != http.StatusOK {
 		t.Fatalf("socket: %d", status)
 	}
@@ -222,7 +227,7 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 }
 
 func TestCoreUsage(t *testing.T) {
-	for _, args := range [][]string{{"core"}, {"core", "start"}, {"core", "run", "a", "b"}} {
+	for _, args := range [][]string{{"core"}, {"core", "bogus"}, {"core", "run", "a", "b"}, {"core", "status", "a", "--workspace", "b"}} {
 		var stdout, stderr bytes.Buffer
 		if code := mainRun(args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), coreUsage) {
 			t.Errorf("mate %v: exit %d, stderr %q; want the usage", args, code, stderr.String())

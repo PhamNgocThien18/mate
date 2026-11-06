@@ -3,9 +3,11 @@
 This is the contract of `mate dashboard` and of `internal/dashboard` (docs/mvp.md M6, tasks 28 and 29).
 Task 28 owns the server and this document; task 29 builds the three-tier UI against it.
 
-The dashboard reads, and the one served by `mate console` can also act.
+The dashboard reads, and the one the engine serves can also act.
+The engine's server is the one Mate Office and Agent City are opened on: the core runs it (`mate`, `mate <dir>`, `mate core run`, `mate core start`; [core.md](core.md)), and so does a console until it becomes the core's client (CON-214).
+The core serves it on `console.yaml`'s `dashboard.addr` (default `127.0.0.1:7777`) and on `.mate/core.sock`, and prints the Office and City URLs; a busy port is said as `Office/City: <addr> is in use` and the core runs on its socket alone.
 It opens `.mate/mate.db` with `db.OpenRead`, which takes no lock, so it runs beside an open console rather than instead of it.
-It writes nothing itself. Its one write, `POST /api/actions` (section 7b, CON-141), hands a button press to the core's `Engine.Act`, the entry the console's action sheet takes too (CON-209), so a page and the sheet run one code path under one lock per target; `mate dashboard` on its own has no console behind it and stays read-only.
+It writes nothing itself. Its one write, `POST /api/actions` (section 7b, CON-141), hands a button press to the core's `Engine.Act`, the entry the console's action sheet takes too (CON-209), so a page and the sheet run one code path under one lock per target; `mate dashboard` on its own has no engine behind it and stays read-only, and its port is busy while a core or a console serves the same one.
 
 ```
 mate dashboard [<workspace>] [--addr 127.0.0.1:7777] [--open] [--allow-remote]

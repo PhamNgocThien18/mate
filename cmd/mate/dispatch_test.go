@@ -14,14 +14,14 @@ import (
 
 // stubDispatcher is a dispatcher over a copy of the real command table
 // whose handlers record the row they belong to and the arguments they got,
-// and whose console records the directory it was asked to open. Nothing in
+// and whose core records the directory it was asked to run. Nothing in
 // it touches a workspace, a terminal or the process's environment.
 type stubDispatcher struct {
 	dispatcher
-	gotRow     int
-	gotArgs    []string
-	consoleDir string
-	consoles   int
+	gotRow  int
+	gotArgs []string
+	coreDir string
+	cores   int
 }
 
 func newStubDispatcher() *stubDispatcher {
@@ -38,9 +38,9 @@ func newStubDispatcher() *stubDispatcher {
 		commands:      cmds,
 		findWorkspace: func() (string, error) { return "", errors.New("no workspace") },
 		isDir:         func(string) bool { return false },
-		console: func(dir string, _, _ io.Writer) error {
-			s.consoleDir = dir
-			s.consoles++
+		core: func(dir string, _, _ io.Writer) error {
+			s.coreDir = dir
+			s.cores++
 			return nil
 		},
 	}
@@ -87,8 +87,8 @@ func TestEveryCommandNameReachesItsRow(t *testing.T) {
 			if s.gotRow != i || !slices.Equal(s.gotArgs, []string{"a", "--b"}) {
 				t.Fatalf("%s: handler of row %d got %q, want row %d with [a --b]", name, s.gotRow, s.gotArgs, i)
 			}
-			if s.consoles != 0 {
-				t.Fatalf("%s: opened the console", name)
+			if s.cores != 0 {
+				t.Fatalf("%s: ran the core", name)
 			}
 		}
 	}
@@ -146,7 +146,7 @@ func TestVersionIsOneCommandWithTwoNames(t *testing.T) {
 
 func TestUsageListsEveryCommand(t *testing.T) {
 	t.Parallel()
-	const prefix, suffix = "usage: mate <workspace-dir> | mate <", "> ..."
+	const prefix, suffix = "usage: mate [<workspace-dir>] | mate <", "> ..."
 	usage := usageText(commands())
 	lines := strings.Split(usage, "\n")
 	if len(lines) < 2 || !strings.HasPrefix(lines[0], prefix) || !strings.HasSuffix(lines[0], suffix) {
@@ -187,12 +187,12 @@ func TestBareMateWithoutWorkspacePrintsUsage(t *testing.T) {
 	if err.Error() != usageText(s.commands) {
 		t.Fatalf("err = %q, want the usage text", err)
 	}
-	if s.consoles != 0 {
-		t.Fatal("opened the console without a workspace")
+	if s.cores != 0 {
+		t.Fatal("ran the core without a workspace")
 	}
 }
 
-func TestBareMateOpensConsoleOnFoundWorkspace(t *testing.T) {
+func TestBareMateRunsCoreOfFoundWorkspace(t *testing.T) {
 	t.Parallel()
 	s := newStubDispatcher()
 	s.findWorkspace = func() (string, error) { return "/found/ws", nil }
@@ -200,12 +200,12 @@ func TestBareMateOpensConsoleOnFoundWorkspace(t *testing.T) {
 	if err := s.run(nil, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
-	if s.consoleDir != "/found/ws" || s.gotName() != "" {
-		t.Fatalf("console dir = %q, handler = %q; want the console on /found/ws", s.consoleDir, s.gotName())
+	if s.coreDir != "/found/ws" || s.gotName() != "" {
+		t.Fatalf("core dir = %q, handler = %q; want the core of /found/ws", s.coreDir, s.gotName())
 	}
 }
 
-func TestDirectoryArgumentOpensConsole(t *testing.T) {
+func TestDirectoryArgumentRunsItsCore(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "init")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -217,18 +217,18 @@ func TestDirectoryArgumentOpensConsole(t *testing.T) {
 	if err := s.run([]string{dir}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
-	if s.consoleDir != dir || s.gotName() != "" {
-		t.Fatalf("console dir = %q, handler = %q; want the console on %s", s.consoleDir, s.gotName(), dir)
+	if s.coreDir != dir || s.gotName() != "" {
+		t.Fatalf("core dir = %q, handler = %q; want the core of %s", s.coreDir, s.gotName(), dir)
 	}
 
-	// A directory followed by another argument is not a workspace to open.
+	// A directory followed by another argument is not a workspace to run.
 	err := s.run([]string{dir, "extra"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("err = %v, want unknown command", err)
 	}
-	if s.consoles != 1 {
-		t.Fatalf("consoles = %d, want 1", s.consoles)
+	if s.cores != 1 {
+		t.Fatalf("cores = %d, want 1", s.cores)
 	}
 }
 
@@ -241,15 +241,39 @@ func TestCommandNameWinsOverSameNamedDirectory(t *testing.T) {
 	if err := s.run([]string{"init"}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
-	if s.gotName() != "init" || s.consoles != 0 {
-		t.Fatalf("handler = %q, consoles = %d; want the init command over the ./init directory", s.gotName(), s.consoles)
+	if s.gotName() != "init" || s.cores != 0 {
+		t.Fatalf("handler = %q, cores = %d; want the init command over the ./init directory", s.gotName(), s.cores)
 	}
 	s.gotRow = -1
 	if err := s.run([]string{"./init"}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
-	if s.consoleDir != "./init" || s.gotName() != "" {
-		t.Fatalf("console dir = %q, handler = %q; want the console on ./init", s.consoleDir, s.gotName())
+	if s.coreDir != "./init" || s.gotName() != "" {
+		t.Fatalf("core dir = %q, handler = %q; want the core of ./init", s.coreDir, s.gotName())
+	}
+}
+
+// `mate .` runs the core of the current directory's workspace, and `mate
+// console` is the one way left to the console (decided 2026-11-06).
+func TestDotRunsCoreAndConsoleOpensConsole(t *testing.T) {
+	t.Parallel()
+	s := newStubDispatcher()
+	s.isDir = isDir
+	var out, errw bytes.Buffer
+	if err := s.run([]string{"."}, &out, &errw); err != nil {
+		t.Fatal(err)
+	}
+	if s.coreDir != "." || s.gotName() != "" {
+		t.Fatalf("core dir = %q, handler = %q; want the core of .", s.coreDir, s.gotName())
+	}
+	if err := s.run([]string{"console"}, &out, &errw); err != nil {
+		t.Fatal(err)
+	}
+	if s.gotName() != "console" || s.cores != 1 {
+		t.Fatalf("handler = %q, cores = %d; want the console command", s.gotName(), s.cores)
+	}
+	if c, _ := lookupCommand(commands(), "console"); reflect.ValueOf(c.run).Pointer() != reflect.ValueOf(cmdConsoleLaunch).Pointer() {
+		t.Fatal("`mate console` does not open the console")
 	}
 }
 

@@ -236,7 +236,13 @@ func TestHarnessCellNamesEachAxisThatWasSet(t *testing.T) {
 
 // TestMain keeps every test in this package off the machine's quota-axi:
 // a test that wants a quota reading sets readQuota itself.
+//
+// Started with fakeCoreEnv set, the test binary is not a test run but the
+// fake core `mate core start` runs in core_control_test.go.
 func TestMain(m *testing.M) {
+	if os.Getenv(fakeCoreEnv) != "" {
+		os.Exit(fakeCoreMain())
+	}
 	readQuota = func(context.Context) (quota.Snapshot, error) { return quota.Snapshot{}, quota.ErrNotInstalled }
 	os.Exit(m.Run())
 }
