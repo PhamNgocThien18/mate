@@ -91,7 +91,7 @@ _Trong code_: `spawn.Settlement`; `settleStartupPrompt` (`internal/spawn/settle.
 ### Process
 
 **Mate core**:
-Process lõi của một workspace: chạy engine (observer, outbox, auto, recovery, Office/City, notification) mà không cần UI nào mở. Console, Office và City là vỏ của nó. Hôm nay engine còn chạy trong console; `mate core` thành process riêng ở CON-211 và CON-213.
+Process lõi của một workspace: chạy engine (observer, outbox, auto, recovery, Office/City, notification) mà không cần UI nào mở. Console, Office và City là vỏ của nó. Từ CON-214 console không chạy engine: nó là client của core qua `.mate/core.sock`, và bật core khi chưa có.
 _Avoid_: headless (chữ đó chỉ kiểu chạy của Mate)
 _Trong code_: `core.Engine` (`internal/core`)
 

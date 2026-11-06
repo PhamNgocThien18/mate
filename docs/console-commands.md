@@ -37,11 +37,12 @@ dashboard:
 
 `allow_remote` is required for any address that is not loopback: the
 dashboard has no login and quotes everything typed in the console. Without
-it the console starts, says `dashboard not started` on its status line, and
-serves nothing. With it the status line shows both URLs, the loopback one
+it `mate core` starts, the console says `dashboard not started` on its status
+line, and nothing is served over TCP. With it the status line shows both URLs, the loopback one
 and the LAN one (the machine's private IPv4, Wi-Fi on a laptop); open the
-LAN one on the phone. The port stays whatever `addr` says. The setting is
-read at console start, so reopen the console after changing it.
+LAN one on the phone. The port stays whatever `addr` says. `mate core` reads
+the setting when it starts (CON-214), so run `mate core restart` after
+changing it.
 
 ## Zed
 

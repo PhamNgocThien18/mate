@@ -207,32 +207,45 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	}
 }
 
-// The console runs its background loops through internal/core (CON-207):
-// it builds their parts with engineOptions, which `mate core` can share
-// (CON-211), and the engine starts them in order, stops them all at once
-// within one bound and closes the timeline last. A Start or Stop of
-// runConsole's own, or a loop or timeline database it opened itself, would
-// be outside that order again. A quit in the middle of an action waits for
-// it beside the engine's Stop (quitAbandoned, CON-210), never on its own
-// before it.
-func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
+// The console is a client of the core (CON-214): it opens through
+// openConsole - the console lock, then the core's socket - and runs no
+// engine, loop, timeline, server or notification of its own. A quit in the
+// middle of an action neither cancels nor waits for it: the core runs it.
+func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
 	calls := callersOf(t)["runConsole"]
-	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop", "quitAbandoned"} {
+	for _, want := range []string{"openConsole", "consoleLoad", "tuiAction", "sayAbandoned"} {
 		if !calls[want] {
 			t.Errorf("runConsole does not call %s", want)
 		}
 	}
-	if calls["waitAbandoned"] {
-		t.Error("runConsole waits for an abandoned action itself; quitAbandoned waits beside the engine's Stop")
-	}
-	for call := range calls {
-		if (strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop")) && !strings.HasPrefix(call, "engine.") {
-			t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
+	for _, engine := range []string{"core.New", "core.Lock", "engineOptions", "engineActions", "consoleDashboard",
+		"core.NativeNotifier", "configuredObserver", "consoleNoticeClient", "consoleWatcher", "consoleWatcherWithTimeline",
+		"consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open", "quitAbandoned", "waitAbandoned"} {
+		if calls[engine] {
+			t.Errorf("runConsole calls %s; the core runs the engine", engine)
 		}
 	}
-	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open"} {
-		if calls[opener] {
-			t.Errorf("runConsole calls %s; engineOptions builds the loops and opens the timeline", opener)
+	for call := range calls {
+		if strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop") {
+			t.Errorf("runConsole calls %s; the console starts and stops nothing of the core's", call)
+		}
+	}
+	// `grep -n "core.New(" cmd/mate/console*.go` (CON-214): no console
+	// file builds an engine.
+	files, err := filepath.Glob("console*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "core.New(") {
+			t.Errorf("%s builds an engine", name)
 		}
 	}
 }

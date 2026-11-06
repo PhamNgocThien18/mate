@@ -20,9 +20,10 @@ import (
 // workspace runs one console. When another console holds
 // `.mate/console.lock`, the captain is told which one and asked whether to
 // quit it. Yes sends it SIGTERM, which Bubble Tea turns into a quit, so the
-// old console stops its observer and daemons, closes the database and its
-// columns as `q` would; one that has not let go after grace is killed.
-// Anything but yes leaves it running and opens nothing.
+// old console closes its columns as `q` would (a console built before
+// CON-214 also stops the engine it runs); one that has not let go after
+// grace is killed. Anything but yes leaves it running and opens nothing:
+// no core is reached or started.
 type consoleClaim struct {
 	in  io.Reader
 	out io.Writer
@@ -50,8 +51,9 @@ func liveConsoleClaim(in io.Reader, out io.Writer) consoleClaim {
 }
 
 // take returns what releases the console lock once this console holds it.
-// The record says core_lock: this console's engine takes core.lock, so
-// `mate core run` can tell it from a console built before CON-211.
+// The record says core_lock: this console runs no engine beside
+// core.lock (since CON-214 it runs none at all), so `mate core run` can
+// tell it from a console built before CON-211, which runs one without it.
 func (c consoleClaim) take(ws *store.Workspace) (unlock func(), err error) {
 	self := store.ConsoleHolder{PID: os.Getpid(), Started: c.now(), CoreLock: true}
 	unlock, err = ws.LockConsole(self)

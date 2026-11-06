@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/term"
@@ -29,10 +28,10 @@ import (
 //
 // This is the one place internal/ui/console's boundary (no store, no
 // runtime, no Herdr - see internal/ui/console/doc.go) is bridged to real
-// state. LoadFunc is the engine's snapshot (internal/core) plus the
-// console's own keys (consoleLoad); everything that would need a live agent
-// is refused with a message naming the mvp.md task that wires it, never a
-// fake success.
+// state. LoadFunc is the core's snapshot, read over `.mate/core.sock`
+// (CON-214), plus the console's own keys (consoleLoad); everything that
+// would need a live agent is refused with a message naming the mvp.md task
+// that wires it, never a fake success.
 func cmdConsoleLaunch(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		_, err := io.WriteString(stdout, consoleSetupHelp)
@@ -86,21 +85,22 @@ external launches a GUI without a host tab; omit --wait (10-second timeout).
 No editor binding is installed by default. Keys reserved by the console or
 already bound in the same scope are refused. Configuration loads at startup.
 
-Dashboard on the LAN (a phone on the same Wi-Fi): the console serves the
+Dashboard on the LAN (a phone on the same Wi-Fi): mate core serves the
 dashboard on 127.0.0.1:7777 only. To reach it from other devices add
 
 dashboard:
   addr: 0.0.0.0:7777
   allow_remote: true
 
-The dashboard has no login and quotes everything typed in the console, so
-allow_remote is required for any non-loopback addr. The status line shows
-the LAN URL to open.
+then run mate core restart. The dashboard has no login and quotes everything
+typed in the console, so allow_remote is required for any non-loopback addr.
+The status line shows the LAN URL to open.
 Full reference: docs/console-commands.md in the Mate source repository.
 `
 
 func runConsole(dir string, stdout, stderr io.Writer) error {
-	// The build core.lock records is the file this process started from.
+	// The build this console compares the core's with is the file this
+	// process started from, read before anything can install over it.
 	core.Build()
 	ws, err := store.Open(dir)
 	if err != nil {
@@ -121,19 +121,22 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 	if err := (runtime.TTYHandoff{Stdin: stdinFile, Stdout: stdoutFile}).CheckTerminal(); err != nil {
 		return consoleTerminalRefusal(err)
 	}
-	// One workspace, one console (CON-162): before anything starts, so a
-	// refused console has opened no observer, daemon or database.
-	unlockConsole, err := liveConsoleClaim(stdinFile, stdoutFile).take(ws)
+	// One workspace, one console (CON-162), before anything else: a refused
+	// console has touched no core. Then the core, started when none answers
+	// (CON-214). The console runs no engine of its own: the observer, the
+	// timeline, the outbox and the auto daemon, recovery, Office/City and
+	// the notifications run in `mate core`, and keep running after the
+	// console quits.
+	client, status, unlockConsole, err := openConsole(ws, liveConsoleClaim(stdinFile, stdoutFile), liveConsoleCore(stdinFile, stdoutFile))
 	if err != nil {
 		return err
 	}
 	defer unlockConsole()
+	defer client.Close()
 
 	ctx := context.Background()
-	// One set of live dependencies for the whole Console run: the Herdr
-	// adapter and the agent-name registry it shares, so a Mate started from
-	// the action menu and the stream opened on it a keystroke later agree
-	// about which names are reserved.
+	// The stage column's dependencies: the Herdr adapter, which finds the
+	// workspace's session before an attach.
 	//
 	// Point the runtime at the `herdr` findTool resolves - the one the stage
 	// column runs by absolute path, which can be in ~/.local/bin when the
@@ -148,68 +151,21 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 		}
 		return cols
 	}})
-	// One observer for the whole run too, so the observer chain's one
-	// minute memory of what Jev said is shared by the health column, the
-	// sends and the settles of this console. Nil is the fixture observer.
-	var observerErr error
-	deps.Observer, observerErr = configuredObserver(ws)
 
-	noticeClient, noticeErr := consoleNoticeClient(ws)
-
-	// The observer with the timeline it records, the delivery into the Mates,
-	// recovery, the dashboard and the notifications run in this process for
-	// as long as the workspace is open: the engine starts them in their order
-	// and, when the console quits, stops them all at once within one bound
-	// (internal/core, CON-210).
-	// engineOptions says what each one is for. The dashboard comes up after
-	// the observer has made sure the database exists; like the notifications
-	// it is a convenience, and a failure is said on the status line and never
-	// stops the console.
-	// One engine per workspace (CON-211): core.lock before the parts, whose
-	// observer opens mate.db as it is built.
-	claim, err := core.Lock(ws, core.OwnerConsole, time.Now())
-	if err != nil {
-		return consoleEngineRefusal(err)
-	}
-	opts, err := engineOptions(ws, deps, func() bool { return true })
-	if err != nil {
-		claim.Release()
-		return err
-	}
-	opts.Claim = claim
-	// Every action, the console's and the pages', goes in through the
-	// engine's Act, which runs the chat itself and the rest through these
-	// (CON-209), one at a time on each target.
-	opts.Act = engineActions(ws, deps, noticeClient)
-	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
-	opts.Notifier = core.NativeNotifier()
-	// What Stop could not stop in time is said after the terminal is back.
-	opts.Stderr = stderr
-	engine := core.New(opts)
-	if err := engine.Start(ctx); err != nil {
-		return consoleEngineRefusal(err)
-	}
-	defer engine.Stop()
-
-	// The console reads the engine's snapshot, the one Mate Office and Agent
-	// City read, with its own keys and the notifications' word added. It
-	// acts through the engine's Act, as they do: an action on a target
-	// another UI is acting on is refused (coreapi.ErrBusy), and every action
-	// drops the cached snapshot, so the next read shows what it changed.
+	// The console reads the core's snapshot, the one Mate Office and Agent
+	// City read, with its own keys and what the core says about itself
+	// added. It acts through the core's Act, as they do: an action on a
+	// target another UI is acting on is refused (coreapi.ErrBusy), and
+	// every action drops the core's cached snapshot, so the next read shows
+	// what it changed.
 	bindings := append(consoleCommandBindings(commands), links.bindings()...)
-	load := consoleLoad(engine.Snapshot, bindings, func() string {
-		line, _ := engine.Notifications()
-		return line
-	})
-	act := tuiAction(engine.Act, h)
+	load := consoleLoad(client.Snapshot, bindings, coreNotices(client, status.Notices))
+	act := tuiAction(client.Act, h)
 
 	notice := ""
-	dashboardURL := ""
-	if url, err := engine.Dashboard(); err != nil {
-		notice = err.Error()
-	} else {
-		notice = "dashboard " + url
-		dashboardURL = url
+	dashboardURL := consoleDashboardURL(status)
+	if dashboardURL != "" {
+		notice = "dashboard " + dashboardURL
 	}
 	// A console that cannot split says where its headless Mates are
 	// instead of the bare dashboard URL.
@@ -226,8 +182,11 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 		}
 		notice += text
 	}
-	if _, err := engine.Notifications(); err != nil {
-		addNotice("notifications: " + err.Error())
+	// What the core says about itself when the console opens: a dashboard
+	// not served over TCP, the notifications', Jev's and the observer's
+	// configuration errors. The console stays usable either way.
+	for _, n := range status.Notices {
+		addNotice(n)
 	}
 	// A plugin configuration problem is said on the status line too; the
 	// console runs on without plugin links.
@@ -252,16 +211,8 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 			}
 		}
 	}
-	// A Jev configuration problem is said on the same status line, after
-	// any pane message; the console stays usable either way.
-	if noticeErr != nil {
-		addNotice(noticeErr.Error())
-	}
-	if observerErr != nil && (noticeErr == nil || observerErr.Error() != noticeErr.Error()) {
-		addNotice(observerErr.Error())
-	}
 	model := console.New(load, act).
-		WithNoticeClassifier(noticeClient != nil).
+		WithNoticeClassifier(status.Jev).
 		WithContext(ctx).
 		WithStage(consoleStage(ws, deps, columns)).
 		WithCommandView(consolePluginView(links, hostOpener(), runConsoleLauncher, consoleCommandView(ws, columns, commands, runConsoleLauncher))).
@@ -286,46 +237,36 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 	}
 	if cm, ok := final.(console.Model); ok {
 		if desc, abandoned := cm.AbandonedAction(); abandoned {
-			quitAbandoned(stderr, engine.Stop, desc, cm.AbandonedActionDone(), core.StopWait)
+			sayAbandoned(stderr, desc)
 		}
 	}
 	return nil
 }
 
-// quitAbandoned is the console's quit in the middle of an action, once the
-// terminal is restored: the action's context is cancelled already
-// (console's abandon). It says so, stops the engine, which waits for that
-// action with everything else it stops, and says whether the action
-// stopped within the engine's bound. The two waits run side by side, so
-// the console is gone within the engine's one bound (CON-210) rather than
-// after one wait of its own and then the engine's.
-func quitAbandoned(stderr io.Writer, stop func(), desc string, done <-chan struct{}, bound time.Duration) {
-	fmt.Fprintf(stderr, "\nmate console: quit while %s was still running; waiting for it to undo what it started...\n", desc)
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		stop()
-	}()
-	waitAbandoned(stderr, desc, done, bound)
-	<-stopped
+// sayAbandoned is the console's quit in the middle of an action, once the
+// terminal is restored. The core runs the action (coreclient's Act: the
+// console's cancel stops its wait, not the action), so the console neither
+// cancels it nor waits for it, and says so.
+func sayAbandoned(stderr io.Writer, desc string) {
+	fmt.Fprintf(stderr, "\nmate console: %s keeps running in mate core\n", desc)
 }
 
-// consoleLoad is the console's LoadFunc over the engine's snapshot (core's
-// Engine.Snapshot): the same read Mate Office and Agent City get, with the
-// console's own keys in Commands - from .mate/console.yaml and the plugins,
-// which the core knows nothing of - and the notification loop's word, when
-// it has one, on the runtime line.
+// consoleLoad is the console's LoadFunc over the core's snapshot
+// (coreclient's Snapshot): the same read Mate Office and Agent City get,
+// with the console's own keys in Commands - from .mate/console.yaml and the
+// plugins, which the core knows nothing of - and, on the runtime line, what
+// notices says about the core on this read.
 //
-// The snapshot is shared with every other reader of the engine, so only
-// fields of this copy are set here; nothing it points to is changed.
-func consoleLoad(snapshot coreapi.LoadFunc, bindings []query.CommandBinding, notifications func() string) coreapi.LoadFunc {
+// Only fields of this copy are set here; nothing the snapshot points to is
+// changed.
+func consoleLoad(snapshot coreapi.LoadFunc, bindings []query.CommandBinding, notices func(context.Context) []string) coreapi.LoadFunc {
 	return func(ctx context.Context) (query.Snapshot, error) {
 		snap, err := snapshot(ctx)
 		if err != nil {
 			return snap, err
 		}
 		snap.Commands = append([]query.CommandBinding(nil), bindings...)
-		if line := notifications(); line != "" {
+		for _, line := range notices(ctx) {
 			if snap.Runtime.Notice != "" {
 				snap.Runtime.Notice += "; "
 			}
@@ -358,20 +299,3 @@ var errNotATerminal = newUsageError(
 // than duplicated), but its message is an attach client's and would name
 // the wrong command.
 func consoleTerminalRefusal(error) error { return errNotATerminal }
-
-// waitAbandoned blocks until the abandoned action has returned, or the
-// bound passes: core.StopWait, the engine's, which is longer than the spawn
-// package's own 30s cleanup bound, so the action's compensation gets the
-// chance to finish. Exiting earlier would kill the goroutine mid-cleanup
-// and leave a half-started agent behind (a Mate running with no mate.meta).
-func waitAbandoned(stderr io.Writer, desc string, done <-chan struct{}, bound time.Duration) {
-	if done == nil {
-		return
-	}
-	select {
-	case <-done:
-		fmt.Fprintf(stderr, "mate console: %s has stopped.\n", desc)
-	case <-time.After(bound):
-		fmt.Fprintf(stderr, "mate console: %s had not stopped after %s; if it left an agent running, starting again adopts or refuses it by name.\n", desc, bound)
-	}
-}

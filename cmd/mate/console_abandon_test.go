@@ -3,43 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
-	"strings"
+	"encoding/json"
+	"errors"
+	"net"
+	"net/http"
+	"os"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
-	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
+	"github.com/nguyenngocanh94/mate/internal/coreclient"
 )
 
-// TestWaitAbandonedWaitsForTheActionThenReports: the Console waits for an
-// action it quit in the middle of, and says whether it stopped in time.
-func TestWaitAbandonedWaitsForTheActionThenReports(t *testing.T) {
-	done := make(chan struct{})
-	go func() {
-		time.Sleep(30 * time.Millisecond)
-		close(done)
-	}()
-	var errw bytes.Buffer
-	start := time.Now()
-	waitAbandoned(&errw, "onboard shop", done, 5*time.Second)
-	if time.Since(start) < 25*time.Millisecond {
-		t.Fatalf("returned after %s, before the action had stopped", time.Since(start))
-	}
-	if !strings.Contains(errw.String(), "onboard shop has stopped") {
-		t.Fatalf("stderr = %q", errw.String())
-	}
-
-	errw.Reset()
-	waitAbandoned(&errw, "onboard shop", make(chan struct{}), 20*time.Millisecond)
-	if !strings.Contains(errw.String(), "had not stopped after 20ms") {
-		t.Fatalf("stderr on timeout = %q", errw.String())
-	}
-}
-
-// lockedBuffer is a stderr two goroutines write at once, as the console and
-// the engine's Stop do (os.Stderr takes that; a bytes.Buffer does not).
+// lockedBuffer is a stderr two goroutines write at once, as a core's parts
+// do (os.Stderr takes that; a bytes.Buffer does not).
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -57,77 +35,72 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-// TestQuittingDuringAnActionExitsWithinTheEnginesBound: the captain quits
-// the console while an action runs through the engine (CON-210). The
-// console says what it abandoned, as before, and the engine's Stop waits for
-// that action alongside everything else it stops, so the console is gone
-// within the engine's one bound, under 50 seconds, rather than after 45
-// seconds of its own wait and then the engine's. In a synctest bubble the
-// bound passes at once and is measured exactly.
-func TestQuittingDuringAnActionExitsWithinTheEnginesBound(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		// cleanup is how long the action takes to undo what it started
-		// once its context is cancelled; deaf ignores the context.
-		cleanup time.Duration
-		deaf    bool
-		took    time.Duration
-		said    string
-	}{
-		{name: "it undoes in time", cleanup: 10 * time.Second, took: 10 * time.Second,
-			said: "mate console: merge shop/buy has stopped.\n"},
-		{name: "it never stops", deaf: true, took: core.StopWait,
-			said: "mate console: merge shop/buy had not stopped after 45s; if it left an agent running, starting again adopts or refuses it by name.\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				release := make(chan struct{})
-				defer close(release)
-				var stderr lockedBuffer
-				engine := core.New(core.Options{
-					Act: func(ctx context.Context, _ coreapi.ActionRequest) (string, error) {
-						if !tc.deaf {
-							<-ctx.Done()
-							time.Sleep(tc.cleanup)
-							return "", ctx.Err()
-						}
-						<-release
-						return "", nil
-					},
-					Stderr: &stderr,
-				})
-				if err := engine.Start(context.Background()); err != nil {
-					t.Fatal(err)
-				}
-				// The console's action and its abandon: the context it ran
-				// under is cancelled, and done closes once it has returned.
-				// A merge, which Options.Act still runs (CON-232).
-				ctx, abandon := context.WithCancel(context.Background())
-				done := make(chan struct{})
-				go func() {
-					defer close(done)
-					_, _ = tuiAction(engine.Act, splitTerminal)(ctx, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"})
-				}()
-				synctest.Wait()
-				abandon()
+// The captain quits the console while an action runs in the core
+// (CON-214): the console's abandon cancels the context its Act waits
+// under, which ends the wait at once and not the action, which the core
+// runs to its end; once the terminal is back the console says so.
+func TestQuittingDuringAnActionLeavesItToTheCore(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "mc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := dir + "/core.sock"
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != coreapi.PathAct {
+			http.NotFound(w, r)
+			return
+		}
+		// A core's action, which does not end with its client.
+		<-release
+		close(finished)
+		_ = json.NewEncoder(w).Encode(coreapi.ActResult{Message: "merged"})
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
 
-				start := time.Now()
-				quitAbandoned(&stderr, engine.Stop, "merge shop/buy", done, core.StopWait)
-				took := time.Since(start)
-				if took != tc.took || took >= 50*time.Second {
-					t.Errorf("the console quit after %s, want %s, under 50s", took, tc.took)
-				}
-				out := stderr.String()
-				if want := "\nmate console: quit while merge shop/buy was still running; waiting for it to undo what it started...\n"; !strings.HasPrefix(out, want) {
-					t.Errorf("stderr %q, want it to start with %q", out, want)
-				}
-				if !strings.Contains(out, tc.said) {
-					t.Errorf("stderr %q, want %q", out, tc.said)
-				}
-				if tc.deaf && !strings.Contains(out, "mate core: action merge on shop/buy had not stopped 45s after the stop began") {
-					t.Errorf("stderr %q, want the engine to name the action it left", out)
-				}
-			})
-		})
+	client, err := coreclient.Dial(sock, coreclient.As(coreapi.ClientConsole))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx, abandon := context.WithCancel(context.Background())
+	returned := make(chan error, 1)
+	go func() {
+		_, err := tuiAction(client.Act, splitTerminal)(ctx, coreapi.ActionRequest{Action: coreapi.ActionMerge, Target: "shop", TargetKind: "crew", Crew: "buy"})
+		returned <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	abandon()
+	select {
+	case err := <-returned:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Act after the abandon = %v, want the cancel", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the console waited for the action after it quit")
+	}
+	select {
+	case <-finished:
+		t.Fatal("the action ended with the console's wait")
+	default:
+	}
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the action did not run to its end")
+	}
+
+	var said bytes.Buffer
+	sayAbandoned(&said, "merge shop/buy")
+	if want := "\nmate console: merge shop/buy keeps running in mate core\n"; said.String() != want {
+		t.Fatalf("said %q, want %q", said.String(), want)
 	}
 }
