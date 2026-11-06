@@ -26,7 +26,7 @@ import (
 // TestConsoleGalleryRendersRegisteredProjects is the end of the wire: two
 // projects registered through internal/store on a real temporary directory,
 // read back through query.Load, and drawn by the Console's own View - the
-// same three pieces `mate <dir>` puts together, with only the terminal
+// same three pieces `mate console` puts together, with only the terminal
 // left out.
 //
 // It asserts the frame contract as well as the content: View must return
@@ -137,7 +137,7 @@ func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 	}
 }
 
-// TestConsoleRefusesANonTerminal: `mate <dir> > file` must refuse with a
+// TestConsoleRefusesANonTerminal: `mate console <dir> > file` must refuse with a
 // usage error instead of starting Bubble Tea against a pipe.
 func TestConsoleRefusesANonTerminal(t *testing.T) {
 	root := t.TempDir()
@@ -145,7 +145,7 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 		t.Fatalf("init workspace: %v", err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := mainRun([]string{root}, &stdout, &stderr)
+	code := mainRun([]string{"console", root}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 for a usage refusal; stderr=%q", code, stderr.String())
 	}
@@ -154,7 +154,7 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 	}
 }
 
-// Only what runs the engine - the console and `mate core run` (CON-211) -
+// Only what runs the engine - the console and the core (CON-211) -
 // names the herdr its runtime runs: the one findTool resolves, also one the
 // console's PATH cannot reach - here in XDG_BIN_HOME, where herdr's
 // installer can put it. Every other command builds on baseDeps() as before
@@ -162,7 +162,7 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 // that one.
 func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	const consoleCall = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
-	engineHosts := map[string]bool{"runConsole": true, "cmdCoreRun": true}
+	engineHosts := map[string]bool{"runConsole": true, "runCoreForeground": true}
 	calls := callsTo(t, "baseDeps")
 	for fn := range engineHosts {
 		if got := calls[fn]; !slices.Equal(got, []string{consoleCall}) {

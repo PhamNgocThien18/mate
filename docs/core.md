@@ -1,0 +1,102 @@
+# mate core
+
+The core is a workspace's engine as a process of its own (CON-203): the
+observer and the timeline, the outbox and the auto daemon, recovery, Mate
+Office and Agent City, and the notifications. One engine runs per
+workspace. `docs/architecture.md` section 2 says what the engine is made of;
+this file is how to run it.
+
+## Commands
+
+Every command finds the workspace the way the other `mate` commands do: the
+argument or `--workspace <dir>`, else `MATE_WORKSPACE`, else the nearest
+directory above the current one that holds `.mate/`.
+
+| Command | What it does |
+| -- | -- |
+| `mate`, `mate .`, `mate <dir>` | Runs the core in the foreground, like a dev server. Prints the block below, then the core's log. Ctrl+C stops it. |
+| `mate core run [<dir>]` | The same. |
+| `mate core start [<dir>]` | Runs the core in the background: in a session of its own, with no terminal, its output appended to `.mate/core.log`. Waits up to 10 s for it to answer on `.mate/core.sock`, then prints `mate core: started (pid N) · <url>`. |
+| `mate core stop [<dir>]` | Sends the core SIGTERM and waits up to 60 s; a core still running then gets SIGKILL, and its socket is removed. |
+| `mate core restart [<dir>]` | `stop`, then `start`. |
+| `mate core status [<dir>]` | The pid, owner, version and build, start time, socket and the Office/City URLs. Exit 0 when an engine runs, 1 when none does. |
+| `mate console [<dir>]` | Opens the console. Until CON-214 the console runs an engine of its own, so it refuses to open while the core runs. |
+
+`mate` opens no browser; it prints the URLs:
+
+```
+mate core · pid 4121 · ~/work/ws
+Office  http://127.0.0.1:7777/office/
+City    http://127.0.0.1:7777/city/
+Ctrl+C to stop
+```
+
+A dashboard that also reaches the LAN (`dashboard.allow_remote` in
+`console.yaml`) adds a `LAN` line. When the port is taken the block says
+`Office/City: 127.0.0.1:7777 is in use` instead of the two URLs, and the core
+runs on its socket alone. Office and City always run while the core runs;
+there is no flag to turn them off.
+
+SIGINT, SIGTERM and SIGHUP stop the core within the engine's bound (45 s,
+CON-210); a second signal ends it at once.
+
+### When an engine already runs
+
+| What runs | `mate`, `mate <dir>` | `mate core start` | `mate core stop` |
+| -- | -- | -- | -- |
+| nothing | runs the core | starts the core | `mate core: not running`, exit 0 |
+| the core | prints `mate core: already running` and the status, exit 0 | `mate core: already running (pid N, since HH:MM)`, exit 0 | stops it |
+| a console's engine | `mate: the engine runs inside mate console (pid N); quit that console first`, exit 1 | the same refusal, exit 1 | refuses: quit that console |
+
+`mate core run` beside a running core says `already running` and exits 1.
+
+## How a command knows the core runs
+
+Not by pid: the pid of a process that died may belong to another process by
+now. The engine holds an advisory lock (flock) on `.mate/core.lock` for as
+long as it runs, and the system releases it when the process ends, however
+it ends. A command tries the lock without waiting: if it gets it (and lets go
+at once), no engine runs; if not, one does, and the JSON in the file says
+which process. A signal goes only to the pid the lock's current holder
+wrote, and only while the lock is held. A `core.lock` left by a core that
+died is therefore "not running": `stop` signals nobody, and `start` starts a
+new core, which writes its own record over the old one.
+
+## Files in `.mate/`
+
+| File | What it is |
+| -- | -- |
+| `core.lock` | Held by the running engine. JSON: `pid`, `owner` (`core` or `console`), `started`, `version`, `binary`, `build` (sha256 of the binary when it started), `socket`, `url`, `lan_url`, `tcp_error`. The file stays after the engine ends. |
+| `core.sock` | The core's unix socket (0600): Office/City's routes and the clients' API (`/api/core`, `/api/snapshot`, `/api/act`, CON-212). Removed when the core stops. |
+| `core.log` | The output of a core run by `mate core start`. `start` moves a log larger than 10 MB to `core.log.1` before it opens the log, keeping that one old log. A core that is running is never rotated. |
+
+## After installing a new mate
+
+A running core keeps running the binary it started from. `mate core status`
+compares the sha256 of the file at `binary` with the `build` the core
+recorded, and says
+
+```
+stale: the mate binary changed after this core started; run `mate core restart`
+```
+
+when they differ. `mate core restart` stops the old core and starts the
+binary installed now. A core in the foreground is restarted with Ctrl+C and
+`mate` again.
+
+## mate reindex
+
+`mate reindex` rebuilds `mate.db`, which the engine writes. Stop the core
+first (`mate core stop`), run `mate reindex`, then start it again. While an
+engine holds the timeline, `mate reindex` refuses and names that process.
+
+## WSL2
+
+- Keep the workspace on the Linux filesystem (under `~`), not under `/mnt/c`:
+  the core serves a unix socket, and a Windows drive mounted in WSL2 may not
+  hold one. A core that cannot bind its socket does not start.
+- Office and City listen on `127.0.0.1` inside WSL2; Windows browsers reach
+  them at the same URL while WSL's localhost forwarding is on (the default).
+- WSL2 can shut the distribution down some time after its last terminal
+  closes, and a core started with `mate core start` ends with it. Check with
+  `mate core status` after reopening a terminal, or keep one terminal open.

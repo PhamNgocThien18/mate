@@ -77,7 +77,7 @@ func commands() []command {
 		{names: []string{"gc"}, summary: "list processes left in closed tasks' worktrees, or end them", run: cmdGC},
 		{names: []string{"dashboard"}, summary: "the workspace timeline in a browser", run: cmdDashboard},
 		{names: []string{"console"}, summary: "open the console and lay out its columns", run: cmdConsoleLaunch},
-		{names: []string{"core"}, summary: "run the workspace's engine without a console", run: cmdCore},
+		{names: []string{"core"}, summary: "the workspace's engine: run, start, stop, restart, status", run: cmdCore},
 		{names: []string{"migrate"}, summary: "move a workspace onto layout 2", run: cmdMigrate},
 		{names: []string{"plugin"}, summary: "add, check and list plugins", run: cmdPlugin},
 		{names: []string{"--version", "-V"}, summary: "print the version", run: cmdVersion},
@@ -98,12 +98,14 @@ func withStdin(fn func(args []string, stdin io.Reader, stdout, stderr io.Writer)
 // passed in so a test can stand each piece in.
 type dispatcher struct {
 	commands []command
-	// findWorkspace resolves the workspace a bare `mate` opens.
+	// findWorkspace resolves the workspace a bare `mate` runs the core of.
 	findWorkspace func() (string, error)
 	// isDir reports whether an argument names an existing directory.
 	isDir func(path string) bool
-	// console opens the console on a workspace directory.
-	console func(dir string, stdout, stderr io.Writer) error
+	// core runs a workspace directory's core in the foreground, or says it
+	// already runs (decided 2026-11-06; before, `mate <dir>` opened the
+	// console, which `mate console` does now).
+	core func(dir string, stdout, stderr io.Writer) error
 }
 
 // run dispatches the top-level subcommand. Each subcommand is a small,
@@ -114,28 +116,29 @@ func run(args []string, stdout, stderr io.Writer) error {
 		commands:      commands(),
 		findWorkspace: func() (string, error) { return findWorkspaceDir("") },
 		isDir:         isDir,
-		console:       cmdConsole,
+		core:          cmdCoreHere,
 	}.run(args, stdout, stderr)
 }
 
 func (d dispatcher) run(args []string, stdout, stderr io.Writer) error {
-	// `mate` with no arguments opens the console on the workspace the
-	// current directory sits in. A subcommand always wins over a directory
-	// of the same name: the subcommand names are reserved words, and an
-	// explicit `./init` still reaches the console.
+	// `mate` with no arguments runs the core of the workspace the current
+	// directory sits in. A subcommand always wins over a directory of the
+	// same name: the subcommand names are reserved words, and an explicit
+	// `./init` still reaches the core.
 	if len(args) == 0 {
 		dir, err := d.findWorkspace()
 		if err != nil {
 			return newUsageError(usageText(d.commands))
 		}
-		return d.console(dir, stdout, stderr)
+		return d.core(dir, stdout, stderr)
 	}
 	if c, ok := lookupCommand(d.commands, args[0]); ok {
 		return c.run(args[1:], stdout, stderr)
 	}
-	// A single argument naming an existing directory is a workspace to open.
+	// A single argument naming an existing directory is a workspace whose
+	// core to run.
 	if len(args) == 1 && d.isDir(args[0]) {
-		return d.console(args[0], stdout, stderr)
+		return d.core(args[0], stdout, stderr)
 	}
 	return newUsageErrorf("unknown command %q", args[0])
 }
@@ -166,11 +169,11 @@ func usageText(cmds []command) string {
 		width = max(width, len(strings.Join(c.names, ", ")))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: mate <workspace-dir> | mate <%s> ...", strings.Join(public, "|"))
+	fmt.Fprintf(&b, "usage: mate [<workspace-dir>] | mate <%s> ...", strings.Join(public, "|"))
 	if len(internal) > 0 {
 		fmt.Fprintf(&b, "\ninternal, run by mate itself: mate <%s> ...", strings.Join(internal, "|"))
 	}
-	b.WriteString("\n")
+	b.WriteString("\n\nmate [<workspace-dir>] runs the workspace's core in the foreground, as `mate core run`,\nand prints the Office and City URLs; Ctrl+C stops it. `mate console` opens the console.\n")
 	for _, c := range cmds {
 		fmt.Fprintf(&b, "\n  %-*s  %s", width, strings.Join(c.names, ", "), c.summary)
 		if c.internal {

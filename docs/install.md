@@ -67,6 +67,10 @@ prints `mate <version> (<commit>, <build date>)`.
   `+dirty` when the checkout has uncommitted changes, with the full commit
   hash. Its build date is the commit's time, not the time of the build.
 
+A core started before the install keeps running the old binary: `mate core
+status` says `stale`, and `mate core restart` runs the new one
+([core.md](core.md)).
+
 ## macOS
 
 - The console lays the agents out in panes of the terminal it runs in when that

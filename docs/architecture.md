@@ -13,7 +13,8 @@ shared snapshot, Office/City and notifications (CON-208), the one entry
 for every UI's actions (CON-209), a stop within one fixed bound
 (CON-210), `mate core run` with `core.lock` (CON-211), and its clients'
 API on `.mate/core.sock` with `internal/coreclient` (CON-212); the Mate's
-and the Project's actions (CON-231); `internal/refresh`
+and the Project's actions (CON-231); `mate core start|stop|restart|status`
+and plain `mate` running the core (CON-213); `internal/refresh`
 (CON-170); `internal/platform` (CON-184, CON-185); `CrewIsScout` in `store`
 (CON-165); the CLI command table (CON-171); `internal/wake` (CON-169);
 `internal/usage` (CON-168); `internal/recall` (CON-167). Every
@@ -106,8 +107,8 @@ reusing the ledger needs `--why` split out of `usage` first.
 
 | Process | Started by | Code | Runs |
 | -- | -- | -- | -- |
-| Console | `mate`, `mate <dir>`, `mate console` | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications; refuses to open while `mate core` runs (CON-211) |
-| Core | `mate core run` (foreground; CON-213 adds start/stop) | `cmdCoreRun`, `runCore`, `cmd/mate/core.go` | The engine with no console: the same parts as the console's, plus `.mate/core.sock` and the clients' routes on it (CON-212). Stops within the engine's bound on SIGINT, SIGTERM or SIGHUP |
+| Console | `mate console` (plain `mate` and `mate <dir>` run the core since 2026-11-06) | `runConsole`, `cmd/mate/console.go` | One per workspace (flock on `.mate/console.lock`, CON-162). Runs the engine, which serves Office/City and sends notifications; refuses to open while `mate core` runs (CON-211) |
+| Core | `mate`, `mate <dir>`, `mate core run` (foreground); `mate core start` (background, CON-213) | `cmdCoreHere`, `cmdCoreRun`, `runCore`, `cmd/mate/core.go`; start/stop/status in `cmd/mate/core_control.go` | The engine with no console: the same parts as the console's, plus `.mate/core.sock` and the clients' routes on it (CON-212). Stops within the engine's bound on SIGINT, SIGTERM or SIGHUP. `start` runs `mate core run` in a session of its own with its output in `.mate/core.log`; `stop` sends SIGTERM, then SIGKILL after 60 s, only to the pid `core.lock`'s holder wrote ([core.md](core.md)) |
 | Pane runner | the console's host columns | `mate pane serve`, `internal/panerun` | One per sibling pane: the stage, and command tabs (a file review is a command tab); ends when the console's pid is gone. The stage runs `herdr agent attach --takeover` for a crew or a pane Mate, and the Mate REPL for a headless Mate (CON-224) |
 | Herdr server | `runtime.Herdr`, when the session it needs is not running | `herdr server --session <s>` (external) | Every agent pane: a pane Mate and every Crew. Outlives the console |
 | Mate, pane mode | `spawn` | harness TUI in a Herdr pane | Claude Code calls `mate hook mate-prompt` / `mate-stop` (`internal/hook`). Codex and pi Mates, and `mate.mode: pane` |
@@ -254,7 +255,8 @@ engine; **headless** is only how a Mate runs, one `claude -p` per message
 in its host. Neither word stands for the other.
 
 **Target** (CON-203): the `mate core` process runs the engine whenever the
-workspace is in use (CON-213 `start|stop|restart|status`). UIs on this
+workspace is in use (`mate`, or `mate core start|stop|restart|status`,
+CON-213). UIs on this
 machine reach it over `.mate/core.sock` through `internal/coreclient`
 (built in CON-212); the console becomes such a client in CON-214. CLI
 commands keep writing files directly. Until then, a console runs its own engine and closing it stops the engine,
@@ -278,6 +280,7 @@ true yet.
 | `console.lock` | `store` | the console (flock; `core_lock: true` since CON-211) | a second console, which asks to replace it; `mate core run`, which refuses beside a console that has no `core_lock` |
 | `core.lock` | `store` | the engine, in `mate core` or a console (flock; JSON `pid`, `owner`, `started`, `version`, `binary`, `build`, `socket`, `url`, `lan_url`, `tcp_error`) | a second engine, which is refused; `mate reindex`, to name who holds `mate.db` |
 | `core.sock` | `store` path, `core` serves | `mate core run` (unix socket, 0600) | `internal/coreclient` (`/api/core`, `/api/snapshot`, `/api/act`, CON-212); the Office/City routes over HTTP |
+| `core.log`, `core.log.1` | `store` path | the output of a core `mate core start` ran; `start` moves a log over 10 MB to `core.log.1` | the captain |
 | `mate.db`, `mate.db.lock` | `db` | the timeline ingest in the engine; `mate reindex` | the engine's snapshot (tokens), dashboard, `mate events`, `mate usage`, `mate state`, `mate recall`, refresh; every query outside `db` and `timeline` is in `timeline/read` |
 | `notifications.json` | `notifications` | the engine's notification loop (`internal/core/notify.go`) | the same loop (flock on `notifications.json.lock`) |
 | `projects/<p>/project.yaml`, `PROJECT.md` | `store` | `mate project …`; the Mate (`PROJECT.md`) | spawn, query, `mate recall` |
