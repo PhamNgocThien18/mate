@@ -83,6 +83,8 @@ Bốn phiên thử: A (bypass, như crew mate), C (`--name crew-con235-c --setti
 | 8 | `SendMessage` (bypass) | D (default, không accept) | **Giữ** "mode-mismatch", còn nguyên sau 10 phút dù `CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS=40000` |
 | 9 | `SendMessage` | E `claude -p` đang chạy Bash 45 giây | Nhận giữa lượt như probe 3, in nguyên văn ra stdout |
 
+Hồi báo cho người gửi là phiên Claude: probe 8 sinh hai `[Cross-session delivery notice]` về phiên này, một khi tin bị giữ ("held … NOT delivered: its Claude has not seen it … a Claude Desktop or non-interactive session cannot ask, so there the hold expires undelivered") và một khi phiên D bị tắt sau hơn 10 phút ("not approved before expiry"). Tức là chỉ việc tắt phiên mới sinh "expiry"; chừng nào phiên còn sống thì tin còn treo. Process thường gửi không có kênh nhận hai thông báo này.
+
 Trường hợp "crew đang chờ captain duyệt quyền" chưa thử trực tiếp (crew của mate chạy bypass nên không có dialog quyền). Trạng thái `waiting` do dialog giữ tin (probe 2) thì tin kế tiếp vẫn vào hàng đợi; A sau khi Deny vẫn nhận probe 3 bình thường.
 
 Luật giữ tin (chuỗi trong binary, khớp thử nghiệm): `mode-mismatch` (lớp mode hai bên khác), `no-mode-asserted` (người gửi không khai và người nhận bypass), `explicit-setting` (`crossSessionInbound: hold`), `mode-unknown` (đang khởi động, sẽ giao sau). Setting `accept` ở file truyền qua `--settings` bỏ hết các giữ này; setting trong repo chỉ được siết chặt, không nới.
