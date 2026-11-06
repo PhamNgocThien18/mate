@@ -63,17 +63,15 @@ func (e *Engine) clientSeen(client string) {
 
 // Status is the core's own state, GET coreapi.PathCore: who runs it, as
 // core.lock records it, where its dashboard serves, whether Jev is there
-// (the pages' Deps.Notice, which offers explain_notice), and the lines a
-// console's status line says about it. Its record is zero for an engine
-// that holds no core.lock.
+// (Options.Notice, which explain_notice asks), and the lines a console's
+// status line says about it. Its record is zero for an engine that holds
+// no core.lock.
 func (e *Engine) Status() coreapi.CoreStatus {
 	h := e.holder
 	s := coreapi.CoreStatus{
 		PID: h.PID, Owner: h.Owner, Version: h.Version, Build: h.Build,
 		Binary: h.Binary, Started: h.Started, Notices: []string{},
-	}
-	if e.o.Dashboard != nil {
-		s.Jev = e.o.Dashboard.Deps.Notice
+		Jev: e.o.Notice != nil,
 	}
 	serving := e.Serving()
 	s.URL, s.LANURL = serving.URL, serving.LANURL
@@ -86,6 +84,7 @@ func (e *Engine) Status() coreapi.CoreStatus {
 	} else if line != "" {
 		s.Notices = append(s.Notices, line)
 	}
+	s.Notices = append(s.Notices, hostNotices(e.hosts.read())...)
 	s.Notices = append(s.Notices, e.o.Notices...)
 	return s
 }

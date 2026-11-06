@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/process"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
 )
 
 // Herdr is the live RuntimeAdapter. It talks to the herdr executable through
@@ -29,8 +30,8 @@ type Herdr struct {
 	Binary string
 	// Names is the live-name registry used to re-reserve at start. Required
 	// for StartAgent. A reservation proves allocation, not current ownership.
-	Names LiveNameRegistry
-	Clock Clock
+	Names runtime.LiveNameRegistry
+	Clock runtime.Clock
 	// StartServer starts a named headless `herdr server --session`. Herdr
 	// 0.8.2 does not daemonize (detached_server_daemon: false). Nil uses
 	// the default starter, which is process-start + Wait in a goroutine.
@@ -86,8 +87,8 @@ func NewHerdr(runner process.Runner) *Herdr {
 }
 
 var (
-	_ Adapter = (*Herdr)(nil)
-	_ Adapter = (*Fake)(nil)
+	_ runtime.Adapter     = (*Herdr)(nil)
+	_ runtime.ReadAdapter = (*Herdr)(nil)
 )
 
 func (h *Herdr) binary() string {
@@ -119,7 +120,7 @@ func WithSession(session string, args []string) []string {
 	if strings.TrimSpace(session) == "" {
 		return append([]string(nil), args...)
 	}
-	if SessionBeforeTerminator(args) {
+	if runtime.SessionBeforeTerminator(args) {
 		return append([]string(nil), args...)
 	}
 	out := make([]string, 0, len(args)+2)
@@ -161,21 +162,21 @@ func (h *Herdr) run(ctx context.Context, session string, args []string) (process
 // Workspace. A named session that is not running is started through
 // StartServer; Herdr 0.8.2 does not daemonize, so that start is a long-lived
 // process, not ProcessRunner.Run.
-func (h *Herdr) EnsureSession(ctx context.Context, spec SessionSpec) (SessionHandle, error) {
-	handle, err := ResolveSession(spec)
+func (h *Herdr) EnsureSession(ctx context.Context, spec runtime.SessionSpec) (runtime.SessionHandle, error) {
+	handle, err := runtime.ResolveSession(spec)
 	if err != nil {
-		return SessionHandle{}, err
+		return runtime.SessionHandle{}, err
 	}
-	if err := claimSessionOwner(handle.ConfigHome, handle.Name, spec.WorkspaceID.String()); err != nil {
-		return SessionHandle{}, err
+	if err := runtime.ClaimSessionOwner(handle.ConfigHome, handle.Name, spec.WorkspaceID.String()); err != nil {
+		return runtime.SessionHandle{}, err
 	}
 	listed, err := h.lookupSession(ctx, handle.Name)
 	if err != nil {
-		return SessionHandle{}, err
+		return runtime.SessionHandle{}, err
 	}
 	if listed != nil {
 		if listed.Default {
-			return SessionHandle{}, fmt.Errorf("session: refusing to bind an app Workspace to the Herdr default session")
+			return runtime.SessionHandle{}, fmt.Errorf("session: refusing to bind an app Workspace to the Herdr default session")
 		}
 		if listed.SocketPath != "" {
 			handle.SocketPath = listed.SocketPath
@@ -185,30 +186,30 @@ func (h *Herdr) EnsureSession(ctx context.Context, spec SessionSpec) (SessionHan
 		}
 	}
 	if err := h.startNamedServer(ctx, handle.Name); err != nil {
-		return SessionHandle{}, err
+		return runtime.SessionHandle{}, err
 	}
 	if err := h.waitRunning(ctx, handle.Name); err != nil {
-		return SessionHandle{}, err
+		return runtime.SessionHandle{}, err
 	}
 	return handle, nil
 }
 
 // LookupSession implements Adapter. It never starts a server and never
 // writes the owner marker.
-func (h *Herdr) LookupSession(ctx context.Context, spec SessionSpec) (SessionHandle, bool, error) {
-	handle, err := sessionAddress(spec)
+func (h *Herdr) LookupSession(ctx context.Context, spec runtime.SessionSpec) (runtime.SessionHandle, bool, error) {
+	handle, err := runtime.SessionAddress(spec)
 	if err != nil {
-		return SessionHandle{}, false, err
+		return runtime.SessionHandle{}, false, err
 	}
 	listed, err := h.lookupSession(ctx, handle.Name)
 	if err != nil {
-		return SessionHandle{}, false, err
+		return runtime.SessionHandle{}, false, err
 	}
 	if listed == nil || !listed.Running {
 		return handle, false, nil
 	}
 	if listed.Default {
-		return SessionHandle{}, false, fmt.Errorf("session: refusing to bind an app Workspace to the Herdr default session")
+		return runtime.SessionHandle{}, false, fmt.Errorf("session: refusing to bind an app Workspace to the Herdr default session")
 	}
 	if listed.SocketPath != "" {
 		handle.SocketPath = listed.SocketPath
@@ -257,11 +258,7 @@ func refuseUndeliverableHerdrSocket(session string) error {
 	if home == "" {
 		return nil
 	}
-	p, err := namedSocketPath(home, session)
-	if err != nil {
-		return err
-	}
-	return checkUnixSocketPath(p)
+	return runtime.CheckSessionSocket(home, session)
 }
 
 func herdrConfigHomeFromEnv() string {
@@ -294,98 +291,6 @@ func applyHerdrServerProcAttr(cmd *exec.Cmd) {
 // herdrDefaultRootTabLabel is the label Herdr 0.8.2 assigns to the tab
 // created with workspace create (live-captured; not the workspace label).
 const herdrDefaultRootTabLabel = "1"
-
-func sessionOwnerFile(configHome, session string) (string, error) {
-	if err := checkSessionName(session); err != nil {
-		return "", err
-	}
-	base := filepath.Join(configHome, "mate", "session-owners")
-	p := filepath.Clean(filepath.Join(base, session))
-	rel, err := filepath.Rel(base, p)
-	if err != nil || rel != session {
-		return "", fmt.Errorf("session owner path escapes mate/session-owners")
-	}
-	return p, nil
-}
-
-// SessionOwner is the workspace id the owner marker of a session names, and
-// whether there is a marker at all.
-func SessionOwner(configHome, session string) (owner string, found bool, err error) {
-	p, err := sessionOwnerFile(configHome, session)
-	if err != nil {
-		return "", false, err
-	}
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", false, nil
-		}
-		return "", false, observability.WrapError(observability.CodeUnknown, "session owner marker", err)
-	}
-	return strings.TrimSpace(string(raw)), true, nil
-}
-
-// ReclaimSessionOwner makes workspaceID the owner of a session whatever the
-// marker said. The caller has established that the recorded owner no longer
-// exists; claimSessionOwner never does this itself, because two workspaces
-// silently sharing a session is what the marker is there to refuse.
-func ReclaimSessionOwner(configHome, session, workspaceID string) error {
-	p, err := sessionOwnerFile(configHome, session)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-		return observability.WrapError(observability.CodeUnknown, "session owner marker", err)
-	}
-	return claimSessionOwner(configHome, session, workspaceID)
-}
-
-// claimSessionOwner records which workspace id owns a Herdr session name in
-// the config home, with O_EXCL so two processes cannot silently share the
-// address. persistence.NameRegistry refuses this scope (ADR 0004); this file
-// is the cross-workspace record. Same-owner re-claim is idempotent.
-func claimSessionOwner(configHome, session, workspaceID string) error {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return observability.NewError(observability.CodeUsage, "session owner marker requires a workspace id")
-	}
-	if strings.TrimSpace(configHome) == "" {
-		return observability.NewError(observability.CodeUsage, "session owner marker requires config home")
-	}
-	p, err := sessionOwnerFile(configHome, session)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return observability.WrapError(observability.CodePermission, "session owner directory", err)
-	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err == nil {
-		_, werr := f.WriteString(workspaceID + "\n")
-		cerr := f.Close()
-		if werr != nil {
-			return observability.WrapError(observability.CodeUnknown, "session owner marker", werr)
-		}
-		if cerr != nil {
-			return observability.WrapError(observability.CodeUnknown, "session owner marker", cerr)
-		}
-		return nil
-	}
-	if !errors.Is(err, os.ErrExist) {
-		return observability.WrapError(observability.CodeUnknown, "session owner marker", err)
-	}
-	raw, rerr := os.ReadFile(p)
-	if rerr != nil {
-		return observability.WrapError(observability.CodeUnknown, "session owner marker", rerr)
-	}
-	if strings.TrimSpace(string(raw)) == workspaceID {
-		return nil
-	}
-	return observability.NewError(
-		observability.CodeAlreadyExists,
-		fmt.Sprintf("herdr session %q is owned by workspace %s, not %s", session, strings.TrimSpace(string(raw)), workspaceID),
-	)
-}
 
 // herdrServerEnv is the environment for a herdr server mate itself
 // cold-starts (EnsureSession's startNamedServer, when no session is already
@@ -490,21 +395,21 @@ func waitRunningTimeout(session string, lastErr, ctxErr error) error {
 // workspaces; this never assumes a default layout. Labels are not unique
 // (live: two --label Duplicate creates produced w1 and w2 at different cwds),
 // so reuse requires label and the root-tab cwd (not the focused/active tab).
-func (h *Herdr) EnsureProjectWorkspace(ctx context.Context, spec WorkspaceSpec) (WorkspaceHandle, error) {
-	if err := CheckWorkspaceSpec(spec); err != nil {
-		return WorkspaceHandle{}, err
+func (h *Herdr) EnsureProjectWorkspace(ctx context.Context, spec runtime.WorkspaceSpec) (runtime.WorkspaceHandle, error) {
+	if err := runtime.CheckWorkspaceSpec(spec); err != nil {
+		return runtime.WorkspaceHandle{}, err
 	}
-	env, err := AllowlistedEnv(spec.Env, spec.EnvKeys)
+	env, err := runtime.AllowlistedEnv(spec.Env, spec.EnvKeys)
 	if err != nil {
-		return WorkspaceHandle{}, err
+		return runtime.WorkspaceHandle{}, err
 	}
 	found, ok, err := h.LookupProjectWorkspace(ctx, spec)
 	if err != nil {
-		return WorkspaceHandle{}, err
+		return runtime.WorkspaceHandle{}, err
 	}
 	if ok {
 		if len(env) > 0 {
-			return WorkspaceHandle{}, observability.NewError(
+			return runtime.WorkspaceHandle{}, observability.NewError(
 				observability.CodeUsage,
 				"launch environment is injected only when the workspace pane is created (workspace create --env); this workspace already exists",
 			)
@@ -516,18 +421,18 @@ func (h *Herdr) EnsureProjectWorkspace(ctx context.Context, spec WorkspaceSpec) 
 	args = append(args, envFlags(env)...)
 	res, err := h.run(ctx, spec.Session.Name, args)
 	if err != nil {
-		return WorkspaceHandle{}, err
+		return runtime.WorkspaceHandle{}, err
 	}
 	created, err := parseWorkspaceCreated(res.Stdout)
 	if err != nil {
-		return WorkspaceHandle{}, observability.WrapError(observability.CodeUnknown, "herdr workspace create", err)
+		return runtime.WorkspaceHandle{}, observability.WrapError(observability.CodeUnknown, "herdr workspace create", err)
 	}
-	createdHandle := WorkspaceHandle{
+	createdHandle := runtime.WorkspaceHandle{
 		Session:     spec.Session,
 		WorkspaceID: created.WorkspaceID,
 		Label:       created.Label,
 		Cwd:         created.Cwd,
-		RootTab: TabHandle{
+		RootTab: runtime.TabHandle{
 			Session: spec.Session, WorkspaceID: created.WorkspaceID,
 			TabID: created.TabID, PaneID: created.PaneID, TerminalID: created.TerminalID,
 			Cwd: created.Cwd, Label: created.TabLabel, Env: env,
@@ -540,7 +445,7 @@ func (h *Herdr) EnsureProjectWorkspace(ctx context.Context, spec WorkspaceSpec) 
 	// of this same label+cwd goes, and only once one has been adopted.
 	found, ok, err = h.LookupProjectWorkspace(ctx, spec)
 	if err != nil {
-		return WorkspaceHandle{}, err
+		return runtime.WorkspaceHandle{}, err
 	}
 	if !ok {
 		return createdHandle, nil
@@ -550,24 +455,24 @@ func (h *Herdr) EnsureProjectWorkspace(ctx context.Context, spec WorkspaceSpec) 
 }
 
 // LookupProjectWorkspace implements Adapter. It never creates.
-func (h *Herdr) LookupProjectWorkspace(ctx context.Context, spec WorkspaceSpec) (WorkspaceHandle, bool, error) {
-	if err := CheckWorkspaceSpec(spec); err != nil {
-		return WorkspaceHandle{}, false, err
+func (h *Herdr) LookupProjectWorkspace(ctx context.Context, spec runtime.WorkspaceSpec) (runtime.WorkspaceHandle, bool, error) {
+	if err := runtime.CheckWorkspaceSpec(spec); err != nil {
+		return runtime.WorkspaceHandle{}, false, err
 	}
 	listed, err := h.listWorkspaces(ctx, spec.Session.Name)
 	if err != nil {
-		return WorkspaceHandle{}, false, err
+		return runtime.WorkspaceHandle{}, false, err
 	}
 	if len(listed) == 0 {
-		return WorkspaceHandle{}, false, nil
+		return runtime.WorkspaceHandle{}, false, nil
 	}
 	panes, err := h.listPanes(ctx, spec.Session.Name)
 	if err != nil {
-		return WorkspaceHandle{}, false, err
+		return runtime.WorkspaceHandle{}, false, err
 	}
 	tabs, err := h.listTabs(ctx, spec.Session.Name, "")
 	if err != nil {
-		return WorkspaceHandle{}, false, err
+		return runtime.WorkspaceHandle{}, false, err
 	}
 	var matches []listedWorkspace
 	for i := range listed {
@@ -575,12 +480,12 @@ func (h *Herdr) LookupProjectWorkspace(ctx context.Context, spec WorkspaceSpec) 
 		if w.Label != spec.Label {
 			continue
 		}
-		if cwd := workspaceRootCwd(w, tabs, panes); cwd != "" && samePath(cwd, spec.Cwd) {
+		if cwd := workspaceRootCwd(w, tabs, panes); cwd != "" && runtime.SamePath(cwd, spec.Cwd) {
 			matches = append(matches, w)
 		}
 	}
 	if len(matches) == 0 {
-		return WorkspaceHandle{}, false, nil
+		return runtime.WorkspaceHandle{}, false, nil
 	}
 	occupied, occErr := h.occupiedWorkspaces(ctx, spec.Session)
 	if occErr != nil {
@@ -596,7 +501,7 @@ func (h *Herdr) LookupProjectWorkspace(ctx context.Context, spec WorkspaceSpec) 
 	return h.workspaceHandle(spec.Session, byID[chosen], tabs, panes), true, nil
 }
 
-func (h *Herdr) occupiedWorkspaces(ctx context.Context, session SessionHandle) (map[string]bool, error) {
+func (h *Herdr) occupiedWorkspaces(ctx context.Context, session runtime.SessionHandle) (map[string]bool, error) {
 	out := map[string]bool{}
 	agents, err := h.ListAgents(ctx, session)
 	if err != nil {
@@ -610,7 +515,7 @@ func (h *Herdr) occupiedWorkspaces(ctx context.Context, session SessionHandle) (
 	return out, nil
 }
 
-func (h *Herdr) collapseEmptyProjectWorkspaces(ctx context.Context, spec WorkspaceSpec, keepID string) {
+func (h *Herdr) collapseEmptyProjectWorkspaces(ctx context.Context, spec runtime.WorkspaceSpec, keepID string) {
 	listed, err := h.listWorkspaces(ctx, spec.Session.Name)
 	if err != nil || len(listed) == 0 {
 		return
@@ -631,7 +536,7 @@ func (h *Herdr) collapseEmptyProjectWorkspaces(ctx context.Context, spec Workspa
 		if w.WorkspaceID == keepID || w.Label != spec.Label {
 			continue
 		}
-		if cwd := workspaceRootCwd(w, tabs, panes); cwd == "" || !samePath(cwd, spec.Cwd) {
+		if cwd := workspaceRootCwd(w, tabs, panes); cwd == "" || !runtime.SamePath(cwd, spec.Cwd) {
 			continue
 		}
 		if occupied[w.WorkspaceID] {
@@ -658,29 +563,29 @@ func (h *Herdr) listWorkspaces(ctx context.Context, session string) ([]listedWor
 // Mate tab and is renamed. A later call issues `tab create` for Crew. Env on
 // the rename path cannot be applied after the fact — set WorkspaceSpec.Env at
 // create. TabSpec.Env is applied on the Crew `tab create` path.
-func (h *Herdr) CreateAgentTab(ctx context.Context, spec TabSpec) (TabHandle, error) {
-	if err := CheckTabSpec(spec); err != nil {
-		return TabHandle{}, err
+func (h *Herdr) CreateAgentTab(ctx context.Context, spec runtime.TabSpec) (runtime.TabHandle, error) {
+	if err := runtime.CheckTabSpec(spec); err != nil {
+		return runtime.TabHandle{}, err
 	}
-	env, err := AllowlistedEnv(spec.Env, spec.EnvKeys)
+	env, err := runtime.AllowlistedEnv(spec.Env, spec.EnvKeys)
 	if err != nil {
-		return TabHandle{}, err
+		return runtime.TabHandle{}, err
 	}
 	session := spec.Workspace.Session.Name
 	if existing, pane, ok, err := h.tabByLabel(ctx, spec.Workspace, spec.Label); err != nil {
-		return TabHandle{}, err
+		return runtime.TabHandle{}, err
 	} else if ok {
 		if err := h.waitPaneShell(ctx, session, pane.PaneID); err == nil {
 			if len(env) > 0 {
-				return TabHandle{}, observability.NewError(
+				return runtime.TabHandle{}, observability.NewError(
 					observability.CodeUsage,
 					"launch environment is injected only when the pane is created (tab create --env); this tab already exists",
 				)
 			}
 			if err := checkObservedTabCwd(spec.Cwd, pane.Cwd); err != nil {
-				return TabHandle{}, err
+				return runtime.TabHandle{}, err
 			}
-			return TabHandle{
+			return runtime.TabHandle{
 				Session:     spec.Workspace.Session,
 				WorkspaceID: spec.Workspace.WorkspaceID,
 				TabID:       existing.TabID,
@@ -690,29 +595,29 @@ func (h *Herdr) CreateAgentTab(ctx context.Context, spec TabSpec) (TabHandle, er
 				Label:       spec.Label,
 			}, nil
 		} else if !paneMissing(err) {
-			return TabHandle{}, err
+			return runtime.TabHandle{}, err
 		}
 		// Pane is gone (typical after pane-close). Do not reuse the label.
 	}
 	if root, pane, ok, err := h.unusedRootTab(ctx, spec.Workspace); err != nil {
-		return TabHandle{}, err
+		return runtime.TabHandle{}, err
 	} else if ok {
 		if err := h.waitPaneShell(ctx, session, pane.PaneID); err == nil {
-			crewTab := len(env) > 0 && spec.Cwd != "" && pane.Cwd != "" && !samePath(pane.Cwd, spec.Cwd)
+			crewTab := len(env) > 0 && spec.Cwd != "" && pane.Cwd != "" && !runtime.SamePath(pane.Cwd, spec.Cwd)
 			if len(env) > 0 && !crewTab {
-				return TabHandle{}, observability.NewError(
+				return runtime.TabHandle{}, observability.NewError(
 					observability.CodeUsage,
 					"pane environment is injected by workspace create --env; tab rename cannot apply environment after the pane exists",
 				)
 			}
 			if !crewTab {
 				if err := checkObservedTabCwd(spec.Cwd, pane.Cwd); err != nil {
-					return TabHandle{}, err
+					return runtime.TabHandle{}, err
 				}
 				if _, err := h.run(ctx, session, []string{"tab", "rename", root.TabID, spec.Label}); err != nil {
-					return TabHandle{}, err
+					return runtime.TabHandle{}, err
 				}
-				return TabHandle{
+				return runtime.TabHandle{
 					Session:     spec.Workspace.Session,
 					WorkspaceID: spec.Workspace.WorkspaceID,
 					TabID:       root.TabID,
@@ -728,7 +633,7 @@ func (h *Herdr) CreateAgentTab(ctx context.Context, spec TabSpec) (TabHandle, er
 		} else if !paneMissing(err) {
 			// Slow shell, not a missing pane: creating a second tab would
 			// leave the root behind after stop (B5 live leftover).
-			return TabHandle{}, err
+			return runtime.TabHandle{}, err
 		}
 	}
 	args := []string{
@@ -741,16 +646,16 @@ func (h *Herdr) CreateAgentTab(ctx context.Context, spec TabSpec) (TabHandle, er
 	args = append(args, envFlags(env)...)
 	res, err := h.run(ctx, session, args)
 	if err != nil {
-		return TabHandle{}, err
+		return runtime.TabHandle{}, err
 	}
 	created, err := parseTabCreated(res.Stdout)
 	if err != nil {
-		return TabHandle{}, observability.WrapError(observability.CodeUnknown, "herdr tab create", err)
+		return runtime.TabHandle{}, observability.WrapError(observability.CodeUnknown, "herdr tab create", err)
 	}
 	// The tab is real from this point on. A refusal below must still hand the
 	// caller a handle naming it - RemoveTab needs TabID, not Cwd - so a saga
 	// can compensate instead of leaking a tab it never learned exists.
-	createdHandle := TabHandle{
+	createdHandle := runtime.TabHandle{
 		Session:     spec.Workspace.Session,
 		WorkspaceID: created.WorkspaceID,
 		TabID:       created.TabID,
@@ -784,7 +689,7 @@ func checkObservedTabCwd(requested, observed string) error {
 			fmt.Sprintf("herdr did not report a cwd for this pane; cannot verify the agent will discover its context at %s", requested),
 		)
 	}
-	if !samePath(observed, requested) {
+	if !runtime.SamePath(observed, requested) {
 		return observability.NewError(
 			observability.CodeStateConflict,
 			fmt.Sprintf("herdr reports the pane cwd as %s, not the requested %s; refusing to start an agent that would discover the wrong context", observed, requested),
@@ -793,7 +698,7 @@ func checkObservedTabCwd(requested, observed string) error {
 	return nil
 }
 
-func (h *Herdr) tabByLabel(ctx context.Context, ws WorkspaceHandle, label string) (listedTab, listedPane, bool, error) {
+func (h *Herdr) tabByLabel(ctx context.Context, ws runtime.WorkspaceHandle, label string) (listedTab, listedPane, bool, error) {
 	tabs, err := h.listTabs(ctx, ws.Session.Name, ws.WorkspaceID)
 	if err != nil {
 		return listedTab{}, listedPane{}, false, err
@@ -820,7 +725,7 @@ func (h *Herdr) tabByLabel(ctx context.Context, ws WorkspaceHandle, label string
 	return *found, pane, true, nil
 }
 
-func (h *Herdr) unusedRootTab(ctx context.Context, ws WorkspaceHandle) (listedTab, listedPane, bool, error) {
+func (h *Herdr) unusedRootTab(ctx context.Context, ws runtime.WorkspaceHandle) (listedTab, listedPane, bool, error) {
 	tabs, err := h.listTabs(ctx, ws.Session.Name, ws.WorkspaceID)
 	if err != nil {
 		return listedTab{}, listedPane{}, false, err
@@ -844,7 +749,7 @@ func (h *Herdr) unusedRootTab(ctx context.Context, ws WorkspaceHandle) (listedTa
 	return *root, pane, true, nil
 }
 
-func (h *Herdr) paneForTab(ctx context.Context, ws WorkspaceHandle, tabID string) (listedPane, error) {
+func (h *Herdr) paneForTab(ctx context.Context, ws runtime.WorkspaceHandle, tabID string) (listedPane, error) {
 	panes, err := h.listPanes(ctx, ws.Session.Name)
 	if err != nil {
 		return listedPane{}, err
@@ -936,10 +841,10 @@ func workspaceRootPane(w listedWorkspace, tabs []listedTab, panes []listedPane) 
 	return listedPane{}, false
 }
 
-func (h *Herdr) workspaceHandle(session SessionHandle, w listedWorkspace, tabs []listedTab, panes []listedPane) WorkspaceHandle {
-	hnd := WorkspaceHandle{Session: session, WorkspaceID: w.WorkspaceID, Label: w.Label, Cwd: workspaceRootCwd(w, tabs, panes)}
+func (h *Herdr) workspaceHandle(session runtime.SessionHandle, w listedWorkspace, tabs []listedTab, panes []listedPane) runtime.WorkspaceHandle {
+	hnd := runtime.WorkspaceHandle{Session: session, WorkspaceID: w.WorkspaceID, Label: w.Label, Cwd: workspaceRootCwd(w, tabs, panes)}
 	if p, ok := workspaceRootPane(w, tabs, panes); ok {
-		hnd.RootTab = TabHandle{
+		hnd.RootTab = runtime.TabHandle{
 			Session:     session,
 			WorkspaceID: w.WorkspaceID,
 			TabID:       p.TabID,
@@ -953,7 +858,7 @@ func (h *Herdr) workspaceHandle(session SessionHandle, w listedWorkspace, tabs [
 
 func paneMissing(err error) bool {
 	switch herdrCodeOf(err) {
-	case HerdrPaneNotFound, HerdrAgentPaneNotFound:
+	case runtime.HerdrPaneNotFound, runtime.HerdrAgentPaneNotFound:
 		return true
 	}
 	return false
@@ -962,23 +867,23 @@ func paneMissing(err error) bool {
 // StartAgent implements Adapter. agent_not_ready (blocked during startup) is
 // a live agent: G4 lab capture left launch_pending=true / blocked, and
 // `agent wait --until blocked` then exited 0. That is not a failed start.
-func (h *Herdr) StartAgent(ctx context.Context, spec AgentStartSpec) (AgentHandle, error) {
+func (h *Herdr) StartAgent(ctx context.Context, spec runtime.AgentStartSpec) (runtime.AgentHandle, error) {
 	if spec == nil {
-		return AgentHandle{}, observability.NewError(observability.CodeUsage, "start requires a spec from NewAgentStartSpec")
+		return runtime.AgentHandle{}, observability.NewError(observability.CodeUsage, "start requires a spec from NewAgentStartSpec")
 	}
 	if err := spec.Validate(); err != nil {
-		return AgentHandle{}, err
+		return runtime.AgentHandle{}, err
 	}
 	if h.Names == nil {
-		return AgentHandle{}, observability.NewError(observability.CodeUsage, "start requires a live-name registry")
+		return runtime.AgentHandle{}, observability.NewError(observability.CodeUsage, "start requires a live-name registry")
 	}
 	session := spec.Session()
 	if err := h.Names.Reserve(session.Name, spec.Name(), spec.RawID()); err != nil {
-		return AgentHandle{}, err
+		return runtime.AgentHandle{}, err
 	}
-	argv, err := AgentStartArgvTimeout(session.Name, spec.Name(), string(spec.Kind()), spec.Tab().PaneID, spec.Timeout(), spec.Launch().Args())
+	argv, err := runtime.AgentStartArgvTimeout(session.Name, spec.Name(), string(spec.Kind()), spec.Tab().PaneID, spec.Timeout(), spec.Launch().Args())
 	if err != nil {
-		return AgentHandle{}, err
+		return runtime.AgentHandle{}, err
 	}
 	// A long-running Herdr server can carry CLAUDE_CONFIG_DIR, and the
 	// nested-session variables of whichever Claude Code session started it,
@@ -989,7 +894,7 @@ func (h *Herdr) StartAgent(ctx context.Context, spec AgentStartSpec) (AgentHandl
 	if keys := spec.Launch().UnsetEnv(); len(keys) > 0 {
 		argv := append([]string{"pane", "run", spec.Tab().PaneID, "unset"}, keys...)
 		if _, err := h.run(ctx, session.Name, argv); err != nil {
-			return AgentHandle{}, err
+			return runtime.AgentHandle{}, err
 		}
 	}
 	// The launch's own environment (identity keys, the pinned CODEX_HOME, an
@@ -1001,15 +906,15 @@ func (h *Herdr) StartAgent(ctx context.Context, spec AgentStartSpec) (AgentHandl
 	// inherits nothing from the workspace (measured 2026-09-24, Herdr 0.8.2:
 	// a tab created without --env in a workspace made with --env FOO=ws
 	// echoes FOO empty).
-	if env, err := PaneEnv(spec.Launch()); err != nil {
-		return AgentHandle{}, err
+	if env, err := runtime.PaneEnv(spec.Launch()); err != nil {
+		return runtime.AgentHandle{}, err
 	} else if len(env) > 0 {
 		argv := append([]string{"pane", "run", spec.Tab().PaneID, "export"}, exportAssignments(env)...)
 		if _, err := h.run(ctx, session.Name, argv); err != nil {
-			return AgentHandle{}, err
+			return runtime.AgentHandle{}, err
 		}
 	}
-	handle := AgentHandle{
+	handle := runtime.AgentHandle{
 		Session: session,
 		Name:    spec.Name(),
 		RawID:   spec.RawID(),
@@ -1025,32 +930,32 @@ func (h *Herdr) StartAgent(ctx context.Context, spec AgentStartSpec) (AgentHandl
 		if err == nil {
 			return handle, nil
 		}
-		if herdrCodeOf(err) == HerdrAgentNotReady {
+		if herdrCodeOf(err) == runtime.HerdrAgentNotReady {
 			if _, inspectErr := h.InspectAgent(ctx, handle); inspectErr == nil {
 				return handle, nil
 			}
 		}
-		if herdrCodeOf(err) == HerdrTimeout {
+		if herdrCodeOf(err) == runtime.HerdrTimeout {
 			aerr := h.adoptTimedOutStart(ctx, handle)
 			if aerr == nil {
 				return handle, nil
 			}
-			return AgentHandle{}, withAdoptReason(err, aerr)
+			return runtime.AgentHandle{}, withAdoptReason(err, aerr)
 		}
-		if herdrCodeOf(err) != HerdrAgentPaneBusy {
-			return AgentHandle{}, err
+		if herdrCodeOf(err) != runtime.HerdrAgentPaneBusy {
+			return runtime.AgentHandle{}, err
 		}
 		last = err
 		select {
 		case <-ctx.Done():
-			return AgentHandle{}, ctx.Err()
+			return runtime.AgentHandle{}, ctx.Err()
 		case <-time.After(paneBusyRetry):
 		}
 	}
 	if last == nil {
-		last = NewHerdrError(HerdrAgentPaneBusy, "pane is not an available shell")
+		last = runtime.NewHerdrError(runtime.HerdrAgentPaneBusy, "pane is not an available shell")
 	}
-	return AgentHandle{}, h.wrapPaneBusyExhausted(ctx, session.Name, last, handle.Name, spec.Tab().PaneID, paneBusyAttempts, paneBusyRetry)
+	return runtime.AgentHandle{}, h.wrapPaneBusyExhausted(ctx, session.Name, last, handle.Name, spec.Tab().PaneID, paneBusyAttempts, paneBusyRetry)
 }
 
 // adoptTimedOutStart names the agent a timed-out `agent start` left in the
@@ -1061,7 +966,7 @@ func (h *Herdr) StartAgent(ctx context.Context, spec AgentStartSpec) (AgentHandl
 // Herdr lists no agent in yet is polled again, every startAdoptPoll for
 // startAdoptWindow, since a slow harness may not be detected by then;
 // anything else leaves the start failed at once.
-func (h *Herdr) adoptTimedOutStart(ctx context.Context, handle AgentHandle) error {
+func (h *Herdr) adoptTimedOutStart(ctx context.Context, handle runtime.AgentHandle) error {
 	polls := int(startAdoptWindow / startAdoptPoll)
 	for attempt := 0; ; attempt++ {
 		err := h.adoptOnce(ctx, handle)
@@ -1078,12 +983,12 @@ func (h *Herdr) adoptTimedOutStart(ctx context.Context, handle AgentHandle) erro
 }
 
 // adoptOnce is one ListAgents read of adoptTimedOutStart.
-func (h *Herdr) adoptOnce(ctx context.Context, handle AgentHandle) error {
+func (h *Herdr) adoptOnce(ctx context.Context, handle runtime.AgentHandle) error {
 	agents, err := h.ListAgents(ctx, handle.Session)
 	if err != nil {
 		return err
 	}
-	var found []ObservedAgent
+	var found []runtime.ObservedAgent
 	for _, a := range agents {
 		if a.Handle.Tab.PaneID == handle.Tab.PaneID {
 			found = append(found, a)
@@ -1272,7 +1177,7 @@ func (h *Herdr) waitPaneShell(ctx context.Context, session, paneID string) error
 
 // RunInPane implements PaneRunner with `herdr pane run`, which types the
 // command into the pane's shell.
-func (h *Herdr) RunInPane(ctx context.Context, tab TabHandle, argv []string) error {
+func (h *Herdr) RunInPane(ctx context.Context, tab runtime.TabHandle, argv []string) error {
 	if strings.TrimSpace(tab.Session.Name) == "" || strings.TrimSpace(tab.PaneID) == "" {
 		return observability.NewError(observability.CodeUsage, "pane run requires a named session and a pane")
 	}
@@ -1290,21 +1195,21 @@ func (h *Herdr) RunInPane(ctx context.Context, tab TabHandle, argv []string) err
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // InspectAgent implements Adapter.
-func (h *Herdr) InspectAgent(ctx context.Context, handle AgentHandle) (ObservedAgent, error) {
+func (h *Herdr) InspectAgent(ctx context.Context, handle runtime.AgentHandle) (runtime.ObservedAgent, error) {
 	res, err := h.run(ctx, handle.Session.Name, []string{"agent", "get", handle.Name})
 	if err != nil {
-		return ObservedAgent{}, err
+		return runtime.ObservedAgent{}, err
 	}
 	info, err := parseAgentInfo(res.Stdout)
 	if err != nil {
-		return ObservedAgent{}, observability.WrapError(observability.CodeUnknown, "herdr agent get", err)
+		return runtime.ObservedAgent{}, observability.WrapError(observability.CodeUnknown, "herdr agent get", err)
 	}
 	return h.observed(handle, info), nil
 }
 
 // ReadAgent implements Adapter. Herdr owns the bounded snapshot; mate never
 // reads a pane directly.
-func (h *Herdr) ReadAgent(ctx context.Context, handle AgentHandle, source harness.ReadSource, lines int) (string, error) {
+func (h *Herdr) ReadAgent(ctx context.Context, handle runtime.AgentHandle, source harness.ReadSource, lines int) (string, error) {
 	if strings.TrimSpace(handle.Session.Name) == "" || strings.TrimSpace(handle.Name) == "" {
 		return "", observability.NewError(observability.CodeUsage, "agent read requires a named session and agent")
 	}
@@ -1315,7 +1220,7 @@ func (h *Herdr) ReadAgent(ctx context.Context, handle AgentHandle, source harnes
 }
 
 // ReadAgentStyled implements Adapter as the same read in `--format ansi`.
-func (h *Herdr) ReadAgentStyled(ctx context.Context, handle AgentHandle, source harness.ReadSource, lines int) (string, error) {
+func (h *Herdr) ReadAgentStyled(ctx context.Context, handle runtime.AgentHandle, source harness.ReadSource, lines int) (string, error) {
 	if strings.TrimSpace(handle.Session.Name) == "" || strings.TrimSpace(handle.Name) == "" {
 		return "", observability.NewError(observability.CodeUsage, "agent read requires a named session and agent")
 	}
@@ -1333,7 +1238,7 @@ func (h *Herdr) ReadAgentStyled(ctx context.Context, handle AgentHandle, source 
 // read that refusal itself names. The visible screen is the bottom of the
 // same pane, rows wrapped at the pane width; it still carries the composer
 // and the in-flight line a caller decides from.
-func (h *Herdr) readAgent(ctx context.Context, handle AgentHandle, source harness.ReadSource, lines int, format string) (string, error) {
+func (h *Herdr) readAgent(ctx context.Context, handle runtime.AgentHandle, source harness.ReadSource, lines int, format string) (string, error) {
 	read := func(source harness.ReadSource) (process.Result, error) {
 		return h.run(ctx, handle.Session.Name, []string{
 			"agent", "read", handle.Name, "--source", string(source),
@@ -1345,7 +1250,7 @@ func (h *Herdr) readAgent(ctx context.Context, handle AgentHandle, source harnes
 	switch source {
 	case harness.ReadRecentUnwrapped:
 		res, err = read(source)
-		if herdrCodeOf(err) == HerdrAgentNotIdle {
+		if herdrCodeOf(err) == runtime.HerdrAgentNotIdle {
 			res, err = read(harness.ReadVisible)
 		}
 	case harness.ReadVisible:
@@ -1363,7 +1268,7 @@ func (h *Herdr) readAgent(ctx context.Context, handle AgentHandle, source harnes
 // ListAgents implements Adapter. The inventory is `agent list` of the named
 // session. Occupancy is answered by name and recorded pane id, never by
 // which tab is focused.
-func (h *Herdr) ListAgents(ctx context.Context, session SessionHandle) ([]ObservedAgent, error) {
+func (h *Herdr) ListAgents(ctx context.Context, session runtime.SessionHandle) ([]runtime.ObservedAgent, error) {
 	if strings.TrimSpace(session.Name) == "" {
 		return nil, observability.NewError(observability.CodeUsage, "agent list requires a named session")
 	}
@@ -1375,13 +1280,13 @@ func (h *Herdr) ListAgents(ctx context.Context, session SessionHandle) ([]Observ
 	if err != nil {
 		return nil, observability.WrapError(observability.CodeUnknown, "herdr agent list", err)
 	}
-	out := make([]ObservedAgent, 0, len(infos))
+	out := make([]runtime.ObservedAgent, 0, len(infos))
 	for _, info := range infos {
-		handle := AgentHandle{
+		handle := runtime.AgentHandle{
 			Session: session,
 			Name:    info.Name,
 			Kind:    harness.Kind(info.Kind),
-			Tab: TabHandle{
+			Tab: runtime.TabHandle{
 				Session:     session,
 				WorkspaceID: info.WorkspaceID,
 				TabID:       info.TabID,
@@ -1397,9 +1302,9 @@ func (h *Herdr) ListAgents(ctx context.Context, session SessionHandle) ([]Observ
 
 // WaitAgent implements Adapter. A wait that matches blocked is success
 // (live: `agent wait mate-g4-01 --until blocked --timeout 2000` exit 0).
-func (h *Herdr) WaitAgent(ctx context.Context, handle AgentHandle, until WaitCondition) (ObservedAgent, error) {
-	if err := CheckWaitTimeout(until.Timeout); err != nil {
-		return ObservedAgent{}, err
+func (h *Herdr) WaitAgent(ctx context.Context, handle runtime.AgentHandle, until runtime.WaitCondition) (runtime.ObservedAgent, error) {
+	if err := runtime.CheckWaitTimeout(until.Timeout); err != nil {
+		return runtime.ObservedAgent{}, err
 	}
 	args := []string{"agent", "wait", handle.Name}
 	for _, s := range until.Until {
@@ -1408,11 +1313,11 @@ func (h *Herdr) WaitAgent(ctx context.Context, handle AgentHandle, until WaitCon
 	args = append(args, "--timeout", fmt.Sprintf("%d", until.Timeout.Milliseconds()))
 	res, err := h.run(ctx, handle.Session.Name, args)
 	if err != nil {
-		return ObservedAgent{}, err
+		return runtime.ObservedAgent{}, err
 	}
 	info, err := parseAgentInfo(res.Stdout)
 	if err != nil {
-		return ObservedAgent{}, observability.WrapError(observability.CodeUnknown, "herdr agent wait", err)
+		return runtime.ObservedAgent{}, observability.WrapError(observability.CodeUnknown, "herdr agent wait", err)
 	}
 	obs := h.observed(handle, info)
 	if !until.Matches(obs.Status) {
@@ -1426,7 +1331,7 @@ func (h *Herdr) WaitAgent(ctx context.Context, handle AgentHandle, until WaitCon
 // PromptAgent implements Adapter. agent_blocked here means the prompt was
 // refused (requires interactive input). That is distinct from WaitAgent
 // matching blocked, which is success.
-func (h *Herdr) PromptAgent(ctx context.Context, handle AgentHandle, text string) error {
+func (h *Herdr) PromptAgent(ctx context.Context, handle runtime.AgentHandle, text string) error {
 	_, err := h.run(ctx, handle.Session.Name, []string{"agent", "prompt", handle.Name, text})
 	return err
 }
@@ -1443,11 +1348,11 @@ func (h *Herdr) PromptAgent(ctx context.Context, handle AgentHandle, text string
 // agent started under this exact name inside that request would receive the
 // press, which mate's per-launch name allocation makes a collision, not a
 // reuse.
-func (h *Herdr) SendKeys(ctx context.Context, handle AgentHandle, keys []string) error {
+func (h *Herdr) SendKeys(ctx context.Context, handle runtime.AgentHandle, keys []string) error {
 	if strings.TrimSpace(handle.Session.Name) == "" || strings.TrimSpace(handle.Name) == "" {
 		return observability.NewError(observability.CodeUsage, "send-keys requires a named session and agent")
 	}
-	if err := checkSendKeys(keys); err != nil {
+	if err := runtime.CheckSendKeys(keys); err != nil {
 		return err
 	}
 	argv := append([]string{"agent", "send-keys", handle.Name}, keys...)
@@ -1468,11 +1373,11 @@ func (h *Herdr) SendKeys(ctx context.Context, handle AgentHandle, keys []string)
 // live one is refused instead of typed into. The residual race is the window
 // between the resolve and the send, which is Herdr's own and no narrower
 // than what `herdr pane send-text` offers.
-func (h *Herdr) SendText(ctx context.Context, handle AgentHandle, text string) error {
+func (h *Herdr) SendText(ctx context.Context, handle runtime.AgentHandle, text string) error {
 	if strings.TrimSpace(handle.Session.Name) == "" || strings.TrimSpace(handle.Name) == "" {
 		return observability.NewError(observability.CodeUsage, "send-text requires a named session and agent")
 	}
-	if err := ValidateSendText(text); err != nil {
+	if err := runtime.ValidateSendText(text); err != nil {
 		return err
 	}
 	obs, err := h.InspectAgent(ctx, handle)
@@ -1492,46 +1397,6 @@ func (h *Herdr) SendText(ctx context.Context, handle AgentHandle, text string) e
 	return err
 }
 
-// ValidateSendText refuses text Herdr or the harness would turn into something
-// other than one typed line: nothing at all, a newline (which submits, and
-// submitting is the caller's separate, verified step), or any other control
-// character except the 0x1f from-app marker mate prefixes deliberately.
-func ValidateSendText(text string) error {
-	if text == "" {
-		return observability.NewError(observability.CodeUsage, "send-text requires text")
-	}
-	for _, r := range text {
-		if r == 0x1f {
-			continue
-		}
-		if r == '\n' || r == '\r' {
-			return observability.NewError(observability.CodeUsage,
-				"send-text refuses a newline: submitting is a separate, verified step")
-		}
-		if r < 0x20 || r == 0x7f {
-			return observability.NewError(observability.CodeUsage,
-				fmt.Sprintf("send-text refuses control character %q", r))
-		}
-	}
-	return nil
-}
-
-// checkSendKeys refuses a key list Herdr would misread: nothing, an empty
-// token, a token carrying whitespace (two presses in one argument), or a token
-// that would be parsed as an option. Only the caller's measured key names
-// belong here.
-func checkSendKeys(keys []string) error {
-	if len(keys) == 0 {
-		return observability.NewError(observability.CodeUsage, "send-keys requires at least one key")
-	}
-	for _, k := range keys {
-		if k == "" || strings.ContainsAny(k, " \t\r\n") || strings.HasPrefix(k, "-") {
-			return observability.NewError(observability.CodeUsage, fmt.Sprintf("send-keys refuses key %q: one bare key name per press", k))
-		}
-	}
-	return nil
-}
-
 // AttachAgent implements Adapter. Interactive attach is a TTY handoff, not a
 // captured ProcessRunner.Run.
 //
@@ -1548,27 +1413,27 @@ func checkSendKeys(keys []string) error {
 // (ADR 0003, re-verified live for G4-07). Ghostty-native TTY restore after the
 // handoff remains unproven (AssumptionGhosttyTTYRestore); nothing here claims
 // it.
-func (h *Herdr) AttachAgent(ctx context.Context, handle AgentHandle, target AttachTarget) (AttachedTo, error) {
+func (h *Herdr) AttachAgent(ctx context.Context, handle runtime.AgentHandle, target runtime.AttachTarget) (runtime.AttachedTo, error) {
 	// The terminal is the one precondition that cannot be satisfied by
 	// anything Herdr says, so it is checked before any probe: a caller with
 	// no terminal cannot use the answers.
 	if h.AttachPreflight != nil {
 		if err := h.AttachPreflight(ctx); err != nil {
-			return AttachedTo{}, err
+			return runtime.AttachedTo{}, err
 		}
 	}
 	attached, argv, err := h.attachArgv(ctx, handle, target)
 	if err != nil {
-		return AttachedTo{}, err
+		return runtime.AttachedTo{}, err
 	}
 	if h.Attach == nil {
-		return AttachedTo{}, observability.NewError(
+		return runtime.AttachedTo{}, observability.NewError(
 			observability.CodeUnknown,
 			"attach is a TTY handoff; this adapter was built without one (see runtime.TTYHandoff)",
 		).WithDetails(map[string]any{"argv": argv})
 	}
 	if err := h.Attach(ctx, argv); err != nil {
-		return AttachedTo{}, err
+		return runtime.AttachedTo{}, err
 	}
 	return attached, nil
 }
@@ -1577,29 +1442,29 @@ func (h *Herdr) AttachAgent(ctx context.Context, handle AgentHandle, target Atta
 // will connect to. It runs before the terminal is handed over, so a target
 // that cannot be attached is a JSON error rather than a half-entered alt
 // screen.
-func (h *Herdr) attachArgv(ctx context.Context, handle AgentHandle, target AttachTarget) (AttachedTo, []string, error) {
+func (h *Herdr) attachArgv(ctx context.Context, handle runtime.AgentHandle, target runtime.AttachTarget) (runtime.AttachedTo, []string, error) {
 	session := handle.Session.Name
 	switch target.Mode {
-	case AttachTerminal:
+	case runtime.AttachTerminal:
 		pane, err := h.attachTerminalPane(ctx, handle)
 		if err != nil {
-			return AttachedTo{}, nil, err
+			return runtime.AttachedTo{}, nil, err
 		}
-		return AttachedTo{Mode: AttachTerminal, PaneID: pane.PaneID, TerminalID: pane.TerminalID},
+		return runtime.AttachedTo{Mode: runtime.AttachTerminal, PaneID: pane.PaneID, TerminalID: pane.TerminalID},
 			WithSession(session, []string{"terminal", "attach", pane.TerminalID}), nil
-	case AttachAgent:
+	case runtime.AttachAgent:
 		if strings.TrimSpace(handle.Name) == "" {
-			return AttachedTo{}, nil, observability.NewError(observability.CodeUsage, "agent attach requires an agent name")
+			return runtime.AttachedTo{}, nil, observability.NewError(observability.CodeUsage, "agent attach requires an agent name")
 		}
 		// No PaneID: an explicit agent attach skips the probe by the caller's
 		// choice, so nothing here observed which pane the agent is in. A
 		// recorded one would be reported as if it had been.
-		return AttachedTo{Mode: AttachAgent, AgentName: handle.Name},
+		return runtime.AttachedTo{Mode: runtime.AttachAgent, AgentName: handle.Name},
 			WithSession(session, []string{"agent", "attach", handle.Name}), nil
-	case AttachDetect:
+	case runtime.AttachDetect:
 		return h.detectAttachArgv(ctx, handle)
 	default:
-		return AttachedTo{}, nil, observability.NewError(observability.CodeUsage,
+		return runtime.AttachedTo{}, nil, observability.NewError(observability.CodeUsage,
 			fmt.Sprintf("unknown attach mode %q", string(target.Mode)))
 	}
 }
@@ -1615,32 +1480,32 @@ func (h *Herdr) attachArgv(ctx context.Context, handle AgentHandle, target Attac
 // agent's session under the dead name. So the pane is checked for an
 // occupant, and only a genuinely agentless pane is attached as a terminal
 // (PR #9 counter-review, B1).
-func (h *Herdr) detectAttachArgv(ctx context.Context, handle AgentHandle) (AttachedTo, []string, error) {
+func (h *Herdr) detectAttachArgv(ctx context.Context, handle runtime.AgentHandle) (runtime.AttachedTo, []string, error) {
 	session := handle.Session.Name
 	if strings.TrimSpace(handle.Name) != "" {
 		obs, err := h.InspectAgent(ctx, handle)
 		if err == nil {
-			return AttachedTo{
-					Mode:      AttachAgent,
+			return runtime.AttachedTo{
+					Mode:      runtime.AttachAgent,
 					AgentName: obs.Handle.Name,
 					PaneID:    obs.Handle.Tab.PaneID,
 				},
 				WithSession(session, []string{"agent", "attach", obs.Handle.Name}), nil
 		}
-		if herdrCodeOf(err) != HerdrAgentNotFound {
-			return AttachedTo{}, nil, err
+		if herdrCodeOf(err) != runtime.HerdrAgentNotFound {
+			return runtime.AttachedTo{}, nil, err
 		}
 		if strings.TrimSpace(handle.Tab.PaneID) == "" && strings.TrimSpace(handle.Tab.TerminalID) == "" {
 			// No agent and no pane: there is nothing left to attach to, and
 			// Herdr's own answer is the honest one to report.
-			return AttachedTo{}, nil, err
+			return runtime.AttachedTo{}, nil, err
 		}
 	}
 	pane, err := h.attachTerminalPane(ctx, handle)
 	if err != nil {
-		return AttachedTo{}, nil, err
+		return runtime.AttachedTo{}, nil, err
 	}
-	return AttachedTo{Mode: AttachTerminal, PaneID: pane.PaneID, TerminalID: pane.TerminalID},
+	return runtime.AttachedTo{Mode: runtime.AttachTerminal, PaneID: pane.PaneID, TerminalID: pane.TerminalID},
 		WithSession(session, []string{"terminal", "attach", pane.TerminalID}), nil
 }
 
@@ -1652,7 +1517,7 @@ func (h *Herdr) detectAttachArgv(ctx context.Context, handle AgentHandle) (Attac
 // been given to another agent must not be streamed as if it were a bare
 // shell: `pane get` reports `agent` and a non-unknown `agent_status` exactly
 // then, which is the signal this refuses on.
-func (h *Herdr) attachTerminalPane(ctx context.Context, handle AgentHandle) (paneInfo, error) {
+func (h *Herdr) attachTerminalPane(ctx context.Context, handle runtime.AgentHandle) (paneInfo, error) {
 	pane := strings.TrimSpace(handle.Tab.PaneID)
 	if pane == "" {
 		if id := strings.TrimSpace(handle.Tab.TerminalID); id != "" {
@@ -1690,14 +1555,14 @@ func paneHasAgent(info paneInfo) bool {
 		return true
 	}
 	status := strings.TrimSpace(info.AgentStatus)
-	return status != "" && AgentStatus(status) != AgentUnknown
+	return status != "" && runtime.AgentStatus(status) != runtime.AgentUnknown
 }
 
 // paneOccupiedError names the agent that actually holds the pane, so the
 // refusal tells the operator what to attach to instead. The name is a best
 // effort: if `agent list` cannot supply it the refusal still stands, because
 // an unidentified occupant is still not the agent that was asked for.
-func (h *Herdr) paneOccupiedError(ctx context.Context, handle AgentHandle, info paneInfo) error {
+func (h *Herdr) paneOccupiedError(ctx context.Context, handle runtime.AgentHandle, info paneInfo) error {
 	occupant := h.agentNameInPane(ctx, handle.Session.Name, info.PaneID)
 	details := map[string]any{
 		"pane":            info.PaneID,
@@ -1740,23 +1605,23 @@ func (h *Herdr) agentNameInPane(ctx context.Context, session, pane string) strin
 // (Claude's `/exit`, G1), after `agent send-keys` of the keys it declared to
 // clear its composer first (pi's ctrl+u). Force is pane close. When to stop
 // (stop-before-switch) is G4-06.
-func (h *Herdr) StopAgent(ctx context.Context, handle AgentHandle, stop Stop) error {
+func (h *Herdr) StopAgent(ctx context.Context, handle runtime.AgentHandle, stop runtime.Stop) error {
 	switch stop.Mode() {
-	case StopModeGraceful:
-		clear, exit, err := stop.exitPrompt()
+	case runtime.StopModeGraceful:
+		clear, exit, err := stop.ExitPrompt()
 		if err != nil {
 			return err
 		}
 		if len(clear) > 0 {
-			if err := h.SendKeys(ctx, handle, clear); err != nil && herdrCodeOf(err) != HerdrAgentNotFound {
+			if err := h.SendKeys(ctx, handle, clear); err != nil && herdrCodeOf(err) != runtime.HerdrAgentNotFound {
 				return err
 			}
 		}
-		if err := h.PromptAgent(ctx, handle, exit); err != nil && herdrCodeOf(err) != HerdrAgentNotFound {
+		if err := h.PromptAgent(ctx, handle, exit); err != nil && herdrCodeOf(err) != runtime.HerdrAgentNotFound {
 			return err
 		}
 		_, err = h.InspectAgent(ctx, handle)
-		if err != nil && herdrCodeOf(err) == HerdrAgentNotFound {
+		if err != nil && herdrCodeOf(err) == runtime.HerdrAgentNotFound {
 			if h.Names != nil {
 				h.Names.Release(handle.Session.Name, handle.Name)
 			}
@@ -1766,7 +1631,7 @@ func (h *Herdr) StopAgent(ctx context.Context, handle AgentHandle, stop Stop) er
 			return err
 		}
 		return observability.NewError(observability.CodeUnknown, fmt.Sprintf("graceful %s did not end the agent", exit))
-	case StopModeForce:
+	case runtime.StopModeForce:
 		if strings.TrimSpace(handle.Tab.PaneID) == "" {
 			return observability.NewError(observability.CodeUsage, "force stop requires a pane id")
 		}
@@ -1783,7 +1648,7 @@ func (h *Herdr) StopAgent(ctx context.Context, handle AgentHandle, stop Stop) er
 }
 
 // RemoveTab implements Adapter.
-func (h *Herdr) RemoveTab(ctx context.Context, handle TabHandle) error {
+func (h *Herdr) RemoveTab(ctx context.Context, handle runtime.TabHandle) error {
 	if strings.TrimSpace(handle.TabID) == "" {
 		return observability.NewError(observability.CodeUsage, "tab close requires a tab id")
 	}
@@ -1791,7 +1656,7 @@ func (h *Herdr) RemoveTab(ctx context.Context, handle TabHandle) error {
 	return err
 }
 
-func (h *Herdr) observed(handle AgentHandle, info agentInfo) ObservedAgent {
+func (h *Herdr) observed(handle runtime.AgentHandle, info agentInfo) runtime.ObservedAgent {
 	live := true
 	if handle.Tab.PaneID != "" && info.PaneID != "" && handle.Tab.PaneID != info.PaneID {
 		live = false
@@ -1815,7 +1680,7 @@ func (h *Herdr) observed(handle AgentHandle, info agentInfo) ObservedAgent {
 	if out.Kind == "" && info.Kind != "" {
 		out.Kind = harness.Kind(info.Kind)
 	}
-	return ObservedAgent{
+	return runtime.ObservedAgent{
 		Handle:        out,
 		SessionRef:    info.SessionRef,
 		Cwd:           info.Cwd,
@@ -1824,4 +1689,25 @@ func (h *Herdr) observed(handle AgentHandle, info agentInfo) ObservedAgent {
 		ObservedAt:    h.now(),
 		LiveHandleOK:  live,
 	}
+}
+
+// exportAssignments renders vars as the words of one POSIX `export` typed
+// into a pane's shell: KEY='value', with a single quote in the value closed,
+// escaped and reopened, so a path with spaces or quotes arrives whole.
+// AllowlistedEnv has already refused keys and values that could not be one
+// assignment.
+func exportAssignments(vars []runtime.EnvVar) []string {
+	out := make([]string, 0, len(vars))
+	for _, v := range vars {
+		out = append(out, v.Key+"='"+strings.ReplaceAll(v.Value, "'", `'\''`)+"'")
+	}
+	return out
+}
+
+func envFlags(vars []runtime.EnvVar) []string {
+	out := make([]string, 0, len(vars)*2)
+	for _, v := range vars {
+		out = append(out, "--env", v.Key+"="+v.Value)
+	}
+	return out
 }

@@ -23,6 +23,7 @@ import (
 // layout, its repo `shop` beside `.mate/` and one closed crew with its
 // worktree still on disk, is migrated; then a real Mate starts on it and a
 // real Codex crew is spawned in the moved repo and answers "ok".
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMigrateThenSpawn(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

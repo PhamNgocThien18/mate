@@ -23,6 +23,7 @@ var memoryDay = time.Date(2026, 9, 24, 10, 0, 0, 0, time.Local)
 // preference, an aging lesson and a perishable lesson, written into the
 // 9-byte memory.md every Mate had before task 36.
 func TestRememberThreeCallsBuildTheFile(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	if err := os.MkdirAll(w.MateDir("shop"), 0o755); err != nil {
 		t.Fatal(err)
@@ -56,7 +57,7 @@ func TestRememberThreeCallsBuildTheFile(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("memory.md:\n%s\nwant:\n%s", got, want)
 	}
-	rep, err := memoryCheck(context.Background(), w, gitx.New(), "shop", memoryDay)
+	rep, err := memoryCheck(context.Background(), w, gitx.New(), "shop", memoryDay, staleAnchorCommits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,11 +69,12 @@ func TestRememberThreeCallsBuildTheFile(t *testing.T) {
 func rememberCLI(t *testing.T, w *store.Workspace, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errw bytes.Buffer
-	code := mainRun(append([]string{"remember", "--workspace", w.Root()}, args...), &out, &errw)
+	code := testCLI().mainRun(append([]string{"remember", "--workspace", w.Root()}, args...), &out, &errw)
 	return code, out.String(), errw.String()
 }
 
 func TestRememberCLIWritesAndPrintsTheEntry(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	code, out, errw := rememberCLI(t, w, "shop", "--lesson", "--source", "crews/k1/report.md §Durable facts", "Hugo builds into public/.")
 	if code != 0 {
@@ -90,6 +92,7 @@ func TestRememberCLIWritesAndPrintsTheEntry(t *testing.T) {
 }
 
 func TestRememberCLIRefusals(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	cases := []struct {
 		name string
@@ -123,6 +126,7 @@ func TestRememberCLIRefusals(t *testing.T) {
 }
 
 func TestRememberSaysWhenOverBudget(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	if err := os.WriteFile(w.WorkspaceDoc(), bytes.Repeat([]byte("x"), 3*memory.BudgetTokens), 0o644); err != nil {
 		t.Fatal(err)
@@ -140,7 +144,7 @@ func TestRememberSaysWhenOverBudget(t *testing.T) {
 func memoryCheckCLI(t *testing.T, w *store.Workspace) (int, string, string) {
 	t.Helper()
 	var out, errw bytes.Buffer
-	code := mainRun([]string{"memory", "check", "shop", "--workspace", w.Root()}, &out, &errw)
+	code := testCLI().mainRun([]string{"memory", "check", "shop", "--workspace", w.Root()}, &out, &errw)
 	return code, out.String(), errw.String()
 }
 
@@ -158,6 +162,7 @@ func writeMemoryFiles(t *testing.T, w *store.Workspace, mem, project string) {
 }
 
 func TestMemoryCheckCLIPassesAndPrintsTheBudget(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	head := strings.TrimSpace(gitOut(t, w.RepoDir("shop/shop"), "rev-parse", "--short", "main"))
 	today := time.Now().Format(memory.DateLayout)
@@ -186,6 +191,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // TestMemoryCheckCLIReportsEveryRule: one file breaking every rule, and the
 // CLI prints one line per problem with file and line, and exits 1.
 func TestMemoryCheckCLIReportsEveryRule(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	now := time.Now()
 	old := now.AddDate(0, 0, -30).Format(memory.DateLayout)
@@ -240,6 +246,7 @@ func TestMemoryCheckCLIReportsEveryRule(t *testing.T) {
 // TestMemoryCheckWarnsOnAnchorsOlderThanHead: an old anchor is a warning,
 // never a problem; the head's own anchor is silent.
 func TestMemoryCheckWarnsOnAnchorsOlderThanHead(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	repo := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
@@ -289,9 +296,7 @@ func TestMemoryCheckWarnsOnAnchorsOlderThanHead(t *testing.T) {
 // staleAnchorCommits or more commits behind its branch is no longer a hint:
 // the warning asks for the fact to be re-read or moved into the repo.
 func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
-	old := staleAnchorCommits
-	staleAnchorCommits = 3
-	t.Cleanup(func() { staleAnchorCommits = old })
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	repo := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "--short", "main"))
@@ -308,10 +313,17 @@ func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
 		"",
 	}, "\n")
 	writeMemoryFiles(t, w, memory.Header, doc)
-	code, out, errw := memoryCheckCLI(t, w)
-	if code != 0 {
-		t.Fatalf("exit %d\n%s%s", code, out, errw)
+	// The threshold is 3 here, not staleAnchorCommits, so four newer
+	// commits are far.
+	rep, err := memoryCheck(context.Background(), w, gitx.New(), "shop", time.Now(), 3)
+	if err != nil {
+		t.Fatal(err)
 	}
+	var stdout, stderr bytes.Buffer
+	if err := writeMemoryCheck(&stdout, &stderr, "shop", rep); err != nil {
+		t.Fatalf("%v\n%s%s", err, stdout.String(), stderr.String())
+	}
+	errw := stderr.String()
 	want := []string{
 		"warning: PROJECT.md line 3 is anchored at shop:main@" + first + ", and shop:main has 4 newer commit(s); it is far behind: re-read it from a fresh report or hand-back, or have a Crew write the fact into the repo's own docs and keep only the path here (skill stow)",
 		"warning: PROJECT.md line 4 is anchored at shop:main@" + head + ", and shop:main has 1 newer commit(s); treat it as a hint until a report or hand-back confirms it",
@@ -328,6 +340,7 @@ func TestMemoryCheckAsksToReReadAnAnchorFarBehind(t *testing.T) {
 // each anchor names its repo and is compared with that repo's head only;
 // a bare anchor no longer says which repo it is about and is a problem.
 func TestMemoryCheckTwoReposComparesEachAnchorWithItsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w := twoRepoWorkspace(t)
 	shop := w.RepoDir("shop/shop")
 	first := strings.TrimSpace(gitOut(t, shop, "rev-parse", "--short", "main"))
@@ -368,6 +381,7 @@ func TestMemoryCheckTwoReposComparesEachAnchorWithItsOwnRepo(t *testing.T) {
 // TestMemoryCheckNoRepo: a project without a repo can still be checked;
 // every repo-state line is a problem, and nothing is compared with git.
 func TestMemoryCheckNoRepo(t *testing.T) {
+	t.Parallel()
 	w := noRepoWorkspace(t)
 	writeMemoryFiles(t, w, memory.Header, memory.ProjectTemplate("shop"))
 	code, out, errw := memoryCheckCLI(t, w)
@@ -382,6 +396,7 @@ func TestMemoryCheckNoRepo(t *testing.T) {
 }
 
 func TestMemoryCheckAbsentFilesAreAbsent(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	_ = os.Remove(w.ProjectDoc("shop"))
 	_ = os.Remove(w.WorkspaceDoc())
@@ -395,9 +410,10 @@ func TestMemoryCheckAbsentFilesAreAbsent(t *testing.T) {
 }
 
 func TestMemoryUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	for _, args := range [][]string{{"memory"}, {"memory", "bogus"}, {"memory", "check"}, {"memory", "check", "a", "b"}} {
-		if code := mainRun(args, &out, &errw); code != 2 {
+		if code := testCLI().mainRun(args, &out, &errw); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
 	}
@@ -406,6 +422,7 @@ func TestMemoryUsage(t *testing.T) {
 // The two memory nudges (B9), in both caller modes.
 
 func TestCrewStopNudgeOnlyForTheMate(t *testing.T) {
+	t.Parallel()
 	res := spawn.StopResult{Agent: "crew-k3", TabClosed: true, Branch: "mate/k3", Teardown: spawn.TeardownClean, State: "finished"}
 	outcome := res.CrewLine("shop", "k3") + "\n"
 
@@ -429,18 +446,21 @@ func TestCrewStopNudgeOnlyForTheMate(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets MATE_CALLER in the process environment, the one
+// newCLI reads.
 func TestCrewStopReadsTheCallerFromTheEnvironment(t *testing.T) {
 	t.Setenv("MATE_CALLER", "mate")
-	if spawn.CallerFromEnv() != spawn.CallerMate {
+	if newCLI().caller() != spawn.CallerMate {
 		t.Fatal("MATE_CALLER=mate is not the Mate")
 	}
 	t.Setenv("MATE_CALLER", "")
-	if spawn.CallerFromEnv() != spawn.CallerUser {
+	if newCLI().caller() != spawn.CallerUser {
 		t.Fatal("no MATE_CALLER is not the user")
 	}
 }
 
 func TestSendCorrectionNudgeOnlyForTheMateAndABriefedCrew(t *testing.T) {
+	t.Parallel()
 	w, _ := autoTurnFixture(t)
 	var mate, user, unbriefed bytes.Buffer
 	printSendCorrectionNudge(&mate, w, "shop", "k3", store.SourceMate)

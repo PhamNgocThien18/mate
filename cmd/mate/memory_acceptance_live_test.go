@@ -27,6 +27,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -71,6 +72,7 @@ var memoryLessonRE = regexp.MustCompile(`(?i)line[ -]?numbers?|path:line|file:li
 // outbox sender started as cmdConsole starts them, manual mode. A failure is
 // a prompting bug - the manual, the stow skill or a nudge - never a reason
 // to weaken an assertion.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMemorySurvivesRestart(t *testing.T) {
 	for _, v := range []struct {
 		name  string
@@ -102,7 +104,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	}
 	repo := filepath.Join(w.ProjectHome(memoryProject), memoryProject)
 	writeRepo(t, repo, memorySite)
-	if err := run([]string{"project", "add", memoryProject, repo, "--workspace", root}, os.Stdout, os.Stderr); err != nil {
+	if err := newCLI().run([]string{"project", "add", memoryProject, repo, "--workspace", root}, os.Stdout, os.Stderr); err != nil {
 		t.Fatalf("project add: %v", err)
 	}
 	if w, err = store.Open(root); err != nil {
@@ -111,7 +113,7 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	mainBefore := strings.TrimSpace(gitOut(t, repo, "rev-parse", "main"))
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")
@@ -315,12 +317,12 @@ func memoryAcceptance(t *testing.T, kind harness.Kind, fresh bool) {
 	// ---------- 4. the files ----------
 
 	var check, checkErr bytes.Buffer
-	if err := run([]string{"memory", "check", memoryProject, "--workspace", root}, &check, &checkErr); err != nil {
+	if err := newCLI().run([]string{"memory", "check", memoryProject, "--workspace", root}, &check, &checkErr); err != nil {
 		t.Fatalf("memory check failed: %v\n%s%s", err, check.String(), checkErr.String())
 	}
 	t.Logf("EVIDENCE memory check: %s%s", check.String(), checkErr.String())
 	var recalled bytes.Buffer
-	if err := run([]string{"recall", memoryProject, "--workspace", root}, &recalled, os.Stderr); err != nil {
+	if err := newCLI().run([]string{"recall", memoryProject, "--workspace", root}, &recalled, os.Stderr); err != nil {
 		t.Fatalf("recall: %v", err)
 	}
 	digest := recalled.String()

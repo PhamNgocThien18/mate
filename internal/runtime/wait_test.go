@@ -71,30 +71,6 @@ func TestClassifyObservationDistinguishesReadyBlockedAndFailure(t *testing.T) {
 	}
 }
 
-func TestClassifyObservationIgnoresFocus(t *testing.T) {
-	t.Parallel()
-	// focused is UI state (ADR 0007). parseAgentInfo does not copy it onto
-	// ObservedAgent; Classify must not grow a focus-based branch.
-	focusedJSON := []byte(`{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"blocked","focused":true,"launch_pending":true,"name":"mate-g4-01","pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"},"type":"agent_info"}}`)
-	unfocusedJSON := []byte(`{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"blocked","focused":false,"launch_pending":true,"name":"mate-g4-01","pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"},"type":"agent_info"}}`)
-	a, err := parseAgentInfo(focusedJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := parseAgentInfo(unfocusedJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ra := ClassifyObservation(ObservedAgent{Status: a.Status, LaunchPending: a.LaunchPending, LiveHandleOK: true})
-	rb := ClassifyObservation(ObservedAgent{Status: b.Status, LaunchPending: b.LaunchPending, LiveHandleOK: true})
-	if ra.Kind != ReadinessBlocked || rb.Kind != ReadinessBlocked {
-		t.Fatalf("focus must not change readiness: focused=%+v unfocused=%+v", ra, rb)
-	}
-	if a.Status != b.Status {
-		t.Fatalf("parser used focused to invent a status: %#v vs %#v", a, b)
-	}
-}
-
 func TestWaitUntilBlockedDoesNotMatchIdle(t *testing.T) {
 	t.Parallel()
 	w := WaitCondition{Until: []AgentStatus{AgentBlocked}}

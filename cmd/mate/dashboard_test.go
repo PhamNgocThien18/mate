@@ -58,6 +58,7 @@ func dashboardGet(t *testing.T, ts *httptest.Server, path string, into any) {
 // written here: a test that agreed with a constant would still pass if both
 // surfaces drifted together away from `v_task_ledger`.
 func TestDashboardReportsTheSameNumbersAsUsage(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	ts := dashboardServer(t, w)
 
@@ -148,6 +149,7 @@ func TestDashboardReportsTheSameNumbersAsUsage(t *testing.T) {
 // `mate events <project>` read the same story through the same function,
 // so they must return the same events in the same order.
 func TestDashboardEventsMatchTheEventsCommand(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 	ts := dashboardServer(t, w)
@@ -194,9 +196,10 @@ func TestDashboardEventsMatchTheEventsCommand(t *testing.T) {
 // TestDashboardCommandRefusesARemoteBind: the flag is the whole protection,
 // so the command must refuse before it opens a socket.
 func TestDashboardCommandRefusesARemoteBind(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"dashboard", w.Root(), "--addr", "0.0.0.0:0"}, &stdout, &stderr)
+	err := testCLI().run([]string{"dashboard", w.Root(), "--addr", "0.0.0.0:0"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("mate dashboard bound every interface without --allow-remote")
 	}
@@ -211,8 +214,9 @@ func TestDashboardCommandRefusesARemoteBind(t *testing.T) {
 // TestDashboardCommandRejectsTwoWorkspaces keeps the argument and the flag
 // from silently disagreeing.
 func TestDashboardCommandRejectsTwoWorkspaces(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"dashboard", "/a", "--workspace", "/b"}, &stdout, &stderr)
+	err := testCLI().run([]string{"dashboard", "/a", "--workspace", "/b"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("mate dashboard accepted two workspaces")
 	}
@@ -225,6 +229,7 @@ func TestDashboardCommandRejectsTwoWorkspaces(t *testing.T) {
 // TestDashboardDiffIsTheCLIsOwnText: one function behind both, so a reader
 // comparing the page with the terminal sees the same bytes.
 func TestDashboardDiffIsTheCLIsOwnText(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	ts := dashboardServer(t, w)
 

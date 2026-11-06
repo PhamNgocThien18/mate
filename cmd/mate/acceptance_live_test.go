@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -46,6 +47,7 @@ const acceptanceLine = "Built with mate"
 //
 // A failure here is a manual bug, not a test bug: the fix is to make the
 // rendered AGENTS.md clearer, never to make this test accept less.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAcceptanceMateRunsATask(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -76,7 +78,7 @@ func TestLiveAcceptanceMateRunsATask(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

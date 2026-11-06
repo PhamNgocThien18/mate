@@ -14,6 +14,7 @@ import (
 )
 
 func TestBriefRevisionSavesBeforeNotification(t *testing.T) {
+	t.Parallel()
 	for _, captainWords := range []string{"", "Only show reachable states."} {
 		t.Run(captainWords, func(t *testing.T) {
 			w := liveCrewWorkspace(t, "shop")
@@ -59,6 +60,7 @@ func TestBriefRevisionSavesBeforeNotification(t *testing.T) {
 }
 
 func TestBriefRevisionRefusalAndRecovery(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"stopped", "malformed", "stale", "busy"} {
 		t.Run(mode, func(t *testing.T) {
 			w := liveCrewWorkspace(t, "shop")
@@ -103,6 +105,7 @@ func TestBriefRevisionRefusalAndRecovery(t *testing.T) {
 }
 
 func TestBriefRevisionRestingCrewReadsRevisedContractInFreshSession(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -123,6 +126,7 @@ func TestBriefRevisionRestingCrewReadsRevisedContractInFreshSession(t *testing.T
 }
 
 func TestBriefRevisionCLIRejectsEmptyFile(t *testing.T) {
+	t.Parallel()
 	file := writeTemp(t, "\n")
 	for _, args := range [][]string{
 		{"brief", "revise", "shop", "k3", file},

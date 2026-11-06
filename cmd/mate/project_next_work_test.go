@@ -11,6 +11,7 @@ import (
 // `mate project next-work` prints the setting, picking when project.yaml
 // says nothing, records pick or ask, and refuses anything else (CON-120).
 func TestProjectNextWorkRecordsTheCaptainsChoice(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	code, out, _ := runMate(t, "project", "next-work", "shop", "--workspace", w.Root())
 	if code != 0 || !strings.HasPrefix(out, "next work: pick - ") {
@@ -35,6 +36,7 @@ func TestProjectNextWorkRecordsTheCaptainsChoice(t *testing.T) {
 // The Mate's merge ends with the next-work setting, because a landed task
 // is when it decides what runs next; the captain's merge prints one line.
 func TestCmdMergeTellsTheMateWhatComesNext(t *testing.T) {
+	t.Parallel()
 	w, root := mergeCLIWorkspace(t)
 	cfg, err := w.LoadProject("shop")
 	if err != nil {
@@ -44,10 +46,8 @@ func TestCmdMergeTellsTheMateWhatComesNext(t *testing.T) {
 	if err := w.SaveProject("shop", cfg); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MATE_CALLER", "mate")
-
 	var out, errw bytes.Buffer
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().withEnv("MATE_CALLER", "mate").cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("merge: %v\nstderr: %s", err, errw.String())
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")

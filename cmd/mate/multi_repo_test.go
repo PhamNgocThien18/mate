@@ -74,6 +74,7 @@ func cliHead(t *testing.T, repo, rev string) string {
 }
 
 func TestDashboardBranchExistsAsksTheCrewsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w, _ := twoRepoCLIWorkspace(t)
 	deps := dashboardDeps(w)
 	for _, c := range []struct {
@@ -93,13 +94,13 @@ func TestDashboardBranchExistsAsksTheCrewsOwnRepo(t *testing.T) {
 }
 
 func TestMergeAndStopActOnEachCrewsOwnRepo(t *testing.T) {
+	t.Parallel()
 	w, root := twoRepoCLIWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	apiTip := cliHead(t, cliRepo(w, "api"), "mate/k3")
 	webMain := cliHead(t, cliRepo(w, "web"), "main")
 
 	var out, errw bytes.Buffer
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("merge k3: %v\nstderr: %s", err, errw.String())
 	}
 	if got := cliHead(t, cliRepo(w, "api"), "main"); got != apiTip {
@@ -112,10 +113,10 @@ func TestMergeAndStopActOnEachCrewsOwnRepo(t *testing.T) {
 	// k4's commit is ahead of web's main: a plain stop refuses, and a
 	// --discard stop throws the branch away in web, not in api.
 	out.Reset()
-	if err := cmdCrewStop([]string{"--workspace", root, "shop", "k4"}, &out, &errw); !errors.Is(err, spawn.ErrUnlandedWork) {
+	if err := testCLI().cmdCrewStop([]string{"--workspace", root, "shop", "k4"}, &out, &errw); !errors.Is(err, spawn.ErrUnlandedWork) {
 		t.Fatalf("stop k4 = %v, want ErrUnlandedWork", err)
 	}
-	if err := cmdCrewStop([]string{"--workspace", root, "--discard", "shop", "k4"}, &out, &errw); err != nil {
+	if err := testCLI().cmdCrewStop([]string{"--workspace", root, "--discard", "shop", "k4"}, &out, &errw); err != nil {
 		t.Fatalf("stop k4 --discard: %v\nstderr: %s", err, errw.String())
 	}
 	if ok, err := gitx.New().BranchExists(context.Background(), cliRepo(w, "web"), "mate/k4"); err != nil || ok {
@@ -127,6 +128,7 @@ func TestMergeAndStopActOnEachCrewsOwnRepo(t *testing.T) {
 }
 
 func TestCrewSpawnRefusesWhenTheRepoIsNotSettled(t *testing.T) {
+	t.Parallel()
 	w, root := twoRepoCLIWorkspace(t)
 	brief := filepath.Join(root, "brief.md")
 	if err := os.WriteFile(brief, []byte(brieftest.Ship("work")), 0o644); err != nil {
@@ -150,7 +152,7 @@ func TestCrewSpawnRefusesWhenTheRepoIsNotSettled(t *testing.T) {
 	for _, c := range cases {
 		args := append([]string{"crew", "spawn", "--workspace", root, "--brief", brief}, c.args...)
 		var out, errw bytes.Buffer
-		code := mainRun(args, &out, &errw)
+		code := testCLI().mainRun(args, &out, &errw)
 		if code != c.code {
 			t.Errorf("%v: exit %d, want %d\nstderr: %s", c.args, code, c.code, errw.String())
 		}

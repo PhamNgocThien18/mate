@@ -19,6 +19,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/coreclient"
 	"github.com/nguyenngocanh94/mate/internal/db"
+	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
@@ -77,6 +78,7 @@ func unixGet(t *testing.T, sock, path string) int {
 // core on the workspace is refused with the first one's pid; and when its
 // context ends - Ctrl+C - it stops cleanly: core.lock released, socket gone.
 func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -90,6 +92,11 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 	h, held, err := w.CoreRunning()
 	if err != nil || !held || h.Owner != core.OwnerCore || h.PID != os.Getpid() || h.URL == "" || h.Socket != w.CoreSocket() {
 		t.Fatalf("core.lock = %+v, held %v, %v", h, held, err)
+	}
+	// The block a dev server prints (decided 2026-11-06): who, where, and
+	// the two pages, before Ctrl+C.
+	if want := "mate core · pid " + strconv.Itoa(os.Getpid()) + " · " + homeShort(w.Root()) + "\nOffice  " + h.URL + "office/\nCity    " + h.URL + "city/\nHerdr   " + w.Session() + "\nLog     " + w.CoreLogFile() + "\nCtrl+C to stop\n"; !strings.HasPrefix(stdout.String(), want) {
+		t.Errorf("stdout = %q, want it to start with %q", stdout.String(), want)
 	}
 	if status := unixGet(t, w.CoreSocket(), "/api/workspace"); status != http.StatusOK {
 		t.Fatalf("socket: %d", status)
@@ -146,6 +153,7 @@ func TestCoreRunServesSocketAndTCPThenStopsCleanly(t *testing.T) {
 // GET /api/core says Jev's error before the observer's, and one error both
 // report once, as the console's status line does.
 func TestCoreNoticesPutJevFirst(t *testing.T) {
+	t.Parallel()
 	jev := errors.New("jev: no API key")
 	for _, tc := range []struct {
 		jev     error
@@ -164,10 +172,76 @@ func TestCoreNoticesPutJevFirst(t *testing.T) {
 	}
 }
 
+// The core has Jev only when `.mate/.env` turns it on (CON-232). Off,
+// consoleNoticeClient's nil client must not reach core.Options.Notice as a
+// non-nil interface: the core says it has no Jev, so its pages offer none,
+// and explain_notice is refused as it was before the action moved into the
+// core. On, the core says it has one.
+func TestCoreWiresJevOnlyWhenItIsOn(t *testing.T) {
+	t.Parallel()
+	if engineNotice(nil) != nil {
+		t.Fatal("engineNotice(nil) is a non-nil Jev")
+	}
+	if engineNotice(notice.New("k")) == nil {
+		t.Fatal("engineNotice dropped a client")
+	}
+
+	run := func(t *testing.T, w *store.Workspace) (coreapi.CoreStatus, error) {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		var stdout lockedBuffer
+		done := make(chan error, 1)
+		go func() { done <- runCore(ctx, w, fakeCoreDeps(t), nil, nil, &stdout, io.Discard) }()
+		defer func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("runCore: %v", err)
+			}
+		}()
+		waitFor(t, func() bool { return strings.Contains(stdout.String(), "Ctrl+C to stop") })
+		client, err := coreclient.Dial(w.CoreSocket(), coreclient.As(coreapi.ClientConsole))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.Close()
+		st, err := client.Core(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, actErr := client.Act(ctx, coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"})
+		return st, actErr
+	}
+
+	w := coreWorkspace(t)
+	st, err := run(t, w)
+	if st.Jev {
+		t.Error("a core with Jev off says it has Jev")
+	}
+	if err == nil || err.Error() != "usage: explain_notice is not wired in this build" {
+		t.Errorf("explain_notice with Jev off = %v, want it not wired", err)
+	}
+
+	key := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeEnv(t, w, "MATE_JEV_API_KEY_FILE="+key+"\n")
+	st, err = run(t, w)
+	if !st.Jev {
+		t.Error("a core with Jev on says it has none")
+	}
+	// The core's own action: it looks the crew up first, and buy is not
+	// recorded, so it stops there and Jev is never asked over the network.
+	if err == nil || !strings.Contains(err.Error(), "crew buy of shop is not running") {
+		t.Errorf("explain_notice with Jev on = %v, want the core's own action refusing a crew that is not running", err)
+	}
+}
+
 // The refusals of `mate core run`, through the command as typed: exit 1 and
 // the sentence. Each one stops before the engine starts, so nothing here
 // reaches the live Herdr the command builds its deps over.
 func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		hold func(t *testing.T, w *store.Workspace) func()
@@ -203,7 +277,7 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 			w := coreWorkspace(t)
 			defer tc.hold(t, w)()
 			var stdout, stderr bytes.Buffer
-			if code := mainRun([]string{"core", "run", w.Root()}, &stdout, &stderr); code != 1 {
+			if code := testCLI().mainRun([]string{"core", "run", w.Root()}, &stdout, &stderr); code != 1 {
 				t.Fatalf("exit %d, want 1; stderr %q", code, stderr.String())
 			}
 			if !strings.Contains(stderr.String(), tc.want) {
@@ -222,29 +296,19 @@ func TestCoreRunRefusesBesideAnotherEngine(t *testing.T) {
 }
 
 func TestCoreUsage(t *testing.T) {
-	for _, args := range [][]string{{"core"}, {"core", "start"}, {"core", "run", "a", "b"}} {
+	t.Parallel()
+	for _, args := range [][]string{{"core"}, {"core", "bogus"}, {"core", "run", "a", "b"}, {"core", "status", "a", "--workspace", "b"}} {
 		var stdout, stderr bytes.Buffer
-		if code := mainRun(args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), coreUsage) {
+		if code := testCLI().mainRun(args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), coreUsage) {
 			t.Errorf("mate %v: exit %d, stderr %q; want the usage", args, code, stderr.String())
 		}
-	}
-}
-
-// A console opened while `mate core` runs says so and opens nothing.
-func TestConsoleEngineRefusalNamesTheCore(t *testing.T) {
-	err := consoleEngineRefusal(&core.RunningError{Holder: store.CoreHolder{PID: 77, Owner: store.CoreOwnerCore}})
-	if want := "mate console: mate core (pid 77) is running; stop it with `mate core stop` to open this console"; err == nil || err.Error() != want {
-		t.Fatalf("refusal = %v, want %q", err, want)
-	}
-	other := errors.New("some other failure")
-	if err := consoleEngineRefusal(other); err != other {
-		t.Fatalf("refusal of another error = %v, want it unchanged", err)
 	}
 }
 
 // `mate reindex` with mate.db held names the process holding the engine;
 // with no engine it keeps the database's own refusal.
 func TestReindexNamesTheEngineHoldingTheTimeline(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		owner string
 		want  string
@@ -268,7 +332,7 @@ func TestReindexNamesTheEngineHoldingTheTimeline(t *testing.T) {
 				defer l.Unlock()
 			}
 			var stdout, stderr bytes.Buffer
-			if code := mainRun([]string{"reindex", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), tc.want) {
+			if code := testCLI().mainRun([]string{"reindex", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), tc.want) {
 				t.Fatalf("exit %d, stderr %q; want 1 and %q", code, stderr.String(), tc.want)
 			}
 		})
@@ -280,6 +344,7 @@ func TestReindexNamesTheEngineHoldingTheTimeline(t *testing.T) {
 // 2026-11-05): a Manual project the captain left five minutes ago is turned
 // back to Auto (M21), and its crew's hand-back reaches the Mate as a digest.
 func TestEngineWithNoConsoleRearmsAndDigests(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if _, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop"}); err != nil {
 		t.Fatalf("StartMate: %v", err)

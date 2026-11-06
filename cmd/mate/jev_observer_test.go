@@ -29,6 +29,7 @@ import (
 // day-long run's evidence is committed; off is neither. Without a key, or on any mistake, the observer is the fixture's,
 // with one line saying why when the setting asked for Jev.
 func TestConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
 	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
@@ -92,6 +93,7 @@ func TestConfiguredObserver(t *testing.T) {
 // The chain configuredObserver builds names pane states, and keeps the
 // screens it asked Jev about under the workspace's .mate/screens.
 func TestConfiguredObserverNamesPaneStatesAndKeepsScreens(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
 	if err := os.WriteFile(key, []byte("test-key\n"), 0o600); err != nil {
@@ -120,6 +122,7 @@ func errText(err error) string {
 // A command's deps carry the configured observer; a mistake in the setting
 // is one line on stderr and the fixture observer.
 func TestLiveDepsCarryTheConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	ws := noticeWorkspace(t)
 	var stderr bytes.Buffer
 	if deps := liveDeps(ws, &stderr); deps.Observer != nil || stderr.Len() != 0 {
@@ -153,6 +156,7 @@ func (o *seesBusy) Observe(context.Context, harness.ScreenProfile, string) (scre
 // console's watcher read the pane through: each refuses or reports busy on
 // a pane that shows an empty composer, because the observer says busy.
 func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
+	t.Parallel()
 	t.Run("mate send", func(t *testing.T) {
 		w := liveCrewWorkspace(t, "shop")
 		rt := runtime.NewFake()
@@ -170,7 +174,7 @@ func TestCallSitesReadThroughTheDepsObserver(t *testing.T) {
 		f := newBoxFixture(t)
 		observer := &seesBusy{}
 		f.deps.Observer = observer
-		_, err := boxReplyAction(context.Background(), f.ws, f.deps, coreapi.ActionRequest{
+		_, err := engineAction(t, f.ws, f.deps)(context.Background(), coreapi.ActionRequest{
 			Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "k3", Input: "A"})
 		if !errors.Is(err, send.ErrAgentBusy) || observer.calls != 1 {
 			t.Fatalf("err %v after %d observations, want busy from the observer", err, observer.calls)
@@ -268,10 +272,11 @@ func callersOf(t *testing.T) map[string]map[string]bool {
 // observes through what `.mate/.env` configures. baseDeps (spawn.LiveDeps
 // plus this binary's tools, no observer) is left only where no pane is
 // read (status, stop, peek, merge and the mergeReviewed it shares with
-// land, migrate, events, reindex), and in the console and `mate core run`,
-// which set the observer themselves. spawn.LiveDeps is called by baseDeps
-// alone.
+// land, migrate, events, reindex, and the console, whose stage only finds
+// the session), and in the core (`mate`, `mate core run`), which sets the
+// observer itself. spawn.LiveDeps is called by baseDeps alone.
 func TestCommandsThatReadAPaneUseTheConfiguredObserver(t *testing.T) {
+	t.Parallel()
 	calls := callersOf(t)
 	for _, fn := range []string{"cmdSend", "cmdBriefAppend", "cmdMateStart", "cmdMateRefresh", "cmdMateStop", "cmdProjectRemove",
 		"cmdCrewSpawn", "cmdCrewRelaunch", "cmdReview", "cmdState", "cmdPeek", "runPRWatch"} {
@@ -279,7 +284,7 @@ func TestCommandsThatReadAPaneUseTheConfiguredObserver(t *testing.T) {
 			t.Errorf("%s does not build its deps with liveDeps", fn)
 		}
 	}
-	readsNoPane := map[string]bool{"liveDeps": true, "runConsole": true, "cmdCoreRun": true, "cmdMateStatus": true, "cmdCrewStop": true,
+	readsNoPane := map[string]bool{"liveDeps": true, "runConsole": true, "runCoreForeground": true, "cmdMateStatus": true, "cmdCrewStop": true,
 		"cmdMerge": true, "mergeReviewed": true, "cmdMigrate": true, "cmdEvents": true, "cmdReindex": true}
 	for fn, c := range calls {
 		if c["spawn.LiveDeps"] && fn != "baseDeps" {
@@ -289,10 +294,12 @@ func TestCommandsThatReadAPaneUseTheConfiguredObserver(t *testing.T) {
 			t.Errorf("%s builds baseDeps without the configured observer", fn)
 		}
 	}
-	if !calls["runConsole"]["configuredObserver"] {
-		t.Error("the console does not set the configured observer")
+	// The console runs no engine (CON-214): the core observes the panes,
+	// and the console's deps only find the session its stage attaches to.
+	if calls["runConsole"]["configuredObserver"] {
+		t.Error("the console builds an observer; the core observes the panes")
 	}
-	if !calls["cmdCoreRun"]["configuredObserver"] {
+	if !calls["runCoreForeground"]["configuredObserver"] {
 		t.Error("mate core run does not set the configured observer")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/send"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -46,6 +47,7 @@ import (
 // of sent.log lines docs/mvp.md section 7 names: one written by the action
 // after the composer cleared, and one written by the Mate's own
 // UserPromptSubmit hook when the model read it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -70,7 +72,7 @@ func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

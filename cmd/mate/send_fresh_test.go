@@ -52,6 +52,7 @@ func restingShip(t *testing.T, w *store.Workspace, deps spawn.Deps, verb string)
 // old pane is never typed into, the new session's input is the four parts
 // in order, the message is in sent.log, and the report says why.
 func TestSendToARestingCrewOpensAFreshSessionWithFourParts(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -150,6 +151,7 @@ func TestSendToARestingCrewOpensAFreshSessionWithFourParts(t *testing.T) {
 
 // The diff starts at the commit the latest review saw when one is recorded.
 func TestSendToARestingCrewDiffsFromTheLatestReview(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -186,6 +188,7 @@ func TestSendToARestingCrewDiffsFromTheLatestReview(t *testing.T) {
 // --same-session keeps the old behaviour: the line is typed into the
 // resting crew's pane and no session is opened.
 func TestSendSameSessionTypesIntoTheRestingPane(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -215,6 +218,7 @@ func TestSendSameSessionTypesIntoTheRestingPane(t *testing.T) {
 // A crew that is working, and a scout that handed back, are not resting:
 // restingCrew says so and the plain send is what they get.
 func TestRestingCrewIsOnlyAShipThatHandedBack(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -249,6 +253,7 @@ func TestRestingCrewIsOnlyAShipThatHandedBack(t *testing.T) {
 }
 
 func TestAlreadyTriedIsTheTailOfTheMessage(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"F1 open. Already tried: go test ./..., still red on TestX.": "Already tried: go test ./..., still red on TestX.",
 		"F1 open; we ALREADY TRIED\n  a rebase  and a retry":         "ALREADY TRIED a rebase and a retry",

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/nguyenngocanh94/mate/internal/facts"
-	"github.com/nguyenngocanh94/mate/internal/github"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -86,10 +85,6 @@ func describeRepo(r store.RepoConfig) string {
 	return fmt.Sprintf("%s(%s@%s)", r.Name, r.Path, r.DefaultBranch)
 }
 
-// ghClient is the `gh` that `mate pr watch` reads pull requests with; tests
-// swap it, so nothing reaches the network or a real account.
-var ghClient = github.New()
-
 // cmdProjectList implements `mate project list`.
 func cmdProjectList(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("project list", flag.ContinueOnError)
@@ -139,7 +134,7 @@ func cmdProjectList(args []string, stdout, stderr io.Writer) error {
 // project's crews and Mate, then drops it from workspace.yaml (docs/mvp.md
 // task 75). Everything on disk stays, so `mate project add <name>` brings
 // the history back.
-func cmdProjectRemove(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdProjectRemove(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("project remove", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -159,7 +154,7 @@ func cmdProjectRemove(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return projectRemove(context.Background(), w, liveDeps(w, stderr), name, spawn.CallerFromEnv(), stdout, stderr)
+	return projectRemove(context.Background(), w, liveDeps(w, stderr), name, c.caller(), stdout, stderr)
 }
 
 // projectRemove is cmdProjectRemove's core, over any deps, for tests.

@@ -39,7 +39,7 @@ func cmdSend(args []string, stdout, stderr io.Writer) error {
 		fs.Usage()
 		return newUsageError("mate send: want exactly 3 arguments: <project> <crew> \"<one line>\"")
 	}
-	source, err := resolveSendSource(*fromFlag)
+	source, err := resolveSendSource(*fromFlag, os.Getenv)
 	if err != nil {
 		return &usageError{err}
 	}
@@ -96,10 +96,10 @@ func writeSendReport(stdout io.Writer, w *store.Workspace, project, crew, source
 // when the pane's own environment carries MATE_AGENT_ROLE=mate (the Mate
 // pane), user otherwise. An explicit --from (the console's own call) always
 // wins over the environment.
-func resolveSendSource(fromFlag string) (string, error) {
+func resolveSendSource(fromFlag string, getenv func(string) string) (string, error) {
 	switch fromFlag {
 	case "":
-		if os.Getenv("MATE_AGENT_ROLE") == "mate" {
+		if getenv("MATE_AGENT_ROLE") == "mate" {
 			return store.SourceMate, nil
 		}
 		return store.SourceUser, nil

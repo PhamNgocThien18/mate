@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -23,6 +24,7 @@ import (
 // console's Actions menu, and the fact is in the Mate's files afterwards
 // because the restart asked the Mate to stow before it stopped it. The
 // outcome line says "stowed".
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveRestartMateStowsFirst(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -47,7 +49,7 @@ func TestLiveRestartMateStowsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

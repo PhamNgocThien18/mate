@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/nguyenngocanh94/mate/internal/observability"
 	"github.com/nguyenngocanh94/mate/internal/platform"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
 	"golang.org/x/sys/unix"
 )
 
@@ -38,7 +39,7 @@ const (
 // that client cannot stop the server-owned agent.
 // Herdr attach diagnostics are captured from stderr separately from the PTY;
 // PTY bytes remain exclusively the agent's raw terminal stream.
-func (h *Herdr) Open(ctx context.Context, ref AgentSessionRef, size TerminalSize) (SessionChannel, error) {
+func (h *Herdr) Open(ctx context.Context, ref runtime.AgentSessionRef, size runtime.TerminalSize) (runtime.SessionChannel, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -134,7 +135,7 @@ func startRawPTY(cmd *exec.Cmd, size *pty.Winsize) (*os.File, error) {
 	return master, nil
 }
 
-var _ SessionStream = (*Herdr)(nil)
+var _ runtime.SessionStream = (*Herdr)(nil)
 
 // herdrSessionChannel is intentionally a transport-only object. It owns the
 // local attach client and PTY master, never an agent lifecycle operation. A
@@ -201,7 +202,7 @@ func (c *herdrSessionChannel) captureStderr() {
 
 func (c *herdrSessionChannel) Read(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, sessionStreamReadContextError(err)
+		return nil, runtime.SessionStreamReadContextError(err)
 	}
 
 	c.readMu.Lock()
@@ -209,7 +210,7 @@ func (c *herdrSessionChannel) Read(ctx context.Context) ([]byte, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, sessionChannelClosedError("read")
+		return nil, runtime.SessionChannelClosedError("read")
 	}
 	if c.readEnded {
 		err := c.readEndErr
@@ -233,10 +234,10 @@ func (c *herdrSessionChannel) Read(ctx context.Context) ([]byte, error) {
 	closed := c.closed
 	c.mu.Unlock()
 	if closed {
-		return nil, sessionChannelClosedError("read")
+		return nil, runtime.SessionChannelClosedError("read")
 	}
 	if errors.Is(out.err, context.Canceled) || errors.Is(out.err, os.ErrDeadlineExceeded) {
-		return nil, MapSessionStreamError("read", out.err)
+		return nil, runtime.MapSessionStreamError("read", out.err)
 	}
 	endErr := c.endError(ctx, out.err)
 	c.mu.Lock()
@@ -258,14 +259,14 @@ func (c *herdrSessionChannel) Write(ctx context.Context, input []byte) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return sessionChannelClosedError("write")
+		return runtime.SessionChannelClosedError("write")
 	}
 	master := c.master
 	c.mu.Unlock()
 
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return MapSessionStreamError("write", c.writeFile(ctx, master, input))
+	return runtime.MapSessionStreamError("write", c.writeFile(ctx, master, input))
 }
 
 // readFile attempts the PTY's native deadline first. Darwin PTY masters do
@@ -386,7 +387,7 @@ func (c *herdrSessionChannel) waitForFD(ctx context.Context, events int16) (bool
 	return fd[0].Revents&(events|unix.POLLERR|unix.POLLHUP) != 0, nil
 }
 
-func (c *herdrSessionChannel) Resize(ctx context.Context, size TerminalSize) error {
+func (c *herdrSessionChannel) Resize(ctx context.Context, size runtime.TerminalSize) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -399,9 +400,9 @@ func (c *herdrSessionChannel) Resize(ctx context.Context, size TerminalSize) err
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
-		return sessionChannelClosedError("resize")
+		return runtime.SessionChannelClosedError("resize")
 	}
-	return MapSessionStreamError("resize", pty.Setsize(c.master, &pty.Winsize{
+	return runtime.MapSessionStreamError("resize", pty.Setsize(c.master, &pty.Winsize{
 		Cols: uint16(size.Cols),
 		Rows: uint16(size.Rows),
 	}))
@@ -458,7 +459,7 @@ func (c *herdrSessionChannel) reap(master *os.File, process *os.Process) error {
 	_ = c.stderrReader.Close()
 	<-c.stderrDone
 	if masterErr != nil && !errors.Is(masterErr, os.ErrClosed) {
-		return MapSessionStreamError("close", masterErr)
+		return runtime.MapSessionStreamError("close", masterErr)
 	}
 	return nil
 }
@@ -478,7 +479,7 @@ func (c *herdrSessionChannel) endError(ctx context.Context, readErr error) error
 		if errors.Is(readErr, io.EOF) || errors.Is(readErr, syscall.EIO) {
 			return io.EOF
 		}
-		return MapSessionStreamError("read", readErr)
+		return runtime.MapSessionStreamError("read", readErr)
 	}
 	return mapSessionAttachExit(waitErr, stderr)
 }
@@ -490,17 +491,17 @@ func mapSessionAttachExit(waitErr error, stderr []byte) error {
 		message := boundedSessionErrorExcerpt(line)
 		if strings.Contains(lower, "server is shutting down") ||
 			strings.Contains(lower, "lost connection to server: server closed connection") {
-			return NewHerdrError(HerdrServerNotRunning, message)
+			return runtime.NewHerdrError(runtime.HerdrServerNotRunning, message)
 		}
 		if strings.Contains(lower, "terminal") && strings.Contains(lower, "not found") {
-			return NewHerdrError(HerdrAgentNotFound, message)
+			return runtime.NewHerdrError(runtime.HerdrAgentNotFound, message)
 		}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(waitErr, &exitErr) {
-		return AttachExitError(exitErr.ExitCode())
+		return runtime.AttachExitError(exitErr.ExitCode())
 	}
-	return MapSessionStreamError("read", waitErr)
+	return runtime.MapSessionStreamError("read", waitErr)
 }
 
 func lastSessionDiagnosticLine(tail []byte) string {

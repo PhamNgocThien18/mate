@@ -16,6 +16,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -45,6 +46,7 @@ const emptyRepoRequest = `Thêm nút "Mua ngay" lên landing page ESP32, bấm v
 // A failure here is a prompting bug: the fix belongs in
 // assets/mate/AGENTS.md.tmpl or assets/crew/brief.md.tmpl, never in an
 // assertion made weaker.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveM7EmptyRepoDoesNotGuess(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -81,7 +83,7 @@ func TestLiveM7EmptyRepoDoesNotGuess(t *testing.T) {
 	shopBefore := strings.TrimSpace(gitOut(t, shop, "rev-parse", "main"))
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

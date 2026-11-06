@@ -193,6 +193,9 @@ func (e *Engine) assemble(ctx context.Context) (query.Snapshot, error) {
 		snap = withCrewHealth(snap, e.o.Watcher.Snapshot())
 		snap = withRuntimeNotice(snap, e.o.Watcher)
 	}
+	// After the observer's notice, which replaces the status line: the
+	// watch's word is added to it.
+	snap = withHostWatch(snap, e.hosts.read())
 	snap = withTimelineStale(snap, e.o.Ingest)
 	if e.o.Pilot != nil {
 		snap = withAutoStatus(snap, e.o.Pilot.Snapshot())

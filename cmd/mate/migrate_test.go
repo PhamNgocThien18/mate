@@ -17,10 +17,10 @@ import (
 // TestMigrateIsTheCaptains: a Mate or a Crew that runs `mate migrate` is
 // refused before the workspace is even opened, as `project mode` was.
 func TestMigrateIsTheCaptains(t *testing.T) {
+	t.Parallel()
 	for _, caller := range []string{"mate", "crew"} {
-		t.Setenv("MATE_CALLER", caller)
 		var stdout, stderr bytes.Buffer
-		code := mainRun([]string{"migrate", t.TempDir(), "--dry-run"}, &stdout, &stderr)
+		code := testCLI().withEnv("MATE_CALLER", caller).mainRun([]string{"migrate", t.TempDir(), "--dry-run"}, &stdout, &stderr)
 		if code != 1 || !strings.Contains(stderr.String(), "the captain runs mate migrate; a "+caller+" cannot") {
 			t.Fatalf("MATE_CALLER=%s: exit %d, stderr %q", caller, code, stderr.String())
 		}
@@ -28,14 +28,16 @@ func TestMigrateIsTheCaptains(t *testing.T) {
 }
 
 func TestMigrateUsage(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"migrate", "a", "b"}, &stdout, &stderr); code != 2 {
+	if code := testCLI().mainRun([]string{"migrate", "a", "b"}, &stdout, &stderr); code != 2 {
 		t.Fatalf("two arguments: exit %d, want 2 (usage)\n%s", code, stderr.String())
 	}
 }
 
 // TestMigrateCommandMovesAnOldWorkspace drives the command's core over a
 // one-repo old workspace: the dry run changes nothing, the run moves.
+// Not parallel: it sets PATH in the process environment.
 func TestMigrateCommandMovesAnOldWorkspace(t *testing.T) {
 	w, err := store.Init(t.TempDir(), store.Defaults{})
 	if err != nil {
@@ -57,16 +59,15 @@ func TestMigrateCommandMovesAnOldWorkspace(t *testing.T) {
 	}
 	// Every command but mate migrate refuses the old layout.
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"recall", "shop", "--workspace", root}, &stdout, &stderr); code != 1 || stderr.String() != "mate: this workspace has the old layout (repos beside .mate); run mate migrate first\n" {
+	if code := testCLI().mainRun([]string{"recall", "shop", "--workspace", root}, &stdout, &stderr); code != 1 || stderr.String() != "mate: this workspace has the old layout (repos beside .mate); run mate migrate first\n" {
 		t.Fatalf("another command on the old layout: exit %d, stderr %q", code, stderr.String())
 	}
 	// mate migrate opens it. No herdr on PATH: the dry run asks no
 	// session.
 	t.Run("migrate opens it", func(t *testing.T) {
-		t.Setenv("MATE_CALLER", "")
 		t.Setenv("PATH", t.TempDir())
 		var stdout, stderr bytes.Buffer
-		if code := mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "would move "+root+"/web -> "+root+"/shop/web\n") {
+		if code := testCLI().mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "would move "+root+"/web -> "+root+"/shop/web\n") {
 			t.Fatalf("mate migrate --dry-run on the old layout: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 		}
 	})
@@ -98,6 +99,7 @@ func TestMigrateCommandMovesAnOldWorkspace(t *testing.T) {
 // still naming the old one, cannot reach the console's link repair, so
 // mate migrate makes it. The dry run says so and changes nothing; the run
 // repairs root and owner, rewrites the brief, then moves the repo.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment.
 func TestMigrateRepairsAMovedWorkspaceFirst(t *testing.T) {
 	w, err := store.Init(filepath.Join(t.TempDir(), "old"), store.Defaults{})
 	if err != nil {
@@ -147,7 +149,6 @@ func TestMigrateRepairsAMovedWorkspaceFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	t.Setenv("MATE_CALLER", "")
 	t.Setenv("HERDR_CONFIG_PATH", configHome)
 
 	before, err := os.ReadFile(moved.WorkspaceFile())
@@ -155,7 +156,7 @@ func TestMigrateRepairsAMovedWorkspaceFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 0 {
+	if code := testCLI().mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("dry run: exit %d, stderr %q", code, stderr.String())
 	}
 	if want := "recorded root " + oldRoot + " differs from " + root + ": migrate will repair links first\n"; !strings.HasPrefix(stdout.String(), want) {
@@ -173,7 +174,7 @@ func TestMigrateRepairsAMovedWorkspaceFirst(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 {
+	if code := testCLI().mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 {
 		t.Fatalf("run: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 	for _, want := range []string{"repaired owner: ", "repaired root: brief of crew shop/k1 moved from " + oldRoot + " to " + root, "moved " + root + "/web -> " + root + "/shop/web\n", "rewrote 1 brief(s)\n", "workspace layout 2\n"} {
@@ -233,7 +234,6 @@ func gitOnlyPath(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	t.Setenv("MATE_CALLER", "")
 	t.Setenv("HERDR_CONFIG_PATH", t.TempDir())
 	return bin
 }
@@ -241,6 +241,7 @@ func gitOnlyPath(t *testing.T) string {
 // TestCrewStopOpensTheOldLayout: migrate refuses an open crew and names
 // mate crew stop; that command opens the old layout, closes the crew, and
 // the migrate that follows moves the repo. No herdr is on PATH.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment through gitOnlyPath.
 func TestCrewStopOpensTheOldLayout(t *testing.T) {
 	w, root := oldShopWorkspace(t)
 	if err := os.MkdirAll(w.CrewDir("shop", "k1"), 0o755); err != nil {
@@ -252,17 +253,17 @@ func TestCrewStopOpensTheOldLayout(t *testing.T) {
 	gitOnlyPath(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"migrate", root}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "close it with mate crew stop before migrating") {
+	if code := testCLI().mainRun([]string{"migrate", root}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "close it with mate crew stop before migrating") {
 		t.Fatalf("migrate with an open crew: exit %d, stderr %q", code, stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{"crew", "stop", "shop", "k1", "--workspace", root}, &stdout, &stderr); code != 0 {
+	if code := testCLI().mainRun([]string{"crew", "stop", "shop", "k1", "--workspace", root}, &stdout, &stderr); code != 0 {
 		t.Fatalf("crew stop on the old layout: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "moved "+root+"/web -> "+root+"/shop/web\n") {
+	if code := testCLI().mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "moved "+root+"/web -> "+root+"/shop/web\n") {
 		t.Fatalf("migrate after crew stop: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }
@@ -271,6 +272,7 @@ func TestCrewStopOpensTheOldLayout(t *testing.T) {
 // records a pane makes migrate refuse; mate mate stop opens the old layout
 // (it fails asking Herdr, not on the layout), and the refusal names the way
 // out: with herdr on PATH, mate mate stop stops it and migrate moves.
+// Not parallel: it sets HERDR_CONFIG_PATH, PATH in the process environment through gitOnlyPath.
 func TestMateStopOpensTheOldLayout(t *testing.T) {
 	w, root := oldShopWorkspace(t)
 	if err := w.WriteMateMeta("shop", map[string]string{"harness": "claude", "pane": "w1:p1", "tab": "w1:t1", "agent": "mate-shop"}); err != nil {
@@ -279,12 +281,12 @@ func TestMateStopOpensTheOldLayout(t *testing.T) {
 	bin := gitOnlyPath(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 1 ||
+	if code := testCLI().mainRun([]string{"migrate", root, "--dry-run"}, &stdout, &stderr); code != 1 ||
 		!strings.Contains(stderr.String(), "Herdr could not be asked; with herdr on PATH, run mate migrate again, or stop it with mate mate stop shop") {
 		t.Fatalf("migrate with no herdr: exit %d, stderr %q", code, stderr.String())
 	}
 	stderr.Reset()
-	if code := mainRun([]string{"mate", "stop", "shop", "--no-stow", "--workspace", root}, &stdout, &stderr); code == 0 ||
+	if code := testCLI().mainRun([]string{"mate", "stop", "shop", "--no-stow", "--workspace", root}, &stdout, &stderr); code == 0 ||
 		strings.Contains(stderr.String(), store.ErrLayoutOld.Error()) || !strings.Contains(stderr.String(), "herdr") {
 		t.Fatalf("mate stop with no herdr: exit %d, stderr %q; want a Herdr failure, not the layout", code, stderr.String())
 	}
@@ -296,12 +298,12 @@ func TestMateStopOpensTheOldLayout(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{"mate", "stop", "shop", "--no-stow", "--workspace", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "shop: already gone") {
+	if code := testCLI().mainRun([]string{"mate", "stop", "shop", "--no-stow", "--workspace", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "shop: already gone") {
 		t.Fatalf("mate stop with herdr: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "moved "+root+"/web -> "+root+"/shop/web\n") {
+	if code := testCLI().mainRun([]string{"migrate", root}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "moved "+root+"/web -> "+root+"/shop/web\n") {
 		t.Fatalf("migrate after mate stop: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }

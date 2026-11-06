@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/codex"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
@@ -31,6 +32,7 @@ import (
 // crew's own needs-decision as parked, `mate peek` must show the crew's
 // pane without waking it, and `mate send "A"` must be the thing that
 // unblocks it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveSendPeekStateCrew(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -56,7 +58,7 @@ func TestLiveSendPeekStateCrew(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

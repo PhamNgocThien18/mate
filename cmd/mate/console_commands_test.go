@@ -18,9 +18,10 @@ import (
 )
 
 func TestConsoleSetupHelpNeedsNoWorkspaceOrTerminal(t *testing.T) {
+	t.Parallel()
 	for _, flag := range []string{"--help", "-h"} {
 		var out, stderr bytes.Buffer
-		if err := run([]string{"console", flag}, &out, &stderr); err != nil {
+		if err := testCLI().run([]string{"console", flag}, &out, &stderr); err != nil {
 			t.Fatal(err)
 		}
 		for _, want := range []string{".mate/console.yaml", "scope: crew", "command: [code", "mode: external", "{crew_dir}", "Reopen the console"} {
@@ -35,6 +36,7 @@ func TestConsoleSetupHelpNeedsNoWorkspaceOrTerminal(t *testing.T) {
 }
 
 func TestConsoleLauncherPreservesArgumentsAndReleasesBackgroundPipes(t *testing.T) {
+	t.Parallel()
 	bin := filepath.Join(t.TempDir(), "editor launcher")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\"\nsleep 2 &\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
@@ -62,6 +64,7 @@ func configuredReviewView(w *store.Workspace, rec *recordingColumns) console.Com
 }
 
 func TestConsoleConfiguredReportCommand(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	spawnFakeCrew(t, w, deps, "shop", "k3")
 	rec := newRecordingColumns(t)
@@ -92,6 +95,7 @@ func TestConsoleConfiguredReportCommand(t *testing.T) {
 }
 
 func TestExternalEditorWithoutHost(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	spawnFakeCrew(t, w, deps, "shop", "k3")
 	bin := filepath.Join(t.TempDir(), "gui launcher")
@@ -125,6 +129,7 @@ func TestExternalEditorWithoutHost(t *testing.T) {
 }
 
 func TestConsoleCommandConfigurationAndTabs(t *testing.T) {
+	t.Parallel()
 	w, _ := consoleFixture(t, "shop")
 	if cfg, err := loadConsoleCommands(w); err != nil || len(cfg.Bindings) != 0 {
 		t.Fatalf("no config should bind no editor: %+v %v", cfg, err)
@@ -179,6 +184,7 @@ func TestConsoleCommandConfigurationAndTabs(t *testing.T) {
 // {worktree_dir} opens the code a crew is changing, and only while that
 // worktree is on disk.
 func TestWorktreeDirOpensTheCrewsWorktree(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	spawnFakeCrew(t, w, deps, "shop", "k3")
 	worktree := w.WorktreeDir("shop", "k3")

@@ -1,4 +1,4 @@
-package runtime_test
+package herdr_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/nguyenngocanh94/mate/internal/harness"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 )
 
 func TestHerdrReadAgentUsesRecentUnwrappedTextAndNamedSession(t *testing.T) {
@@ -17,7 +18,7 @@ func TestHerdrReadAgentUsesRecentUnwrappedTextAndNamedSession(t *testing.T) {
 		got = spec
 		return process.Result{Stdout: []byte("pane output\n")}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	output, err := rt.ReadAgent(context.Background(), runtime.AgentHandle{
 		Session: runtime.SessionHandle{Name: "lab-session"}, Name: "crew-agent",
 	}, harness.ReadRecentUnwrapped, 12)
@@ -59,7 +60,7 @@ func TestHerdrReadAgentFallsBackToTheVisibleScreenWhileCodexWorks(t *testing.T) 
 				}
 				return process.Result{Stdout: []byte("• Working (5s • esc to interrupt)\n")}, nil
 			}}
-			rt := runtime.NewHerdr(runner)
+			rt := herdr.NewHerdr(runner)
 			handle := runtime.AgentHandle{Session: runtime.SessionHandle{Name: "lab-session"}, Name: "crew-agent"}
 			read := rt.ReadAgent
 			if format == "ansi" {
@@ -94,7 +95,7 @@ func TestHerdrReadAgentDoesNotRetryOtherFailures(t *testing.T) {
 		calls++
 		return process.Result{ExitCode: 1, Stderr: readRuntimeTestdata(t, "error-agent-not-found-get.json")}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	_, err := rt.ReadAgent(context.Background(), runtime.AgentHandle{
 		Session: runtime.SessionHandle{Name: "lab-session"}, Name: "crew-agent",
 	}, harness.ReadRecentUnwrapped, 40)
@@ -116,7 +117,7 @@ func TestHerdrReadAgentReadsTheVisibleScreenWhenThatIsTheSource(t *testing.T) {
 		calls = append(calls, spec.Args)
 		return process.Result{Stdout: []byte("pane output\n")}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	handle := runtime.AgentHandle{Session: runtime.SessionHandle{Name: "lab-session"}, Name: "crew-agent"}
 	if _, err := rt.ReadAgentStyled(context.Background(), handle, harness.ReadVisible, 40); err != nil {
 		t.Fatal(err)
@@ -141,7 +142,7 @@ func TestHerdrReadAgentRefusesAnUnknownSource(t *testing.T) {
 		calls++
 		return process.Result{}, nil
 	}}
-	rt := runtime.NewHerdr(runner)
+	rt := herdr.NewHerdr(runner)
 	handle := runtime.AgentHandle{Session: runtime.SessionHandle{Name: "lab-session"}, Name: "crew-agent"}
 	for _, src := range []harness.ReadSource{"", "recent"} {
 		if _, err := rt.ReadAgent(context.Background(), handle, src, 40); err == nil {

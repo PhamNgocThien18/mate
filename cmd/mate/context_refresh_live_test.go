@@ -13,11 +13,13 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
 )
 
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveMateContextRefreshPreservesHeldQuestion(t *testing.T) {
 	requireConsoleLive(t)
 	session, home := consoleLiveLab(t)
@@ -36,7 +38,7 @@ func TestLiveMateContextRefreshPreservesHeldQuestion(t *testing.T) {
 	if err := os.WriteFile(w.ProjectDoc("shop"), []byte("# Shop\nA planning project; no repository yet.\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = runtime.NewMemoryNameRegistry()
 	deps := spawn.Deps{Harnesses: harnesses, Runtime: rt, Names: rt.Names, ConfigHome: home, Binary: consoleBinaryPath(t)}
 	marker := filepath.Join(home, "mate", "session-owners", session)

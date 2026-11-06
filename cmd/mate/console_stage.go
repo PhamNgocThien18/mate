@@ -45,6 +45,9 @@ type consoleColumns struct {
 	// Console's PATH.
 	env         []string
 	commandDirs []string
+	// startWait is how long a new column's runner has to open its socket;
+	// zero is columnStartWait. A test sets less so it need not wait it out.
+	startWait time.Duration
 }
 
 // commandTab is one configured command tab: the program the host runs in it, and the
@@ -149,7 +152,11 @@ func (c *consoleColumns) show(ctx context.Context, cols []host.Column, socket st
 // waitSend retries a send while a column just made is still starting its
 // runner.
 func (c *consoleColumns) waitSend(ctx context.Context, socket string, cmd panerun.Command) error {
-	deadline := time.Now().Add(columnStartWait)
+	wait := c.startWait
+	if wait == 0 {
+		wait = columnStartWait
+	}
+	deadline := time.Now().Add(wait)
 	for {
 		err := panerun.Send(ctx, socket, cmd)
 		if !errors.Is(err, panerun.ErrGone) || time.Now().After(deadline) {
@@ -163,9 +170,8 @@ func (c *consoleColumns) waitSend(ctx context.Context, socket string, cmd paneru
 	}
 }
 
-// columnStartWait is how long a new column's runner has to open its socket;
-// a variable so a test need not wait it out.
-var columnStartWait = 5 * time.Second
+// columnStartWait is how long a new column's runner has to open its socket.
+const columnStartWait = 5 * time.Second
 
 // close ends every column and tab, and with them their panes: the next
 // Console lays out its own.

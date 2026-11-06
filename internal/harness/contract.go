@@ -176,7 +176,7 @@ const (
 	// ReadRecentUnwrapped is the agent's recent output with wrapped rows
 	// joined. While Herdr refuses it for a working agent drawn on the
 	// alternate screen, the runtime reads ReadVisible instead
-	// (runtime.Herdr.readAgent).
+	// (herdr.Herdr.readAgent).
 	ReadRecentUnwrapped ReadSource = "recent-unwrapped"
 	// ReadVisible is the screen as it is drawn, rows wrapped at the pane
 	// width.

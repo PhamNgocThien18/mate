@@ -108,20 +108,27 @@ type Options struct {
 	// Notifier sends the captain a native notification for news waiting on
 	// them, for as long as the engine runs (NativeNotifier); nil sends none.
 	Notifier notifications.Sender
-	// Act runs every action the engine does not run itself - the chat and
-	// the Mate's and the Project's actions are its own (CON-231) -:
-	// cmd/mate's action functions for the crews, the box and Jev, until
-	// CON-232 moves them in. Engine.Act is its only caller, under the lock
-	// on the action's target. Nil runs no such action, and the dashboard is
-	// then read-only.
+	// Notice is Jev, which explain_notice asks about a screen (CON-141);
+	// nil when Jev is off, and the engine then has no explain_notice: it
+	// refuses one as not wired, and its pages do not offer it. A caller
+	// with a *notice.Client sets it only when the client is not nil: a nil
+	// pointer in this interface is not a nil Notice (CON-232).
+	Notice NoticeClassifier
+	// Act is a test's stand-in for the engine's own actions, which a real
+	// engine leaves nil: the engine runs every action itself (CON-232).
+	// When set, it runs every action but the chat and a tick the Mate's
+	// host takes, in place of the engine's own bodies, so a test of the
+	// locks can hold any action it likes. Engine.Act is its only caller,
+	// under the lock on the action's target.
 	Act coreapi.ActionFunc
 	// Stderr is where Stop names the parts that had not stopped within its
 	// bound; os.Stderr when nil.
 	Stderr io.Writer
 
 	// Owner is who runs the engine, as core.lock records it: OwnerCore for
-	// `mate core run`, OwnerConsole (the zero value) for a console running
-	// the engine itself until CON-214. Unused with Claim.
+	// `mate core run`, OwnerConsole (the zero value) for a console that
+	// runs the engine itself, which only a console built before CON-214
+	// does. Unused with Claim.
 	Owner string
 	// Claim is core.lock taken ahead (Lock) by a caller that must hold it
 	// before it builds the parts; the engine owns it from New on, and
@@ -163,14 +170,18 @@ const StopWait = 45 * time.Second
 //
 // Start starts the reading of workspace.yaml, the watcher, then the sender,
 // then the pilot - so the daemon never queues a digest no sender would type
-// - then recovery, and last what serves the captain: the dashboard, then
-// the notifications, which link to it. The order is the one runConsole kept
-// in its own body before CON-207 and CON-208. Stop cancels them all at
-// once, waits for them together within StopWait, and closes the timeline
-// once they have all stopped.
+// - then recovery and the watch over the headless hosts (CON-226), and last
+// what serves the captain: the dashboard, then the notifications, which
+// link to it. The order is the one runConsole kept in its own body before
+// CON-207 and CON-208, with the host watch added after recovery. Stop
+// cancels them all at once, waits for them together within StopWait, and
+// closes the timeline once they have all stopped.
 type Engine struct {
-	o         Options
-	recovery  *recoveryRun
+	o        Options
+	recovery *recoveryRun
+	// hosts watches each headless Mate's host of its own (CON-226); nil
+	// without a workspace or a Herdr runtime to start a Mate through.
+	hosts     *hostWatch
 	reload    *tickLoop
 	dashboard *dashboardPart
 	notify    *notifyLoop
@@ -180,10 +191,7 @@ type Engine struct {
 	// holds is every restart held for the captain's second press, from
 	// whichever UI (restartMate).
 	holds restartHolds
-	// own is the engine's own body for an action, or nil when Options.Act
-	// runs it: ownAction, which a test of the locks alone replaces.
-	own func(coreapi.ActionRequest) coreapi.ActionFunc
-	now func() time.Time
+	now   func() time.Time
 	// stopWait is StopWait; a test shortens it.
 	stopWait time.Duration
 
@@ -240,7 +248,6 @@ var (
 // from here on it owns the parts: Stop, or a failed Start, releases them.
 func New(o Options) *Engine {
 	e := &Engine{o: o, now: time.Now, stopWait: StopWait}
-	e.own = e.ownAction
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.snaps = &snapshotCache{compute: e.assemble, ctx: e.ctx, maxAge: snapshotMaxAge, limit: snapshotLimit, now: time.Now}
 	if o.Recover != nil {
@@ -248,6 +255,10 @@ func New(o Options) *Engine {
 	}
 	if o.Workspace != nil {
 		e.reload = configReload(o.Workspace)
+		if o.Spawn.Runtime != nil {
+			// spawn.StartMate, which the restart runs, refuses without one.
+			e.hosts = e.newHostWatch()
+		}
 		if o.Dashboard != nil {
 			e.dashboard = &dashboardPart{ws: o.Workspace, o: *o.Dashboard, deps: e.dashboardDeps}
 		}
@@ -328,6 +339,9 @@ func (e *Engine) parts() []part {
 	}
 	if e.recovery != nil {
 		out = append(out, part{"recovery", e.recovery})
+	}
+	if e.hosts != nil {
+		out = append(out, part{"host watch", e.hosts})
 	}
 	if e.dashboard != nil {
 		out = append(out, part{"Office/City server", e.dashboard})

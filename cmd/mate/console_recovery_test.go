@@ -23,6 +23,7 @@ import (
 
 // TestConsoleRestartMateStopsThenStartsTheSameProject.
 func TestConsoleRestartMateStopsThenStartsTheSameProject(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	before, err := f.ws.ReadMateMeta("shop")
 	if err != nil {
@@ -76,6 +77,7 @@ func TestConsoleRestartMateStopsThenStartsTheSameProject(t *testing.T) {
 // otherwise the one gesture that exists to bring a Mate back leaves the
 // project with none at all.
 func TestConsoleRestartMateStartsAMateThatWasAlreadyGone(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	if _, err := f.action(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate",
@@ -108,6 +110,7 @@ func TestConsoleRestartMateStartsAMateThatWasAlreadyGone(t *testing.T) {
 // as a fresh Claude Mate, with neither its conversation nor its harness
 // (found 2026-09-24 writing task 38's acceptance).
 func TestConsoleRestartMateKeepsItsHarness(t *testing.T) {
+	t.Parallel()
 	ws, deps := consoleFixture(t, "shop")
 	action := engineAction(t, ws, deps)
 	if _, err := action(context.Background(), coreapi.ActionRequest{
@@ -143,6 +146,7 @@ func TestConsoleRestartMateKeepsItsHarness(t *testing.T) {
 // nothing, submits nothing and records nothing - it only presses the key
 // that removes what is there.
 func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudePendingScreen)
 
@@ -176,6 +180,7 @@ func TestConsoleClearComposerPressesCtrlUAndSendsNothing(t *testing.T) {
 // press a key in, and the refusal says so rather than reporting a success it
 // did not establish.
 func TestConsoleClearComposerRefusesAProjectWithNoMate(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	if _, err := f.action(context.Background(), coreapi.ActionRequest{
 		Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate",
@@ -197,6 +202,7 @@ func TestConsoleClearComposerRefusesAProjectWithNoMate(t *testing.T) {
 // discarded without being asked. The first press restarts nothing and says
 // what it found; the second, within the window, restarts without stowing.
 func TestConsoleRestartHeldByUnsentTextAsksFirst(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudePendingScreen)
 	before, err := f.ws.ReadMateMeta("shop")
@@ -237,6 +243,7 @@ func TestConsoleRestartHeldByUnsentTextAsksFirst(t *testing.T) {
 // stow line and never ends its turn does not hold the restart hostage. The
 // restart goes ahead once the ceiling passes, and says it did.
 func TestConsoleRestartAfterTheCeilingSaysSoAndRestarts(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.OnSendText = func(h runtime.AgentHandle, _ string) {
 		// The stow line went in; the Mate is busy from here on.
@@ -258,6 +265,7 @@ func TestConsoleRestartAfterTheCeilingSaysSoAndRestarts(t *testing.T) {
 // TestConsoleRestartOfAGoneMateSaysItDidNotStow: nothing to ask, and the
 // outcome line says so rather than implying a stow happened.
 func TestConsoleRestartOfAGoneMateSaysItDidNotStow(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	if _, err := f.action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStop, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)

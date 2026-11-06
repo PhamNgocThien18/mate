@@ -1,4 +1,4 @@
-package runtime
+package herdr
 
 import (
 	"os"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nguyenngocanh94/mate/internal/observability"
+	"github.com/nguyenngocanh94/mate/internal/runtime"
 )
 
 func readRuntimeFixture(t *testing.T, name string) []byte {
@@ -98,7 +99,7 @@ func TestParseAgentInfoFromLiveCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "mate-g4-01" || got.Status != AgentBlocked {
+	if got.Name != "mate-g4-01" || got.Status != runtime.AgentBlocked {
 		t.Fatalf("agent = %+v", got)
 	}
 	if !got.LaunchPending || got.PaneID != "w1:p2" {
@@ -112,7 +113,7 @@ func TestParseWaitBlockedIsSuccessEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != AgentBlocked {
+	if got.Status != runtime.AgentBlocked {
 		t.Fatalf("status = %q", got.Status)
 	}
 }
@@ -124,25 +125,25 @@ func TestParseCLIErrorFromLiveCaptures(t *testing.T) {
 		code string
 		tax  observability.Code
 	}{
-		{"error-agent-not-found-wait.json", HerdrAgentNotFound, observability.CodeNotFound},
-		{"error-agent-not-found-get.json", HerdrAgentNotFound, observability.CodeNotFound},
-		{"error-pane-not-found.json", HerdrAgentPaneNotFound, observability.CodeUsage},
-		{"error-agent-blocked.json", HerdrAgentBlocked, observability.CodeTargetBlocked},
-		{"error-agent-not-ready.json", HerdrAgentNotReady, observability.CodeTargetBlocked},
-		{"error-timeout.json", HerdrTimeout, observability.CodeTimeout},
-		{"error-name-taken.json", HerdrAgentNameTaken, observability.CodeAlreadyExists},
-		{"error-invalid-name.json", HerdrInvalidAgentName, observability.CodeUsage},
-		{"error-tab-workspace.json", HerdrWorkspaceNotFound, observability.CodeNotFound},
-		{"error-start-timeout-small.json", HerdrInvalidAgentTimeout, observability.CodeUsage},
-		{"error-pane-busy.json", HerdrAgentPaneBusy, observability.CodeStateConflict},
+		{"error-agent-not-found-wait.json", runtime.HerdrAgentNotFound, observability.CodeNotFound},
+		{"error-agent-not-found-get.json", runtime.HerdrAgentNotFound, observability.CodeNotFound},
+		{"error-pane-not-found.json", runtime.HerdrAgentPaneNotFound, observability.CodeUsage},
+		{"error-agent-blocked.json", runtime.HerdrAgentBlocked, observability.CodeTargetBlocked},
+		{"error-agent-not-ready.json", runtime.HerdrAgentNotReady, observability.CodeTargetBlocked},
+		{"error-timeout.json", runtime.HerdrTimeout, observability.CodeTimeout},
+		{"error-name-taken.json", runtime.HerdrAgentNameTaken, observability.CodeAlreadyExists},
+		{"error-invalid-name.json", runtime.HerdrInvalidAgentName, observability.CodeUsage},
+		{"error-tab-workspace.json", runtime.HerdrWorkspaceNotFound, observability.CodeNotFound},
+		{"error-start-timeout-small.json", runtime.HerdrInvalidAgentTimeout, observability.CodeUsage},
+		{"error-pane-busy.json", runtime.HerdrAgentPaneBusy, observability.CodeStateConflict},
 		// G4-07 captures. agent attach resolves its target before it touches
 		// the terminal, so a missing agent is a clean envelope even with no
 		// TTY; pane get and a down server are the other two attach paths.
-		{"error-agent-not-found-attach.json", HerdrAgentNotFound, observability.CodeNotFound},
-		{"error-pane-not-found-get.json", HerdrPaneNotFound, observability.CodeNotFound},
-		{"error-server-not-running.json", HerdrServerNotRunning, observability.CodeRuntimeUnavailable},
+		{"error-agent-not-found-attach.json", runtime.HerdrAgentNotFound, observability.CodeNotFound},
+		{"error-pane-not-found-get.json", runtime.HerdrPaneNotFound, observability.CodeNotFound},
+		{"error-server-not-running.json", runtime.HerdrServerNotRunning, observability.CodeRuntimeUnavailable},
 		// Captured 2026-09-26 from a working codex-cli 0.157.1.
-		{"error-agent-not-idle.json", HerdrAgentNotIdle, observability.CodeTargetBlocked},
+		{"error-agent-not-idle.json", runtime.HerdrAgentNotIdle, observability.CodeTargetBlocked},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -155,7 +156,7 @@ func TestParseCLIErrorFromLiveCaptures(t *testing.T) {
 			if env.Code != tc.code {
 				t.Fatalf("code = %q, want %q", env.Code, tc.code)
 			}
-			if got := MapHerdrError(env.Code); got != tc.tax {
+			if got := runtime.MapHerdrError(env.Code); got != tc.tax {
 				t.Fatalf("taxonomy = %q, want %q", got, tc.tax)
 			}
 		})
@@ -175,7 +176,7 @@ func TestHerdrLiveCapturesKeepPaneNotFoundDistinctFromAgentNotFound(t *testing.T
 	if pane.Code == missing.Code {
 		t.Fatal("live Herdr uses distinct codes for missing pane vs missing agent")
 	}
-	if MapHerdrError(pane.Code) == MapHerdrError(missing.Code) {
+	if runtime.MapHerdrError(pane.Code) == runtime.MapHerdrError(missing.Code) {
 		t.Fatal("mapped taxonomy must keep the two codes in different buckets")
 	}
 }
@@ -208,7 +209,7 @@ func TestNamedSessionSocketFromLiveStatus(t *testing.T) {
 	if st.Protocol != man.Protocol {
 		t.Fatalf("status protocol %d, manifest pins %d", st.Protocol, man.Protocol)
 	}
-	want := NamedSocketPath("/Users/anh/.config", st.Session)
+	want := runtime.NamedSocketPath("/Users/anh/.config", st.Session)
 	if st.Socket != want {
 		t.Fatalf("socket = %q, want formula %q", st.Socket, want)
 	}
@@ -240,5 +241,29 @@ func TestSessionListRefusesDefaultAsWorkspace(t *testing.T) {
 	}
 	if !sawDefault || !sawLab {
 		t.Fatalf("fixture missing default or lab session: %#v", list)
+	}
+}
+
+func TestClassifyObservationIgnoresFocus(t *testing.T) {
+	t.Parallel()
+	// focused is UI state (ADR 0007). parseAgentInfo does not copy it onto
+	// ObservedAgent; Classify must not grow a focus-based branch.
+	focusedJSON := []byte(`{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"blocked","focused":true,"launch_pending":true,"name":"mate-g4-01","pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"},"type":"agent_info"}}`)
+	unfocusedJSON := []byte(`{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"blocked","focused":false,"launch_pending":true,"name":"mate-g4-01","pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"},"type":"agent_info"}}`)
+	a, err := parseAgentInfo(focusedJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := parseAgentInfo(unfocusedJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ra := runtime.ClassifyObservation(runtime.ObservedAgent{Status: a.Status, LaunchPending: a.LaunchPending, LiveHandleOK: true})
+	rb := runtime.ClassifyObservation(runtime.ObservedAgent{Status: b.Status, LaunchPending: b.LaunchPending, LiveHandleOK: true})
+	if ra.Kind != runtime.ReadinessBlocked || rb.Kind != runtime.ReadinessBlocked {
+		t.Fatalf("focus must not change readiness: focused=%+v unfocused=%+v", ra, rb)
+	}
+	if a.Status != b.Status {
+		t.Fatalf("parser used focused to invent a status: %#v vs %#v", a, b)
 	}
 }

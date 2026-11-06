@@ -12,6 +12,7 @@ import (
 // (docs/mvp.md M5 question 1) before it answers anything else: one JSON line
 // per actor, out of `v_now`.
 func TestEventsSceneStartsWithWhereEverybodyIs(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -55,6 +56,7 @@ func TestEventsSceneStartsWithWhereEverybodyIs(t *testing.T) {
 // `--scene --narrate` is the same snapshot in the office's own words, and
 // `--since` adds the moves that led to it.
 func TestEventsSceneNarratesTheOffice(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -75,6 +77,7 @@ func TestEventsSceneNarratesTheOffice(t *testing.T) {
 // The transitions are JSON lines too, in story order, each naming the event
 // it came from so a doubter can read the fact behind the move.
 func TestEventsSceneTransitionsNameTheirEvent(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 

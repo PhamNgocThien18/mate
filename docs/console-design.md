@@ -7,7 +7,8 @@ Mỗi board có một golden cùng tên trong `internal/ui/console/testdata/gold
 ## Vai trò
 
 mate là pane bên trái, khoảng 20% cửa sổ, rộng 32–48 cột.
-Mỗi workspace chỉ chạy một console (CON-162). Console giữ khoá `.mate/console.lock`; console thứ hai báo console nào đang chạy (pid, giờ mở, tty) và hỏi `[y/N]`. Trả lời y thì gửi SIGTERM cho console cũ (Bubble Tea coi như `q`, dọn daemon, db, cột pane), quá 10 giây thì SIGKILL; trả lời khác thì thoát, không mở gì.
+Mỗi workspace chỉ chạy một console (CON-162). Console giữ khoá `.mate/console.lock`; console thứ hai báo console nào đang chạy (pid, giờ mở, tty) và hỏi `[y/N]`. Trả lời y thì gửi SIGTERM cho console cũ (Bubble Tea coi như `q`, đóng cột pane), quá 10 giây thì SIGKILL; trả lời khác thì thoát, không mở gì và không đụng tới core.
+Console là client của `mate core` (CON-214, [core.md](core.md)): nó không chạy engine, chỉ đọc snapshot và gửi hành động qua `.mate/core.sock`. Mở console khi chưa có core thì console bật core như `mate core start` và chờ tối đa 10 giây; core khác bản thì console hỏi restart trước khi vẽ. Thoát console không tắt core: observer, timeline, notification và Office/City chạy tiếp. Core mất giữa chừng thì header báo `stale`, console thử lại mỗi 2 giây và không tự bật lại core.
 Bên phải là cột agent của host (WezTerm, Ghostty), dựng lúc mở console (M13): Enter trên hàng Mate/Crew cho nó chạy `herdr agent attach <agent>`.
 Editor do người dùng khai báo trong `.mate/console.yaml`: phím, scope, argv và mode `terminal` (tab trong cùng cửa sổ, mở/reuse khi nhấn phím) hoặc `external` (launcher GUI như Zed/VS Code). Không có editor hay phím `e` mặc định. `{report_path}` mở report đã có, `{crew_dir}` mở folder Crew, kể cả Crew đã dừng. Enter chỉ mở agent. Cách setup: `mate console --help` hoặc [console-commands.md](console-commands.md).
 mate không vẽ terminal của agent, không PTY, không session header.

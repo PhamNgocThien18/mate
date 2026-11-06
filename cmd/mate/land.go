@@ -44,7 +44,7 @@ import (
 // printed, not raised: the merge is done, and the Mate should hear what is
 // left rather than see the command fail. The last line is what new-task
 // needs: open crews, lanes, the queue, and the next-work setting.
-func cmdLand(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdLand(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("land", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -97,12 +97,12 @@ func cmdLand(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		writeCrewStopReport(stdout, project, crew, res, spawn.CallerFromEnv())
+		writeCrewStopReport(stdout, project, crew, res, c.caller())
 		if !res.AlreadyClosed {
 			fmt.Fprintln(stdout, usage.RecordAtClose(ctx, w, project, crew, "mate land"))
 		}
 	} else {
-		res, f, err := mergeReviewed(ctx, w, project, crew, *reviewFlag, *followupsFlag)
+		res, f, err := mergeReviewed(ctx, w, project, crew, c.caller(), *reviewFlag, *followupsFlag)
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func cmdLand(args []string, stdout, stderr io.Writer) error {
 
 	// 4. Tracker.
 	trackerID := landTrackerID(w, project, crew, meta)
-	fmt.Fprintln(stdout, landTracker(ctx, w, project, crew, trackerID, meta, handback))
+	fmt.Fprintln(stdout, c.landTracker(ctx, w, project, crew, trackerID, meta, handback))
 
 	// 5. Work.
 	if workID > 0 {
@@ -323,7 +323,7 @@ const landTrackerTimeout = 60 * time.Second
 // tracker to the Mate: the command cannot reach the MCP server the Mate
 // logs in to (docs/plugins.md), and a tracker left silently stale is
 // worse than one more call.
-func landTracker(ctx context.Context, w *store.Workspace, project, crew, trackerID string, meta map[string]string, handback string) string {
+func (c cli) landTracker(ctx context.Context, w *store.Workspace, project, crew, trackerID string, meta map[string]string, handback string) string {
 	cfg, err := plugin.ReadConfig(w.Root())
 	if err != nil {
 		return fmt.Sprintf("tracker: %s unreadable (%v); update the tracker yourself", plugin.ConfigFile, err)
@@ -367,7 +367,7 @@ func landTracker(ctx context.Context, w *store.Workspace, project, crew, tracker
 	)
 	ctx, cancel := context.WithTimeout(ctx, landTrackerTimeout)
 	defer cancel()
-	res, err := trackerRunner.Run(ctx, process.Spec{Name: argv[0], Args: argv[1:], Dir: in.Path, Env: env})
+	res, err := c.tracker.Run(ctx, process.Spec{Name: argv[0], Args: argv[1:], Dir: in.Path, Env: env})
 	if err != nil {
 		return fmt.Sprintf("tracker: %s not updated (%s failed: %v); update it yourself", trackerID, argv[0], err)
 	}
@@ -384,10 +384,6 @@ func landTracker(ctx context.Context, w *store.Workspace, project, crew, tracker
 	}
 	return fmt.Sprintf("tracker: %s %s (%s)", trackerID, recall.Clip(line, 200), in.ID)
 }
-
-// trackerRunner runs the tracker's land command; a test may replace it.
-// `mate recall` reads the tracker through recall.Deps instead.
-var trackerRunner process.Runner = process.ExecRunner{}
 
 // firstLine is the first non-blank line of s, trimmed.
 func firstLine(s string) string {

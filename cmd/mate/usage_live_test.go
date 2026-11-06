@@ -18,6 +18,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -36,6 +37,7 @@ import (
 // smallest real exercise of both locator paths docs/timeline.md names -
 // `meta.transcript` for the Mate (the Stop hook's own path) and
 // `herdr.agent_session` for the Crew (Herdr's rollout uuid).
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveUsageMatchesTheHarness(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -60,7 +62,7 @@ func TestLiveUsageMatchesTheHarness(t *testing.T) {
 	}
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

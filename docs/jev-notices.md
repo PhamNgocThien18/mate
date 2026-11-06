@@ -14,7 +14,7 @@ MATE_JEV=on
 MATE_JEV_API_KEY_FILE=~/.config/mate/jev-trial-api-key
 ```
 
-`MATE_JEV_API_KEY_FILE` chứa **đường dẫn**, không chứa key; `~/` được mở rộng, đường dẫn tương đối tính từ gốc workspace. Có key mà không đặt `MATE_JEV` thì chỉ action bật, như `MATE_JEV=fixture`; `MATE_JEV=on` hoặc `observer` bật cả action lẫn bộ quan sát, `MATE_JEV=off` tắt cả hai (bảng ở mục "Bộ quan sát"); mở lại console để đọc `.env`. Nếu `.env` sai cú pháp, thiếu đường dẫn hay file key không đọc được, console vẫn chạy và báo Jev bị tắt ở status line.
+`MATE_JEV_API_KEY_FILE` chứa **đường dẫn**, không chứa key; `~/` được mở rộng, đường dẫn tương đối tính từ gốc workspace. Có key mà không đặt `MATE_JEV` thì chỉ action bật, như `MATE_JEV=fixture`; `MATE_JEV=on` hoặc `observer` bật cả action lẫn bộ quan sát, `MATE_JEV=off` tắt cả hai (bảng ở mục "Bộ quan sát"); `mate core` đọc `.env` lúc bật, nên sửa xong thì chạy `mate core restart` (CON-214). Nếu `.env` sai cú pháp, thiếu đường dẫn hay file key không đọc được, core vẫn chạy và console báo Jev bị tắt ở status line.
 
 ## Kết quả có ý nghĩa gì?
 

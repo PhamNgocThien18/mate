@@ -12,7 +12,7 @@ import (
 )
 
 // cmdMate dispatches `mate mate <start|stop|status|refresh|host|repl>`.
-func cmdMate(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdMate(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate mate <start|stop|status|refresh|host|repl> <project> ...")
 	}
@@ -20,7 +20,7 @@ func cmdMate(args []string, stdout, stderr io.Writer) error {
 	case "start":
 		return cmdMateStart(args[1:], stdout, stderr)
 	case "stop":
-		return cmdMateStop(args[1:], stdout, stderr)
+		return c.cmdMateStop(args[1:], stdout, stderr)
 	case "refresh":
 		return cmdMateRefresh(args[1:], stdout, stderr)
 	case "status":
@@ -104,7 +104,7 @@ func cmdMateStart(args []string, stdout, stderr io.Writer) error {
 // captain who types `mate stop` wants it stopped, and only the console's
 // restart has a second press to ask with. A Mate stopping itself is never
 // asked - it would be waiting on its own turn.
-func cmdMateStop(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdMateStop(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("mate stop", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -123,7 +123,7 @@ func cmdMateStop(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return mateStop(context.Background(), w, liveDeps(w, stderr), fs.Arg(0), spawn.CallerFromEnv(), *noStowFlag, stdout, stderr)
+	return mateStop(context.Background(), w, liveDeps(w, stderr), fs.Arg(0), c.caller(), *noStowFlag, stdout, stderr)
 }
 
 // mateStop is cmdMateStop's core, over any deps, for tests.

@@ -136,6 +136,7 @@ func sentLines(t *testing.T, ws *store.Workspace) []store.SentEntry {
 // crew. The status text is quoted rather than copied as the record: the file
 // the line points at is still the record, which is why the path is there.
 func TestConsoleBoxResolveTypesTheResolveLineAndRecordsIt(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	wantResolve := query.BoxResolveLine("shop", "k3", "pick A or B", f.ws.CrewStatus("shop", "k3"))
 	req := f.resolveRequest(t)
@@ -201,6 +202,7 @@ func TestConsoleBoxResolveTypesTheResolveLineAndRecordsIt(t *testing.T) {
 // the item, and `resolve` on its own does not - handing the question to the
 // Mate is not an answer to the crew.
 func TestConsoleBoxResolveEmptiesTheInbox(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	if _, err := f.action(context.Background(), f.resolveRequest(t)); err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -231,6 +233,7 @@ func TestConsoleBoxResolveEmptiesTheInbox(t *testing.T) {
 // received), and the inbox row says it is queued. Once the composer is empty
 // the console's sender loop types it exactly once, and the row says when.
 func TestConsoleBoxResolveQueuesBehindAPendingComposer(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudePendingScreen)
 	req := f.resolveRequest(t)
@@ -288,6 +291,7 @@ func TestConsoleBoxResolveQueuesBehindAPendingComposer(t *testing.T) {
 // four or five times in a row: the Mate mid-turn. The assign returns at once,
 // queued, instead of refusing.
 func TestConsoleBoxResolveQueuesBehindABusyMate(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, "✶ Pollinating…\n"+claudeEmptyScreen)
 
@@ -312,6 +316,7 @@ func TestConsoleBoxResolveQueuesBehindABusyMate(t *testing.T) {
 // assigned again, while queued or after it was sent, is not queued a second
 // time, and the outcome says when it was.
 func TestConsoleBoxResolveTwiceQueuesOnce(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudePendingScreen)
 	req := f.resolveRequest(t)
@@ -372,6 +377,7 @@ func (f boxFixture) inboxRow(t *testing.T) query.BoxEntry {
 // into the crew's own composer with no marker byte - it is the user's line,
 // not the app's - and is recorded as such.
 func TestConsoleBoxReplyTypesIntoTheCrewAndRecordsTheUser(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 
 	out, err := f.action(context.Background(), coreapi.ActionRequest{
@@ -424,6 +430,7 @@ func TestConsoleBoxReplyTypesIntoTheCrewAndRecordsTheUser(t *testing.T) {
 // the crew side. It matters as much as the Mate's: a crew mid-typing is a
 // crew whose own half-line would be concatenated with the reply.
 func TestConsoleBoxReplyRefusedOnAPendingCrewComposer(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.crew, codexBoxPendingScreen)
 
@@ -443,6 +450,7 @@ func TestConsoleBoxReplyRefusedOnAPendingCrewComposer(t *testing.T) {
 // screen is not communication, so it leaves no line in sent.log and types
 // nothing into any pane.
 func TestConsoleBoxPeekReadsTheCrewPaneAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.crew, "needs-decision: pick A or B\n› \n")
 
@@ -476,6 +484,7 @@ func TestConsoleBoxPeekReadsTheCrewPaneAndWritesNothing(t *testing.T) {
 // names a pane is stopped, not broken, and the three actions must say so
 // rather than reaching for a handle that names nothing.
 func TestConsoleBoxActionsRefuseAStoppedAgent(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	if err := f.ws.WriteCrewMeta("shop", "k3", map[string]string{spawn.MetaHarness: "codex"}); err != nil {
 		t.Fatalf("WriteCrewMeta: %v", err)
@@ -498,15 +507,14 @@ func TestConsoleBoxActionsRefuseAStoppedAgent(t *testing.T) {
 
 // A dialog over the Mate's pane and a pane that moved while it was read are
 // refusals like the other three: nothing typed, the line queued, and the
-// outcome says why in a few words rather than failing the action.
+// outcome says why in a few words rather than failing the action (the
+// words: internal/core's TestRefusalReasonIsShortForEverySendRefusal).
 func TestConsoleBoxQueuesBehindTheTwoNewRefusals(t *testing.T) {
+	t.Parallel()
 	for _, err := range []error{send.ErrDialogOpen, send.ErrPaneChanged} {
 		coded := observability.WrapError(observability.CodeStateConflict, "a send refusal", err)
 		if !boxSendRefusal(coded) {
 			t.Errorf("%v is not a box refusal", err)
-		}
-		if reason := refusalReason(coded); reason == coded.Error() {
-			t.Errorf("%v has no short reason", err)
 		}
 	}
 

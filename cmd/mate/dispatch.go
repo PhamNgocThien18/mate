@@ -44,13 +44,14 @@ type command struct {
 // commands is the top-level command table, in the order usage prints it.
 // A new command is one row here. It is a function rather than a package
 // variable so a handler that reads the table (or calls run) never makes an
-// initialization cycle.
-func commands() []command {
+// initialization cycle. The handlers that reach the environment or a
+// program a test stands in for are c's methods.
+func (c cli) commands() []command {
 	return []command{
 		{names: []string{"init"}, summary: "create a workspace, or open the one there", run: cmdInit},
-		{names: []string{"project"}, summary: "add, list, remove and configure projects", run: cmdProject},
-		{names: []string{"mate"}, summary: "start, stop, refresh or check a project's Mate", run: cmdMate},
-		{names: []string{"crew"}, summary: "spawn, list, stop, relaunch and budget crews", run: withStdin(cmdCrew)},
+		{names: []string{"project"}, summary: "add, list, remove and configure projects", run: c.cmdProject},
+		{names: []string{"mate"}, summary: "start, stop, refresh or check a project's Mate", run: c.cmdMate},
+		{names: []string{"crew"}, summary: "spawn, list, stop, relaunch and budget crews", run: withStdin(c.cmdCrew)},
 		{names: []string{"brief"}, summary: "check, append to or revise a crew's brief", run: withStdin(cmdBrief)},
 		{names: []string{"remember"}, summary: "add one entry to a project's memory", run: cmdRemember},
 		{names: []string{"memory"}, summary: "check a project's memory file", run: cmdMemory},
@@ -66,22 +67,22 @@ func commands() []command {
 		{names: []string{"diff"}, summary: "a crew's branch, for review", run: cmdDiff},
 		{names: []string{"report"}, summary: "print a crew's report", run: cmdReport},
 		{names: []string{"review"}, summary: "spawn a reviewer crew, or check a review", run: cmdReview},
-		{names: []string{"merge"}, summary: "merge a reviewed crew's branch", run: cmdMerge},
-		{names: []string{"land"}, summary: "accept a hand-back: merge and record it", run: cmdLand},
+		{names: []string{"merge"}, summary: "merge a reviewed crew's branch", run: c.cmdMerge},
+		{names: []string{"land"}, summary: "accept a hand-back: merge and record it", run: c.cmdLand},
 		{names: []string{"backlog"}, summary: "read the crew table or edit a backlog entry", run: cmdBacklog},
 		{names: []string{"checkpoint"}, summary: "record the receipt of a Mate's stow", run: cmdCheckpoint},
-		{names: []string{"pr"}, summary: "watch a crew's pull request", run: cmdPR},
+		{names: []string{"pr"}, summary: "watch a crew's pull request", run: c.cmdPR},
 		{names: []string{"events"}, summary: "the timeline as JSON lines, sentences or a scene", run: cmdEvents},
 		{names: []string{"reindex"}, summary: "rebuild the timeline from files and transcripts", run: cmdReindex},
 		{names: []string{"usage"}, summary: "the token ledger per task or per crew", run: cmdUsage},
 		{names: []string{"gc"}, summary: "list processes left in closed tasks' worktrees, or end them", run: cmdGC},
 		{names: []string{"dashboard"}, summary: "the workspace timeline in a browser", run: cmdDashboard},
 		{names: []string{"console"}, summary: "open the console and lay out its columns", run: cmdConsoleLaunch},
-		{names: []string{"core"}, summary: "run the workspace's engine without a console", run: cmdCore},
-		{names: []string{"migrate"}, summary: "move a workspace onto layout 2", run: cmdMigrate},
-		{names: []string{"plugin"}, summary: "add, check and list plugins", run: cmdPlugin},
+		{names: []string{"core"}, summary: "the workspace's engine: run, start, stop, restart, status", run: cmdCore},
+		{names: []string{"migrate"}, summary: "move a workspace onto layout 2", run: c.cmdMigrate},
+		{names: []string{"plugin"}, summary: "add, check and list plugins", run: c.cmdPlugin},
 		{names: []string{"--version", "-V"}, summary: "print the version", run: cmdVersion},
-		{names: []string{"hook"}, summary: "the Claude Code hooks of a Mate's pane", run: withStdin(cmdHook), internal: true},
+		{names: []string{"hook"}, summary: "the Claude Code hooks of a Mate's pane", run: withStdin(c.cmdHook), internal: true},
 		{names: []string{"pane"}, summary: "the program the console's columns run", run: cmdPane, internal: true},
 	}
 }
@@ -98,44 +99,47 @@ func withStdin(fn func(args []string, stdin io.Reader, stdout, stderr io.Writer)
 // passed in so a test can stand each piece in.
 type dispatcher struct {
 	commands []command
-	// findWorkspace resolves the workspace a bare `mate` opens.
+	// findWorkspace resolves the workspace a bare `mate` runs the core of.
 	findWorkspace func() (string, error)
 	// isDir reports whether an argument names an existing directory.
 	isDir func(path string) bool
-	// console opens the console on a workspace directory.
-	console func(dir string, stdout, stderr io.Writer) error
+	// core runs a workspace directory's core in the foreground, or says it
+	// already runs (decided 2026-11-06; before, `mate <dir>` opened the
+	// console, which `mate console` does now).
+	core func(dir string, stdout, stderr io.Writer) error
 }
 
 // run dispatches the top-level subcommand. Each subcommand is a small,
 // independently testable function of the form
 // func(args []string, stdout, stderr io.Writer) error.
-func run(args []string, stdout, stderr io.Writer) error {
+func (c cli) run(args []string, stdout, stderr io.Writer) error {
 	return dispatcher{
-		commands:      commands(),
+		commands:      c.commands(),
 		findWorkspace: func() (string, error) { return findWorkspaceDir("") },
 		isDir:         isDir,
-		console:       cmdConsole,
+		core:          cmdCoreHere,
 	}.run(args, stdout, stderr)
 }
 
 func (d dispatcher) run(args []string, stdout, stderr io.Writer) error {
-	// `mate` with no arguments opens the console on the workspace the
-	// current directory sits in. A subcommand always wins over a directory
-	// of the same name: the subcommand names are reserved words, and an
-	// explicit `./init` still reaches the console.
+	// `mate` with no arguments runs the core of the workspace the current
+	// directory sits in. A subcommand always wins over a directory of the
+	// same name: the subcommand names are reserved words, and an explicit
+	// `./init` still reaches the core.
 	if len(args) == 0 {
 		dir, err := d.findWorkspace()
 		if err != nil {
 			return newUsageError(usageText(d.commands))
 		}
-		return d.console(dir, stdout, stderr)
+		return d.core(dir, stdout, stderr)
 	}
 	if c, ok := lookupCommand(d.commands, args[0]); ok {
 		return c.run(args[1:], stdout, stderr)
 	}
-	// A single argument naming an existing directory is a workspace to open.
+	// A single argument naming an existing directory is a workspace whose
+	// core to run.
 	if len(args) == 1 && d.isDir(args[0]) {
-		return d.console(args[0], stdout, stderr)
+		return d.core(args[0], stdout, stderr)
 	}
 	return newUsageErrorf("unknown command %q", args[0])
 }
@@ -166,11 +170,11 @@ func usageText(cmds []command) string {
 		width = max(width, len(strings.Join(c.names, ", ")))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: mate <workspace-dir> | mate <%s> ...", strings.Join(public, "|"))
+	fmt.Fprintf(&b, "usage: mate [<workspace-dir>] | mate <%s> ...", strings.Join(public, "|"))
 	if len(internal) > 0 {
 		fmt.Fprintf(&b, "\ninternal, run by mate itself: mate <%s> ...", strings.Join(internal, "|"))
 	}
-	b.WriteString("\n")
+	b.WriteString("\n\nmate [<workspace-dir>] runs the workspace's core in the foreground, as `mate core run`,\nand prints the Office and City URLs; Ctrl+C stops it. `mate console` opens the console.\n")
 	for _, c := range cmds {
 		fmt.Fprintf(&b, "\n  %-*s  %s", width, strings.Join(c.names, ", "), c.summary)
 		if c.internal {
@@ -188,7 +192,7 @@ func isDir(path string) bool {
 }
 
 // cmdProject dispatches `mate project <add|list|remove|repo|facts|review|next-work>`.
-func cmdProject(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdProject(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate project <add|list|remove|repo|facts|review|next-work> ...")
 	}
@@ -200,7 +204,7 @@ func cmdProject(args []string, stdout, stderr io.Writer) error {
 	case "list":
 		return cmdProjectList(args[1:], stdout, stderr)
 	case "remove":
-		return cmdProjectRemove(args[1:], stdout, stderr)
+		return c.cmdProjectRemove(args[1:], stdout, stderr)
 	case "repo":
 		return cmdProjectRepo(args[1:], stdout, stderr)
 	case "review":
@@ -280,13 +284,19 @@ func resolveStopWorkspace(flagVal string) (*store.Workspace, error) {
 // the --workspace flag if given, else MATE_WORKSPACE, else the nearest
 // ancestor of the current directory that contains `.mate/`.
 func findWorkspaceDir(flagVal string) (string, error) {
+	return findWorkspaceDirIn(flagVal, os.Getenv, os.Getwd)
+}
+
+// findWorkspaceDirIn is findWorkspaceDir over the environment getenv reads
+// and the current directory getwd returns.
+func findWorkspaceDirIn(flagVal string, getenv func(string) string, getwd func() (string, error)) (string, error) {
 	if flagVal != "" {
 		return flagVal, nil
 	}
-	if env := os.Getenv("MATE_WORKSPACE"); env != "" {
+	if env := getenv("MATE_WORKSPACE"); env != "" {
 		return env, nil
 	}
-	cwd, err := os.Getwd()
+	cwd, err := getwd()
 	if err != nil {
 		return "", err
 	}

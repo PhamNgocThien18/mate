@@ -16,6 +16,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -38,6 +39,7 @@ import (
 //
 // The observer and the database handle are the ones cmdConsole builds, so
 // what is being proved is the shipped wiring and not a second one.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveTimelineExplainsTheAcceptance(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -64,7 +66,7 @@ func TestLiveTimelineExplainsTheAcceptance(t *testing.T) {
 	shopBefore := strings.TrimSpace(gitOut(t, shop, "rev-parse", "main"))
 
 	names := runtime.NewMemoryNameRegistry()
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = names
 	rt.StartServer = func(context.Context, string) error {
 		t.Fatal("the lab session is provisioned by the runner; this test must not start a Herdr server")

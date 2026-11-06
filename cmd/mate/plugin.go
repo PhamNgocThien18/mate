@@ -53,7 +53,7 @@ not the plugin's installation scope. Exit 1 on any failed check.
 `
 
 // cmdPlugin dispatches `mate plugin <add|doctor|list>`.
-func cmdPlugin(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdPlugin(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, pluginHelp)
 		return newUsageError("usage: mate plugin <add|doctor|list> ...")
@@ -63,7 +63,7 @@ func cmdPlugin(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, pluginHelp)
 		return nil
 	case "add":
-		return cmdPluginAdd(args[1:], stdout, stderr)
+		return c.cmdPluginAdd(args[1:], stdout, stderr)
 	case "doctor":
 		return cmdPluginDoctor(args[1:], stdout, stderr)
 	case "list":
@@ -90,7 +90,7 @@ func (s setFlags) Set(v string) error {
 	return nil
 }
 
-func cmdPluginAdd(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdPluginAdd(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("plugin add", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprintln(stderr, "usage: "+pluginAddUsage) }
@@ -111,7 +111,7 @@ func cmdPluginAdd(args []string, stdout, stderr io.Writer) error {
 		fs.Usage()
 		return newUsageError("mate plugin add: --as is required")
 	}
-	if caller := spawn.CallerFromEnv(); caller != spawn.CallerUser {
+	if caller := c.caller(); caller != spawn.CallerUser {
 		return observability.NewError(observability.CodePermission,
 			fmt.Sprintf("the captain runs mate plugin add; a %s cannot change .mate/plugins.yaml (mate plugin doctor and list are open to it)", caller))
 	}

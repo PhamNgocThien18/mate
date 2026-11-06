@@ -14,7 +14,6 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/dispatch"
 	"github.com/nguyenngocanh94/mate/internal/gitx"
 	"github.com/nguyenngocanh94/mate/internal/harness"
-	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/quota"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -205,7 +204,7 @@ func tableName(t dispatch.Table) string {
 // The project is what the rotation's position is read from (its spawns'
 // `rotation_slot=`); without one the table still prints, and a rotation
 // says its position is unknown.
-func cmdCrewDispatch(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdCrewDispatch(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("crew dispatch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -246,7 +245,7 @@ func cmdCrewDispatch(args []string, stdout, stderr io.Writer) error {
 		view.known = true
 	}
 	writeDispatchTable(stdout, t, view)
-	snap, qerr := readQuota(context.Background())
+	snap, qerr := c.readQuota(context.Background())
 	writeQuota(stdout, snap, qerr)
 	rows, err := laneRows(w)
 	if err != nil {
@@ -254,14 +253,6 @@ func cmdCrewDispatch(args []string, stdout, stderr io.Writer) error {
 	}
 	writeLanes(stdout, rows)
 	return nil
-}
-
-// readQuota is the one quota-axi read a dispatch or a spawn makes; tests
-// replace it so no suite depends on this machine's vendor accounts. It is
-// a plain variable because this package's tests run serially (none calls
-// t.Parallel); a parallel test must not swap it.
-var readQuota = func(ctx context.Context) (quota.Snapshot, error) {
-	return quota.Read(ctx, process.ExecRunner{}, harnesses, time.Now())
 }
 
 // writeQuota prints the quota evidence for choosing between a rule's
@@ -294,12 +285,12 @@ const spawnQuotaBudget = 5 * time.Second
 // quotaWarning is the spawn's one quota check: a harness quota-axi measures
 // as exhausted, or at zero, is warned about and still launched, because the
 // captain's words may have chosen it; "" when there is nothing to say.
-func quotaWarning(kind harness.Kind) string {
+func (c cli) quotaWarning(kind harness.Kind) string {
 	// Advisory only, so it gets a short budget: a slow vendor must never
 	// hold up a launch for the full dispatch read.
 	ctx, cancel := context.WithTimeout(context.Background(), spawnQuotaBudget)
 	defer cancel()
-	snap, err := readQuota(ctx)
+	snap, err := c.readQuota(ctx)
 	if err != nil {
 		return ""
 	}

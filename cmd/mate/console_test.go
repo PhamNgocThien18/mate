@@ -26,12 +26,13 @@ import (
 // TestConsoleGalleryRendersRegisteredProjects is the end of the wire: two
 // projects registered through internal/store on a real temporary directory,
 // read back through query.Load, and drawn by the Console's own View - the
-// same three pieces `mate <dir>` puts together, with only the terminal
+// same three pieces `mate console` puts together, with only the terminal
 // left out.
 //
 // It asserts the frame contract as well as the content: View must return
 // exactly h lines, or the gallery a person sees is not the one this test
 // passed on.
+// Not parallel: it sets MATE_ASCII in the process environment.
 func TestConsoleGalleryRendersRegisteredProjects(t *testing.T) {
 	root := t.TempDir()
 	ws, err := store.Init(root, workspaceDefaults())
@@ -80,6 +81,7 @@ func TestConsoleGalleryRendersRegisteredProjects(t *testing.T) {
 // first and under the cursor, so Enter alone creates the Mate the workspace
 // is configured for.
 func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	ws, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -137,15 +139,16 @@ func TestConsoleHarnessPickerPutsTheWorkspaceDefaultFirst(t *testing.T) {
 	}
 }
 
-// TestConsoleRefusesANonTerminal: `mate <dir> > file` must refuse with a
+// TestConsoleRefusesANonTerminal: `mate console <dir> > file` must refuse with a
 // usage error instead of starting Bubble Tea against a pipe.
 func TestConsoleRefusesANonTerminal(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := store.Init(root, workspaceDefaults()); err != nil {
 		t.Fatalf("init workspace: %v", err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := mainRun([]string{root}, &stdout, &stderr)
+	code := testCLI().mainRun([]string{"console", root}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 for a usage refusal; stderr=%q", code, stderr.String())
 	}
@@ -154,15 +157,16 @@ func TestConsoleRefusesANonTerminal(t *testing.T) {
 	}
 }
 
-// Only what runs the engine - the console and `mate core run` (CON-211) -
+// Only what runs the engine - the console and the core (CON-211) -
 // names the herdr its runtime runs: the one findTool resolves, also one the
 // console's PATH cannot reach - here in XDG_BIN_HOME, where herdr's
 // installer can put it. Every other command builds on baseDeps() as before
 // CON-189; its runtime looks for herdr on PATH only, so it never reaches
 // that one.
+// Not parallel: it sets PATH, XDG_BIN_HOME in the process environment.
 func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	const consoleCall = `baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))`
-	engineHosts := map[string]bool{"runConsole": true, "cmdCoreRun": true}
+	engineHosts := map[string]bool{"runConsole": true, "runCoreForeground": true}
 	calls := callsTo(t, "baseDeps")
 	for fn := range engineHosts {
 		if got := calls[fn]; !slices.Equal(got, []string{consoleCall}) {
@@ -207,32 +211,46 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 	}
 }
 
-// The console runs its background loops through internal/core (CON-207):
-// it builds their parts with engineOptions, which `mate core` can share
-// (CON-211), and the engine starts them in order, stops them all at once
-// within one bound and closes the timeline last. A Start or Stop of
-// runConsole's own, or a loop or timeline database it opened itself, would
-// be outside that order again. A quit in the middle of an action waits for
-// it beside the engine's Stop (quitAbandoned, CON-210), never on its own
-// before it.
-func TestRunConsoleLeavesTheLoopsToTheEngine(t *testing.T) {
+// The console is a client of the core (CON-214): it opens through
+// openConsole - the console lock, then the core's socket - and runs no
+// engine, loop, timeline, server or notification of its own. A quit in the
+// middle of an action neither cancels nor waits for it: the core runs it.
+func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
+	t.Parallel()
 	calls := callersOf(t)["runConsole"]
-	for _, want := range []string{"engineOptions", "core.New", "engine.Start", "engine.Stop", "quitAbandoned"} {
+	for _, want := range []string{"openConsole", "boundedLoad", "consoleLoad", "tuiAction", "sayAbandoned"} {
 		if !calls[want] {
 			t.Errorf("runConsole does not call %s", want)
 		}
 	}
-	if calls["waitAbandoned"] {
-		t.Error("runConsole waits for an abandoned action itself; quitAbandoned waits beside the engine's Stop")
-	}
-	for call := range calls {
-		if (strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop")) && !strings.HasPrefix(call, "engine.") {
-			t.Errorf("runConsole calls %s itself; the engine starts and stops the loops", call)
+	for _, engine := range []string{"core.New", "core.Lock", "engineOptions", "consoleDashboard",
+		"core.NativeNotifier", "configuredObserver", "consoleNoticeClient", "consoleWatcher", "consoleWatcherWithTimeline",
+		"consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open", "quitAbandoned", "waitAbandoned"} {
+		if calls[engine] {
+			t.Errorf("runConsole calls %s; the core runs the engine", engine)
 		}
 	}
-	for _, opener := range []string{"consoleWatcher", "consoleWatcherWithTimeline", "consolePilot", "consoleAutoPilot", "spawn.MateOutbox", "db.Open"} {
-		if calls[opener] {
-			t.Errorf("runConsole calls %s; engineOptions builds the loops and opens the timeline", opener)
+	for call := range calls {
+		if strings.HasSuffix(call, ".Start") || strings.HasSuffix(call, ".Stop") {
+			t.Errorf("runConsole calls %s; the console starts and stops nothing of the core's", call)
+		}
+	}
+	// CON-214's grep of the console's files for the engine's constructor:
+	// no console file builds an engine, its tests included since CON-232
+	// (they build theirs through testEngine). The word is put together so
+	// that this file does not match the grep itself.
+	newEngine := "core.New" + "("
+	files, err := filepath.Glob("console*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), newEngine) {
+			t.Errorf("%s builds an engine", name)
 		}
 	}
 }

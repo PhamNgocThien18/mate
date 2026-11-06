@@ -29,6 +29,7 @@ const codexBusyScreen = "• Working (2s • esc to interrupt)\n› Ask Codex to
 // afterwards (the harness picking the turn up) reads as "delivered" and
 // leaves a record in sent.log.
 func TestSendHappyPathAppendsToSentLog(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -82,6 +83,7 @@ func TestSendHappyPathAppendsToSentLog(t *testing.T) {
 // error (mainRun's fallback exits 1 for exactly this shape, the same way
 // every other non-usage CLI failure does).
 func TestSendRefusalAppendsNothingAndFails(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -114,6 +116,7 @@ func TestSendRefusalAppendsNothingAndFails(t *testing.T) {
 // docs/mvp.md task 13: crews/<id>.meta with no agent is a stopped crew, and
 // send must refuse before ever touching the runtime.
 func TestSendRefusesAStoppedCrew(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -138,23 +141,24 @@ func TestSendRefusesAStoppedCrew(t *testing.T) {
 }
 
 func TestResolveSendSource(t *testing.T) {
-	t.Setenv("MATE_AGENT_ROLE", "")
-	if got, err := resolveSendSource(""); err != nil || got != store.SourceUser {
+	t.Parallel()
+	if got, err := resolveSendSource("", noEnv); err != nil || got != store.SourceUser {
 		t.Fatalf("resolveSendSource(\"\") with no env = %q, %v, want user", got, err)
 	}
-	t.Setenv("MATE_AGENT_ROLE", "mate")
-	if got, err := resolveSendSource(""); err != nil || got != store.SourceMate {
+	mate := testCLI().withEnv("MATE_AGENT_ROLE", "mate").getenv
+	if got, err := resolveSendSource("", mate); err != nil || got != store.SourceMate {
 		t.Fatalf("resolveSendSource(\"\") with MATE_AGENT_ROLE=mate = %q, %v, want mate", got, err)
 	}
-	if got, err := resolveSendSource("user"); err != nil || got != store.SourceUser {
+	if got, err := resolveSendSource("user", mate); err != nil || got != store.SourceUser {
 		t.Fatalf("resolveSendSource(user) = %q, %v, want user (explicit --from wins over env)", got, err)
 	}
-	if _, err := resolveSendSource("bogus"); err == nil {
+	if _, err := resolveSendSource("bogus", noEnv); err == nil {
 		t.Fatal("resolveSendSource(bogus) must fail")
 	}
 }
 
 func TestCrewSendUsageErrors(t *testing.T) {
+	t.Parallel()
 	var ue *usageError
 	if err := cmdSend(nil, nil, new(strings.Builder)); !errors.As(err, &ue) {
 		t.Fatalf("cmdSend with no args: err = %v, want *usageError", err)
@@ -170,6 +174,7 @@ func TestCrewSendUsageErrors(t *testing.T) {
 // A resumed send starts from the draft state, which the summary has always
 // called "pending" (send.StatePending is screen.ComposerDraft underneath).
 func TestSendSummaryLineCallsADraftPending(t *testing.T) {
+	t.Parallel()
 	report := send.Report{
 		Agent:   "crew-k3",
 		Resumed: true,

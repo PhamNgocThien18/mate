@@ -25,6 +25,7 @@ func (f noticeFunc) Classify(ctx context.Context, screen string) (notice.Result,
 }
 
 func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
+	t.Parallel()
 	for _, target := range []string{"mate", "crew"} {
 		t.Run(target, func(t *testing.T) {
 			f := newBoxFixture(t)
@@ -48,7 +49,7 @@ func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
 			if target == "crew" {
 				req.Crew = "k3"
 			}
-			text, err := consoleNoticeAction(f.ws, f.deps, classifier, f.action)(context.Background(), req)
+			text, err := engineNoticeAction(t, f.ws, f.deps, classifier)(context.Background(), req)
 			if err != nil || count != 1 || !strings.Contains(text, "Advisory only") || !strings.Contains(text, "quota warning") {
 				t.Fatalf("result %q, %v; calls=%d", text, err, count)
 			}
@@ -67,13 +68,14 @@ func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
 }
 
 func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	count := 0
 	c := noticeFunc(func(context.Context, string) (notice.Result, error) {
 		count++
 		return notice.Result{}, errors.New("unavailable")
 	})
-	action := consoleNoticeAction(f.ws, f.deps, c, f.action)
+	action := engineNoticeAction(t, f.ws, f.deps, c)
 	_, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "workspace"})
 	if err == nil || count != 0 {
 		t.Fatal("invalid target reached classifier")
@@ -84,6 +86,7 @@ func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets MATE_JEV_API_KEY_FILE in the process environment.
 func TestConsoleNoticeConfig(t *testing.T) {
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
@@ -130,6 +133,7 @@ func TestConsoleNoticeConfig(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets HOME in the process environment.
 func TestConsoleNoticeKeyPathResolvesHomeAndWorkspace(t *testing.T) {
 	ws := noticeWorkspace(t)
 	home := t.TempDir()
@@ -168,6 +172,7 @@ func writeEnv(t *testing.T, ws *store.Workspace, text string) {
 
 // A headless Mate has no screen: the notice explanation reads its host's
 // last turns instead, and asks Herdr nothing (CON-225).
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestConsoleNoticeReadsAHeadlessMatesHost(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	history := matehost.HistoryPath(w.MateDir("shop"))
@@ -191,7 +196,7 @@ func TestConsoleNoticeReadsAHeadlessMatesHost(t *testing.T) {
 		}
 		return notice.Result{Label: "quota_exhausted", Confidence: .9}, nil
 	})
-	text, err := consoleNoticeAction(w, deps, classifier, nil)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
+	text, err := engineNoticeAction(t, w, deps, classifier)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "mate"})
 	if err != nil || !strings.Contains(text, "quota exhausted") {
 		t.Fatalf("result %q, %v", text, err)
 	}

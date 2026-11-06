@@ -3,26 +3,30 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/core"
+	"github.com/nguyenngocanh94/mate/internal/notice"
 	"github.com/nguyenngocanh94/mate/internal/notifications"
 	"github.com/nguyenngocanh94/mate/internal/spawn"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-const coreUsage = "usage: mate core run [<workspace>] [--workspace <dir>]"
+const coreUsage = `usage: mate core <run|start|stop|restart|status> [<workspace>] [--workspace <dir>]
+  run      the engine in the foreground until Ctrl+C, as plain "mate" does
+  start    the engine in the background, its output in .mate/core.log
+  stop     SIGTERM to the engine, SIGKILL after 60s
+  restart  stop, then start: the binary installed now runs
+  status   pid, owner, build, socket and Office/City; exit 1 when none runs`
 
 // cmdCore is `mate core <subcommand>`: the workspace's engine as a process
 // of its own (CON-203). `run` keeps it in the foreground (CON-211); start,
-// stop, restart and status are CON-213's.
+// stop, restart and status run it in the background (CON-213).
 func cmdCore(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError(coreUsage)
@@ -30,6 +34,21 @@ func cmdCore(args []string, stdout, stderr io.Writer) error {
 	switch args[0] {
 	case "run":
 		return cmdCoreRun(args[1:], stdout, stderr)
+	case "start", "stop", "restart", "status":
+		ws, err := coreWorkspaceArgs(args[0], args[1:], stderr)
+		if err != nil {
+			return err
+		}
+		ctl := liveCoreControl()
+		switch args[0] {
+		case "start":
+			return ctl.start(ws, stdout)
+		case "stop":
+			return ctl.stop(ws, stdout)
+		case "restart":
+			return ctl.restart(ws, stdout)
+		}
+		return ctl.status(ws, stdout)
 	case "-h", "--help", "help":
 		_, err := fmt.Fprintln(stdout, coreUsage)
 		return err
@@ -44,27 +63,57 @@ func cmdCore(args []string, stdout, stderr io.Writer) error {
 func cmdCoreRun(args []string, stdout, stderr io.Writer) error {
 	// The build core.lock records is the file this process started from.
 	core.Build()
-	fs := flag.NewFlagSet("core run", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	workspace := fs.String("workspace", "", "workspace directory")
-	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
-		return &usageError{err}
-	}
-	dir := *workspace
-	switch fs.NArg() {
-	case 0:
-	case 1:
-		if dir != "" {
-			return newUsageError(coreUsage)
-		}
-		dir = fs.Arg(0)
-	default:
-		return newUsageError(coreUsage)
-	}
-	ws, err := resolveWorkspace(dir)
+	ws, err := coreWorkspaceArgs("run", args, stderr)
 	if err != nil {
 		return err
 	}
+	return runCoreForeground(ws, stdout, stderr)
+}
+
+// cmdCoreHere is `mate` and `mate <dir>` (decided 2026-11-06): the core in
+// the foreground, like a dev server, as `mate core run`. When the
+// workspace's core already runs it says so in `mate core status`'s lines
+// and starts nothing; an engine inside a console is refused. It opens no
+// browser.
+func cmdCoreHere(dir string, stdout, stderr io.Writer) error {
+	core.Build()
+	ws, err := store.Open(dir)
+	if err != nil {
+		return err
+	}
+	return coreHere(ws, liveCoreControl(), stdout, func() error {
+		return runCoreForeground(ws, stdout, stderr)
+	})
+}
+
+// coreHere is cmdCoreHere past opening the workspace: run starts the core
+// when no engine runs on ws.
+func coreHere(ws *store.Workspace, ctl coreControl, stdout io.Writer, run func() error) error {
+	h, held, err := ws.CoreRunning()
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", ws.CoreLockFile(), err)
+	}
+	if !held {
+		return run()
+	}
+	if h.Owner == core.OwnerConsole {
+		return fmt.Errorf("the engine runs inside mate console (%s); quit that console first", pidWord(h.PID))
+	}
+	fmt.Fprintln(stdout, "mate core: already running")
+	ctl.printStatus(ws, h, stdout)
+	return nil
+}
+
+// runCoreForeground runs ws's engine over the live dependencies until
+// SIGINT, SIGTERM or SIGHUP. Its output goes to core.log as well as to the
+// terminal (decided 2026-11-06), so a core's log is in one place however
+// it was started.
+func runCoreForeground(ws *store.Workspace, stdout, stderr io.Writer) error {
+	stdout, stderr, closeLog, err := coreLogTee(ws, stdout, stderr, os.Stdout)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
 
 	// The live dependencies the console builds (runConsole): the `herdr`
 	// findTool resolves, and the observer `.mate/.env` asks for.
@@ -136,8 +185,8 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	opts.Claim = claim
 	opts.ConsoleSeen = seen
 	opts.Notices = notices
-	opts.Act = engineActions(ws, deps, noticeClient)
-	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
+	opts.Notice = engineNotice(noticeClient)
+	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote)
 	opts.Dashboard.Socket = ws.CoreSocket()
 	opts.Notifier = notifier
 	opts.Stderr = stderr
@@ -149,14 +198,16 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	}
 	defer engine.Stop()
 
+	// The block a dev server prints first: who runs, where, and the pages
+	// to open. A browser is the captain's to open.
 	serving := engine.Serving()
-	fmt.Fprintf(stdout, "mate core on %s (pid %d)\n  socket %s\n", ws.Root(), os.Getpid(), serving.Socket)
-	if serving.URL != "" {
-		fmt.Fprintf(stdout, "  dashboard %s\n", strings.TrimSpace(serving.URL+" "+serving.LANURL))
-	}
+	fmt.Fprintf(stdout, "mate core · pid %d · %s\n", os.Getpid(), homeShort(ws.Root()))
+	tcpErr := ""
 	if serving.Err != nil {
-		fmt.Fprintf(stderr, "mate core: %v; serving on the socket only\n", serving.Err)
+		tcpErr = serving.Err.Error()
 	}
+	fmt.Fprint(stdout, officeCityLines(serving.URL, serving.LANURL, tcpErr))
+	fmt.Fprint(stdout, herdrLogLines(ws))
 	if line, err := engine.Notifications(); err != nil {
 		fmt.Fprintf(stderr, "mate core: notifications: %v\n", err)
 	} else if line != "" {
@@ -188,6 +239,17 @@ func jevNoticeFirst(jevErr error, notices []string) []string {
 	return out
 }
 
+// engineNotice is the engine's Jev (core.Options.Notice): client, or nil
+// when Jev is off. consoleNoticeClient says off with a nil *notice.Client,
+// and that pointer in the interface would not be nil: the pages would offer
+// Jev and explain_notice would ask a client that is not there (CON-232).
+func engineNotice(client *notice.Client) core.NoticeClassifier {
+	if client == nil {
+		return nil
+	}
+	return client
+}
+
 // coreEngineRefusal words Start's refusal for `mate core run`.
 func coreEngineRefusal(err error) error {
 	var running *core.RunningError
@@ -198,20 +260,6 @@ func coreEngineRefusal(err error) error {
 		return fmt.Errorf("mate core: the engine runs inside mate console (%s); quit that console first", pidWord(running.Holder.PID))
 	}
 	return fmt.Errorf("mate core: already running (%s)", pidWord(running.Holder.PID))
-}
-
-// consoleEngineRefusal words Start's refusal for a console: until the
-// console is a client of the core (CON-214), it runs no engine of its own
-// beside one.
-func consoleEngineRefusal(err error) error {
-	var running *core.RunningError
-	if !errors.As(err, &running) {
-		return err
-	}
-	if running.Holder.Owner == core.OwnerCore {
-		return fmt.Errorf("mate console: mate core (%s) is running; stop it with `mate core stop` to open this console", pidWord(running.Holder.PID))
-	}
-	return fmt.Errorf("mate console: another mate console (%s) runs the engine on this workspace; quit it first", pidWord(running.Holder.PID))
 }
 
 // engineHolderRefusal is `mate reindex`'s word when mate.db is locked: the

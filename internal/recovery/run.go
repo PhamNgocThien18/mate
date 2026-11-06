@@ -266,3 +266,39 @@ func restart(ctx context.Context, ws *store.Workspace, deps spawn.Deps, it Item)
 	it.Resumed, it.Note, it.Err = res.Resumed, res.ResumeNote, err
 	return it
 }
+
+// RestartHost brings back the headless Mate of project whose host of its
+// own died while an engine ran (CON-226: the core watches each host). It is
+// Run's restart of that one Mate: it holds `.mate/recover.lock`, so it
+// never runs beside a recovery pass, and asks again under it. Only when
+// mate.meta still records the host the caller found dead - same pid - and
+// that host still does not answer does it start the Mate again, resumed on
+// its session (restart), holding what hold takes - the caller's own lock on
+// the Mate, tried only once recover.lock is held - for the restart. acted
+// is false when there was nothing left to do: a stop cleared the record, a
+// start replaced it, the host answers now, or hold was refused. A nil hold
+// takes nothing.
+func RestartHost(ctx context.Context, ws *store.Workspace, deps spawn.Deps, project, pid string, hold func() (release func(), ok bool)) (it Item, acted bool) {
+	it = Item{Project: project}
+	unlock, err := ws.LockRecover(ctx)
+	if err != nil {
+		it.Err = fmt.Errorf("recovery lock: %w", err)
+		return it, false
+	}
+	defer unlock()
+	if hold != nil {
+		release, ok := hold()
+		if !ok {
+			return it, false
+		}
+		defer release()
+	}
+	meta, err := ws.ReadMateMeta(project)
+	if err != nil || !store.MateHostDetached(meta) || meta[store.MetaMatePID] != pid {
+		return it, false
+	}
+	if alive, asked := spawn.HostAlive(ctx, ws, project); alive || !asked {
+		return it, false
+	}
+	return restart(ctx, ws, deps, it), true
+}

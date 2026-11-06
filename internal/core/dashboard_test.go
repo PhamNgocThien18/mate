@@ -23,9 +23,9 @@ import (
 const freeAddr = "127.0.0.1:0"
 
 // dashboardEngine starts an engine over a shopWorkspace that serves the
-// dashboard on o, until the test ends; act is its Options.Act, and nil
-// keeps the dashboard read-only; it runs every action, the engine's own
-// too (locksOnly). compute, when it is given, is the
+// dashboard on o, until the test ends; act is its Options.Act, which runs
+// every action in place of the engine's own, and nil keeps the dashboard
+// read-only (DashboardOptions.ReadOnly). compute, when it is given, is the
 // engine's snapshot computation, set before anything can read it, and the
 // cache's clock then stands still: a kept snapshot never ages out, so only
 // an Invalidate drops it, however slow the machine.
@@ -33,7 +33,8 @@ func dashboardEngine(t *testing.T, o DashboardOptions, act coreapi.ActionFunc, c
 	t.Helper()
 	w := shopWorkspace(t)
 	withTimelineDB(t, w)
-	e := locksOnly(New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o, Act: act}))
+	o.ReadOnly = act == nil
+	e := New(Options{Workspace: w, Harnesses: testHarnesses, Dashboard: &o, Act: act})
 	for _, c := range compute {
 		e.snaps.compute = c
 		frozen := time.Now()
@@ -126,12 +127,14 @@ func TestEngineDashboardRemoteNeedsAllow(t *testing.T) {
 
 // The dashboard's own answers are the engine's: the snapshot every UI reads,
 // the fresh one a press is checked against, and the engine's Act, which
-// invalidates after every action. Without an action function it reads no
-// snapshot at all, and an Act the caller put in Deps is not run.
+// invalidates after every action. The pages offer Jev when the engine has
+// one (Options.Notice, CON-232), whatever the caller put in Deps. A
+// ReadOnly dashboard reads no snapshot at all, and an Act the caller put in
+// Deps is not run.
 func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	w := shopWorkspace(t)
 	act := func(context.Context, coreapi.ActionRequest) (string, error) { return "done", nil }
-	e := locksOnly(New(Options{Workspace: w, Act: act, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}}))
+	e := New(Options{Workspace: w, Act: act, Notice: jevSays("none"), Dashboard: &DashboardOptions{}})
 	defer e.Stop()
 	computed := 0
 	e.snaps.compute = func(context.Context) (query.Snapshot, error) {
@@ -140,7 +143,12 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	}
 	deps := e.dashboardDeps()
 	if deps.Snapshot == nil || deps.FreshSnapshot == nil || !deps.Notice {
-		t.Fatalf("deps %+v, want the engine's snapshots and the caller's notice", deps)
+		t.Fatalf("deps %+v, want the engine's snapshots and its Jev", deps)
+	}
+	noJev := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Notice: true}}})
+	defer noJev.Stop()
+	if deps := noJev.dashboardDeps(); deps.Snapshot == nil || deps.Act == nil || deps.Notice {
+		t.Fatalf("deps with no Jev %+v, want the engine's snapshots and actions, and no Jev offered", deps)
 	}
 	ctx := context.Background()
 	for range 2 {
@@ -161,7 +169,7 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 	// The page's Act is the engine's: it shares the engine's locks with
 	// the console's presses (CON-209).
 	h := newHeldActs()
-	held := locksOnly(New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}}))
+	held := New(Options{Workspace: w, Act: h.act, Dashboard: &DashboardOptions{}})
 	defer held.Stop()
 	done := hold(t, held, h, stopMate)
 	if _, err := held.dashboardDeps().Act(ctx, stopMate); !errors.Is(err, coreapi.ErrBusy) {
@@ -175,7 +183,7 @@ func TestEngineDashboardDepsAreTheEngines(t *testing.T) {
 		t.Fatalf("%d actions ran, want the console's only", got)
 	}
 
-	readOnly := New(Options{Workspace: w, Dashboard: &DashboardOptions{Deps: dashboard.Deps{Act: act, Notice: true}}})
+	readOnly := New(Options{Workspace: w, Notice: jevSays("none"), Dashboard: &DashboardOptions{ReadOnly: true, Deps: dashboard.Deps{Act: act, Notice: true}}})
 	defer readOnly.Stop()
 	if deps := readOnly.dashboardDeps(); deps.Snapshot != nil || deps.FreshSnapshot != nil || deps.Act != nil || deps.Notice {
 		t.Fatalf("read-only deps %+v, want no snapshot, no action and no notice", deps)

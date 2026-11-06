@@ -33,12 +33,12 @@ import (
 var splitTerminal host.Host = layoutFunc(func() {})
 
 // consoleUIs is how the console's TUI and its pages press an action: both
-// through one engine's Act, over the console's engineActions (CON-209),
-// the TUI's HeadlessOnly where it cannot split (h nil). The engine is not
-// started: Act needs none of its loops.
+// through one engine's Act (CON-209), which runs every action itself
+// (CON-232), the TUI's HeadlessOnly where it cannot split (h nil). The
+// engine is not started: Act needs none of its loops.
 func consoleUIs(t *testing.T, w *store.Workspace, deps spawn.Deps, h host.Host) (tui, web coreapi.ActionFunc) {
 	t.Helper()
-	engine := core.New(core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses(), Act: engineActions(w, deps, nil)})
+	engine := testEngine(t, core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses()})
 	t.Cleanup(engine.Stop)
 	return tuiAction(engine.Act, h), engine.Act
 }
@@ -229,6 +229,7 @@ func paneMate(t *testing.T, w *store.Workspace, deps spawn.Deps, rt *runtime.Fak
 // its pane (project.yaml names no mode here). Mate Office and Agent City
 // cannot show a pane Mate either, so a page's press runs headless even
 // where its console can split (CON-205).
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 	for _, ui := range []struct {
 		name     string
@@ -280,6 +281,7 @@ func TestTheAskingUIDecidesWhetherTheMateRunsHeadless(t *testing.T) {
 // cannot split and a page have nowhere to show one: the Mate runs
 // headless, and the line the console's status line and the page show says
 // why (CON-220).
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestAHeadlessOnlyStartOverConfigPaneSaysSo(t *testing.T) {
 	for _, ui := range []struct {
 		name     string
@@ -329,6 +331,7 @@ func TestAHeadlessOnlyStartOverConfigPaneSaysSo(t *testing.T) {
 
 // A harness without headless turns still starts from a page: in its pane,
 // without an error.
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	_, web := consoleUIs(t, w, deps, splitTerminal)
@@ -350,6 +353,7 @@ func TestAPageStartsAPaneOnlyHarnessInItsPane(t *testing.T) {
 // composer holds unsent text is confirmed by the same restart pressed on a
 // page within the window, as a second press in the console would be
 // (CON-141, CON-205). The page's restart runs the Mate headless.
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	paneMate(t, w, deps, rt, true)
@@ -379,6 +383,7 @@ func TestARestartHeldInTheConsoleIsConfirmedOnAPage(t *testing.T) {
 // The other way round: a restart a page held is confirmed by the console's
 // press within the window, since the hold is the engine's, not the UI's
 // (CON-231).
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestARestartHeldOnAPageIsConfirmedInTheConsole(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	paneMate(t, w, deps, rt, true)

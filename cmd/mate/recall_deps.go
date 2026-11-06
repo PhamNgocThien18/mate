@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/gitx"
+	"github.com/nguyenngocanh94/mate/internal/memory"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/recall"
 	"github.com/nguyenngocanh94/mate/internal/store"
@@ -30,9 +31,11 @@ func recallDeps() recall.Deps {
 			lines, _ := projectFactsLines(ctx, w, git, project, cfg, true)
 			return lines
 		},
-		AnchorWarnings: anchorWarnings,
+		AnchorWarnings: func(ctx context.Context, git gitx.Git, repo string, r store.RepoConfig, anchors []memory.Anchor) ([]string, error) {
+			return anchorWarnings(ctx, git, repo, r, anchors, staleAnchorCommits)
+		},
 		MemoryCheck: func(ctx context.Context, w *store.Workspace, git gitx.Git, project string, now time.Time) (recall.MemoryReport, error) {
-			rep, err := memoryCheck(ctx, w, git, project, now)
+			rep, err := memoryCheck(ctx, w, git, project, now, staleAnchorCommits)
 			return recall.MemoryReport{
 				Measured:   rep.Budget.Budget != 0,
 				BudgetLine: rep.Budget.Line(),

@@ -14,6 +14,7 @@ import (
 // The Crew row's Stop entry closes the task the way `mate crew stop` does:
 // the same spawn.StopCrew call, reported in the same words.
 func TestConsoleStopCrewClosesTheTaskLikeTheCLI(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
@@ -37,6 +38,7 @@ func TestConsoleStopCrewClosesTheTaskLikeTheCLI(t *testing.T) {
 // Unlanded work is refused before anything changes, exactly as on the
 // command line; the Console has no discard, so the work stays put.
 func TestConsoleStopCrewRefusesUnlandedWork(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 	if err := os.WriteFile(filepath.Join(crew.Worktree, "work.txt"), []byte("unlanded\n"), 0o644); err != nil {

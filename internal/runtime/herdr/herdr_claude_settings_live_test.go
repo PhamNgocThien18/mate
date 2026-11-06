@@ -1,4 +1,4 @@
-package runtime_test
+package herdr_test
 
 // This file is a throwaway proof, not a permanent regression test. It exists
 // to settle ADR 0016's AssumptionClaudeArgsThroughHerdr the hard way: an
@@ -25,6 +25,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/harness/claude"
 	"github.com/nguyenngocanh94/mate/internal/process"
 	"github.com/nguyenngocanh94/mate/internal/runtime"
+	"github.com/nguyenngocanh94/mate/internal/runtime/herdr"
 )
 
 // TestLiveHerdrClaudeStopHookFiresWithRealPayload starts a real Claude child
@@ -39,7 +40,7 @@ import (
 func TestLiveHerdrClaudeStopHookFiresWithRealPayload(t *testing.T) {
 	requireLive(t)
 	session, home := liveLabSession(t)
-	rt := runtime.NewHerdr(process.ExecRunner{})
+	rt := herdr.NewHerdr(process.ExecRunner{})
 	rt.Names = runtime.NewMemoryNameRegistry()
 	rt.StartServer = func(context.Context, string) error { return nil }
 
@@ -273,7 +274,7 @@ const claudeAnswerMarker = "⏺"
 // carrying token appears. It is deliberately a separate signal from the Stop
 // hook payload: the payload proves the turn happened, this proves the terminal
 // shows the answer and not merely the prompt sitting in the composer.
-func waitForAssistantAnswer(ctx context.Context, rt *runtime.Herdr, agent runtime.AgentHandle, token string, within time.Duration) (string, error) {
+func waitForAssistantAnswer(ctx context.Context, rt *herdr.Herdr, agent runtime.AgentHandle, token string, within time.Duration) (string, error) {
 	deadline := time.Now().Add(within)
 	var lastErr error
 	for {
@@ -304,7 +305,7 @@ func paneEnvValue(ctx context.Context, session, paneID, key string) (string, err
 	const marker = "MATE_G512_PANE_ENV"
 	runner := process.ExecRunner{}
 	run := func(args []string) (process.Result, error) {
-		return runner.Run(ctx, process.Spec{Name: "herdr", Args: runtime.WithSession(session, args)})
+		return runner.Run(ctx, process.Spec{Name: "herdr", Args: herdr.WithSession(session, args)})
 	}
 	res, err := run([]string{"pane", "run", paneID, "echo " + marker + "=$" + key})
 	if err != nil {

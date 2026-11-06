@@ -54,13 +54,14 @@ const claudeReviewTable = `{
 }`
 
 func TestCrewSpawnParsesModelAndEffort(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"crew", "spawn", "shop", "k3", "--brief", "b", "--effort", "hgih"},
 		{"crew", "spawn", "shop", "k3", "--brief", "b", "--model", "-c"},
 	} {
 		var out, errw bytes.Buffer
 		var ue *usageError
-		if err := run(args, &out, &errw); !errors.As(err, &ue) {
+		if err := testCLI().run(args, &out, &errw); !errors.As(err, &ue) {
 			t.Fatalf("%v: err = %v, want a usage error", args, err)
 		}
 	}
@@ -69,6 +70,7 @@ func TestCrewSpawnParsesModelAndEffort(t *testing.T) {
 // A spawn that names its harness keeps its profile exactly as given,
 // whatever the table says.
 func TestAnExplicitProfileIsKept(t *testing.T) {
+	t.Parallel()
 	want := spawn.SpawnCrewRequest{Harness: claude.KindClaude, Model: "haiku", Effort: harness.EffortLow}
 	for _, table := range []string{sampleTable, ""} {
 		got, note, err := applyDispatch(dispatchWorkspace(t, table), want)
@@ -82,6 +84,7 @@ func TestAnExplicitProfileIsKept(t *testing.T) {
 // workspace's default harness (codex unless the captain changed it), and
 // says so; without a file of its own the workspace uses the built-in table.
 func TestNoHarnessTakesTheTablesDefault(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, table string
 		want        spawn.SpawnCrewRequest
@@ -103,6 +106,7 @@ func TestNoHarnessTakesTheTablesDefault(t *testing.T) {
 // The default alternative on the workspace's own default harness wins, so a
 // captain who set crew_harness: claude gets the Claude default.
 func TestTheDefaultFollowsTheWorkspaceHarness(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, "")
 	raw, err := os.ReadFile(w.WorkspaceFile())
 	if err != nil {
@@ -127,6 +131,7 @@ func TestTheDefaultFollowsTheWorkspaceHarness(t *testing.T) {
 
 // A model name belongs to one harness, so half a profile is refused.
 func TestModelOrEffortWithoutHarnessIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, req := range []spawn.SpawnCrewRequest{{Model: "opus"}, {Effort: harness.EffortHigh}} {
 		_, _, err := applyDispatch(dispatchWorkspace(t, ""), req)
 		var ue *usageError
@@ -139,6 +144,7 @@ func TestModelOrEffortWithoutHarnessIsRefused(t *testing.T) {
 // A malformed table is reported and corrected, never launched around, and
 // never quietly replaced by the built-in one.
 func TestAMalformedDispatchTableStopsEverySpawn(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, `{"rules": [{"when": "x", "use": {"harness": "codex", "effort": "max"}}]}`)
 	_, _, err := applyDispatch(w, spawn.SpawnCrewRequest{Harness: codex.KindCodex})
 	var ue *usageError
@@ -150,9 +156,10 @@ func TestAMalformedDispatchTableStopsEverySpawn(t *testing.T) {
 // `mate crew dispatch` is how the Mate reads the table: every rule in
 // order, each profile as the exact flags to pass.
 func TestCrewDispatchPrintsTheTableAsFlags(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, sampleTable)
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v\n%s", err, errw.String())
 	}
 	got := out.String()
@@ -176,9 +183,10 @@ func TestCrewDispatchPrintsTheTableAsFlags(t *testing.T) {
 // Without a file of its own the workspace shows the built-in table, says
 // how to replace it, and --example prints that table as JSON that loads.
 func TestCrewDispatchWithoutATableShowsTheBuiltIn(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v", err)
 	}
 	for _, want := range []string{
@@ -206,7 +214,7 @@ func TestCrewDispatchWithoutATableShowsTheBuiltIn(t *testing.T) {
 		t.Errorf("the light scout printed a budget it does not have:\n%s", out.String())
 	}
 	out.Reset()
-	if err := run([]string{"crew", "dispatch", "--example"}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--example"}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch --example: %v", err)
 	}
 	p := filepath.Join(t.TempDir(), dispatch.FileName)
@@ -219,6 +227,7 @@ func TestCrewDispatchWithoutATableShowsTheBuiltIn(t *testing.T) {
 }
 
 func TestHarnessCellNamesEachAxisThatWasSet(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		c    spawn.CrewSummary
 		want string
@@ -234,18 +243,11 @@ func TestHarnessCellNamesEachAxisThatWasSet(t *testing.T) {
 	}
 }
 
-// TestMain keeps every test in this package off the machine's quota-axi:
-// a test that wants a quota reading sets readQuota itself.
-func TestMain(m *testing.M) {
-	readQuota = func(context.Context) (quota.Snapshot, error) { return quota.Snapshot{}, quota.ErrNotInstalled }
-	os.Exit(m.Run())
-}
-
-func withQuota(t *testing.T, snap quota.Snapshot, err error) {
-	t.Helper()
-	prev := readQuota
-	readQuota = func(context.Context) (quota.Snapshot, error) { return snap, err }
-	t.Cleanup(func() { readQuota = prev })
+// withQuota is the test CLI with a quota-axi that reads snap and err.
+func withQuota(snap quota.Snapshot, err error) cli {
+	c := testCLI()
+	c.readQuota = func(context.Context) (quota.Snapshot, error) { return snap, err }
+	return c
 }
 
 func sampleQuota() quota.Snapshot {
@@ -259,10 +261,11 @@ func sampleQuota() quota.Snapshot {
 // `crew dispatch` ends with the quota evidence the skill ranks alternatives
 // by, and which harness it favours.
 func TestCrewDispatchShowsQuota(t *testing.T) {
-	withQuota(t, sampleQuota(), nil)
+	t.Parallel()
+	c := withQuota(sampleQuota(), nil)
 	w := dispatchWorkspace(t, "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := c.run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v", err)
 	}
 	for _, want := range []string{
@@ -279,17 +282,18 @@ func TestCrewDispatchShowsQuota(t *testing.T) {
 
 // Without quota-axi the table still prints, with one line saying so.
 func TestCrewDispatchWithoutQuotaAxiSaysSo(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v", err)
 	}
 	if !strings.Contains(out.String(), "quota: quota-axi is not installed") || !strings.Contains(out.String(), "rule 1:") {
 		t.Fatalf("output = %s", out.String())
 	}
-	withQuota(t, quota.Snapshot{}, errors.New("quota-axi --json: exit status 2"))
+	broken := withQuota(quota.Snapshot{}, errors.New("quota-axi --json: exit status 2"))
 	out.Reset()
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := broken.run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch with a broken quota-axi failed: %v", err)
 	}
 	if !strings.Contains(out.String(), "quota: unreadable (quota-axi --json: exit status 2)") {
@@ -300,13 +304,14 @@ func TestCrewDispatchWithoutQuotaAxiSaysSo(t *testing.T) {
 // A spawn onto a used-up harness is warned about, never refused: the
 // captain's words may have chosen it.
 func TestQuotaWarningNamesAUsedUpHarness(t *testing.T) {
+	t.Parallel()
 	snap := sampleQuota()
 	snap.Readings[0].Runway = quota.RunwayExhausted
-	withQuota(t, snap, nil)
-	if w := quotaWarning(codex.KindCodex); !strings.Contains(w, "codex quota is used up") {
+	c := withQuota(snap, nil)
+	if w := c.quotaWarning(codex.KindCodex); !strings.Contains(w, "codex quota is used up") {
 		t.Fatalf("warning = %q", w)
 	}
-	if w := quotaWarning(claude.KindClaude); w != "" {
+	if w := c.quotaWarning(claude.KindClaude); w != "" {
 		t.Fatalf("an unmeasured harness was warned about: %q", w)
 	}
 }
@@ -316,6 +321,7 @@ func TestQuotaWarningNamesAUsedUpHarness(t *testing.T) {
 // the harness the Mate named (CON-68). One that names either keeps it; a
 // table without a review profile leaves the request alone.
 func TestAReviewWithoutAProfileTakesTheReviewProfile(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, table string
 		req, want   spawn.SpawnCrewRequest
@@ -401,6 +407,7 @@ func rotationWorkspace(t *testing.T, table string, slots ...int) *store.Workspac
 // it names next, read from the slots the project's spawns recorded; `--skip`
 // passes over a harness and says so.
 func TestCrewDispatchPrintsTheNextInRotation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		slots []int
@@ -431,7 +438,7 @@ func TestCrewDispatchPrintsTheNextInRotation(t *testing.T) {
 			w := rotationWorkspace(t, rotationTable, tc.slots...)
 			var out, errw bytes.Buffer
 			args := append([]string{"crew", "dispatch", "shop", "--workspace", w.Root()}, tc.args...)
-			if err := run(args, &out, &errw); err != nil {
+			if err := testCLI().run(args, &out, &errw); err != nil {
 				t.Fatalf("crew dispatch: %v\n%s", err, errw.String())
 			}
 			for _, want := range tc.want {
@@ -449,7 +456,7 @@ func TestCrewDispatchPrintsTheNextInRotation(t *testing.T) {
 	// Without a project there is no position to read, and the table still prints.
 	w := rotationWorkspace(t, rotationTable, 1, 2)
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch without a project: %v", err)
 	}
 	if !strings.Contains(out.String(), "rotation: claude, claude, claude, codex, pi\nnext in rotation: unknown; pass the project (mate crew dispatch <project>)") || !strings.Contains(out.String(), "rule 2:") {
@@ -459,14 +466,14 @@ func TestCrewDispatchPrintsTheNextInRotation(t *testing.T) {
 	// A table without a rotation prints no rotation line; an unknown
 	// --skip or an unknown project is refused.
 	out.Reset()
-	if err := run([]string{"crew", "dispatch", "shop", "--workspace", rotationWorkspace(t, "").Root()}, &out, &errw); err != nil || strings.Contains(out.String(), "rotation") {
+	if err := testCLI().run([]string{"crew", "dispatch", "shop", "--workspace", rotationWorkspace(t, "").Root()}, &out, &errw); err != nil || strings.Contains(out.String(), "rotation") {
 		t.Fatalf("built-in table: err %v, output = %s", err, out.String())
 	}
 	var ue *usageError
-	if err := run([]string{"crew", "dispatch", "shop", "--skip", "gemini", "--workspace", w.Root()}, &out, &errw); !errors.As(err, &ue) {
+	if err := testCLI().run([]string{"crew", "dispatch", "shop", "--skip", "gemini", "--workspace", w.Root()}, &out, &errw); !errors.As(err, &ue) {
 		t.Fatalf("--skip gemini: err = %v, want a usage error", err)
 	}
-	if err := run([]string{"crew", "dispatch", "nope", "--workspace", w.Root()}, &out, &errw); err == nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "nope", "--workspace", w.Root()}, &out, &errw); err == nil {
 		t.Fatal("an unknown project was accepted")
 	}
 }
@@ -476,6 +483,7 @@ func TestCrewDispatchPrintsTheNextInRotation(t *testing.T) {
 // turns with --skip); any other harness takes no turn and the note says
 // so. A table without a rotation has nothing to record.
 func TestApplyRotationConsumesOnlyTheNextHarness(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		slots    []int
@@ -513,6 +521,7 @@ func TestApplyRotationConsumesOnlyTheNextHarness(t *testing.T) {
 // --model/--effort win over both; a table with no review_small reviews
 // every change on review.
 func TestASmallChangeTakesTheReviewSmallProfile(t *testing.T) {
+	t.Parallel()
 	docs := &reviewStat{Lines: 12, Files: 2}
 	code := &reviewStat{Lines: 12, Files: 2, Code: []string{"cmd/mate/main.go"}}
 	big := &reviewStat{Lines: 51, Files: 1}
@@ -549,9 +558,10 @@ func TestASmallChangeTakesTheReviewSmallProfile(t *testing.T) {
 // `crew dispatch` prints the review_small profile and its threshold next
 // to the review profile, so the Mate sees both.
 func TestCrewDispatchPrintsTheReviewSmallProfile(t *testing.T) {
+	t.Parallel()
 	w := dispatchWorkspace(t, "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v", err)
 	}
 	want := "review (what `mate review` uses when you pass no --model or --effort): --harness claude --model sonnet --effort medium --budget 3000000\n" +
@@ -568,9 +578,10 @@ func TestCrewDispatchPrintsTheReviewSmallProfile(t *testing.T) {
 // workspace.yaml `lanes:` or the default, and what to do when it is full
 // (CON-118). A workspace with no lane prints no lanes block.
 func TestCrewDispatchReportsLanes(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v\n%s", err, errw.String())
 	}
 	if strings.Contains(out.String(), "lanes") {
@@ -591,7 +602,7 @@ func TestCrewDispatchReportsLanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v\n%s", err, errw.String())
 	}
 	for _, want := range []string{
@@ -618,7 +629,7 @@ func TestCrewDispatchReportsLanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "dispatch", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew dispatch: %v\n%s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "xcode: 2/4 busy") || !strings.Contains(out.String(), "; 2 free") {
@@ -629,6 +640,7 @@ func TestCrewDispatchReportsLanes(t *testing.T) {
 // A spawn into a full lane is refused with exit 2 and the line the Mate
 // acts on; --lane none and a lane with room pass (CON-118).
 func TestLaneGuardRefusesAFullLane(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	req := spawn.SpawnCrewRequest{Project: "shop", Crew: "ui-9"}
 	if err := laneGuard(w, req); err != nil {

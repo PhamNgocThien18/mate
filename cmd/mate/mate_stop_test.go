@@ -13,6 +13,7 @@ import (
 // `mate mate stop` stows first only for the captain, and only into an
 // empty composer (docs/mvp.md task 37, B7).
 func TestMateStopStowsOnlyForTheCaptain(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		caller string

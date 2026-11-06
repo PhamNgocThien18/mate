@@ -85,7 +85,7 @@ func (c Claude) Capabilities() harness.Capabilities {
 			Evidence: harness.Evidence{
 				Version:  "claude-code 2.1.251",
 				Measured: "mate v1 G1, carried into this repo 2026-09-17",
-				Proof:    "`herdr agent prompt <name> \"/exit\"` ended the agent; runtime.Herdr.StopAgent sends it",
+				Proof:    "`herdr agent prompt <name> \"/exit\"` ended the agent; herdr.Herdr.StopAgent sends it",
 			},
 		},
 		Session: harness.Cap[harness.SessionIdentity]{
