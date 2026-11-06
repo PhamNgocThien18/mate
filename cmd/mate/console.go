@@ -159,7 +159,7 @@ func runConsole(dir string, stdout, stderr io.Writer) error {
 	// every action drops the core's cached snapshot, so the next read shows
 	// what it changed.
 	bindings := append(consoleCommandBindings(commands), links.bindings()...)
-	load := consoleLoad(client.Snapshot, bindings, coreNotices(client, status.Notices))
+	load := boundedLoad(consoleLoad(client.Snapshot, bindings, coreNotices(client, status.Notices)), consoleReadWait)
 	act := tuiAction(client.Act, h)
 
 	notice := ""

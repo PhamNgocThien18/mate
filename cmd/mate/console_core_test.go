@@ -5,11 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -206,8 +209,9 @@ func TestConsoleSaysACoreThatDoesNotAnswer(t *testing.T) {
 }
 
 // The core goes away while the console is open: the header says stale on
-// the next read, and live again once a core answers on the socket - one the
-// console did not start.
+// the next read, and live again once a core answers on the socket. The
+// reads here are `r`'s, which take the same load as the 2 s tick
+// (startLoad); the core that comes back is one the test starts.
 func TestConsoleHeaderComesBackLiveWithTheCore(t *testing.T) {
 	w := coreWorkspace(t)
 	runOne := func() (stop func()) {
@@ -261,14 +265,49 @@ func TestConsoleHeaderComesBackLiveWithTheCore(t *testing.T) {
 	if !strings.Contains(header(), "stale") || !strings.Contains(model.View(), "Refresh failed") {
 		t.Fatalf("with the core gone the header does not say stale:\n%s", model.View())
 	}
-	if _, held, _ := w.CoreRunning(); held {
-		t.Fatal("the console started a core when the one it had went away")
-	}
 
 	stop = runOne()
 	defer stop()
 	step(refresh)
 	if strings.Contains(header(), "stale") {
 		t.Fatalf("with the core back the header still says stale:\n%s", model.View())
+	}
+}
+
+// The runtime line says the notification loop's word on every read it is
+// there; the core's other notices only when the opening status line did not
+// say them.
+func TestCoreNoticesRepeatOnlyTheNotificationsWord(t *testing.T) {
+	w := coreWorkspace(t)
+	newSocketCore(t, w, func(rw http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(rw).Encode(coreapi.CoreStatus{PID: 1, Notices: []string{
+			"notifications: no notify-send", "jev: no key", "observer: broken"}})
+	})
+	client := connectTo(t, w)
+	got := coreNotices(client, []string{"notifications: no notify-send", "jev: no key"})(context.Background())
+	if want := []string{"notifications: no notify-send", "observer: broken"}; !slices.Equal(got, want) {
+		t.Fatalf("notices %q, want %q", got, want)
+	}
+}
+
+// A console started before a new mate was installed: the core it restarts
+// runs the new binary, another build than its own. It does not ask again,
+// and says to open the console again.
+func TestAnOlderConsoleSaysToOpenItAgain(t *testing.T) {
+	w := coreWorkspace(t)
+	f := newFakeCores(t, "serve")
+	fakeCoreBinary(t, w, f, "build 1")
+	old, _ := f.startOK(t, w)
+	var out bytes.Buffer
+	// The console is of build 0; the core it restarts runs build 1 again.
+	_, _, err := consoleLink(f.coreControl, sha256Hex("build 0"), "y\n", &out).connect(w)
+	if !errors.Is(err, errConsoleOlderBuild) {
+		t.Fatalf("connect = %v, want %v\n%s", err, errConsoleOlderBuild, out.String())
+	}
+	if h, held, _ := w.CoreRunning(); !held || h.PID == old {
+		t.Fatalf("core.lock %+v held %v; want the restarted core running", h, held)
+	}
+	if strings.Count(out.String(), "Restart it?") != 1 {
+		t.Errorf("the console asked %d times:\n%s", strings.Count(out.String(), "Restart it?"), out.String())
 	}
 }

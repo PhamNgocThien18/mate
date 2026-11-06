@@ -213,7 +213,7 @@ func TestOnlyTheConsoleRunsTheHerdrFindToolResolves(t *testing.T) {
 // middle of an action neither cancels nor waits for it: the core runs it.
 func TestRunConsoleIsAClientOfTheCore(t *testing.T) {
 	calls := callersOf(t)["runConsole"]
-	for _, want := range []string{"openConsole", "consoleLoad", "tuiAction", "sayAbandoned"} {
+	for _, want := range []string{"openConsole", "boundedLoad", "consoleLoad", "tuiAction", "sayAbandoned"} {
 		if !calls[want] {
 			t.Errorf("runConsole does not call %s", want)
 		}

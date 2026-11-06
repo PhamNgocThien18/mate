@@ -14,6 +14,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/core"
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/coreclient"
+	"github.com/nguyenngocanh94/mate/internal/query"
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
@@ -85,12 +86,18 @@ func (c consoleCore) connect(ws *store.Workspace) (*coreclient.Client, coreapi.C
 		return nil, st, err
 	}
 	if !c.sameBuild(st) {
-		// The binary installed now is still not this console's.
+		// The binary installed now is not this console's: a mate was
+		// installed after this console started, and the core runs it.
 		client.Close()
-		return nil, st, errConsoleOtherBuild
+		return nil, st, errConsoleOlderBuild
 	}
 	return client, st, nil
 }
+
+// errConsoleOlderBuild is connect's refusal when the restarted core still
+// runs another build: the core runs the binary installed now, so the
+// console is the older one.
+var errConsoleOlderBuild = errors.New("mate console: mate core runs the mate installed after this console started; open the console again")
 
 // sameBuild is whether the core runs this console's build. A build either
 // side could not read is not called different.
@@ -178,10 +185,11 @@ func consoleDashboardURL(st coreapi.CoreStatus) string {
 }
 
 // coreNotices is what the console's runtime line says about the core on
-// each read (consoleLoad): the core's notices that the opening status line
-// did not say already. The notification loop's word changes between two
-// reads; the configuration errors said when the console opened are not
-// repeated on every one.
+// each read (consoleLoad). The notification loop's word ("notifications:
+// ...", internal/core's notify.go) changes between two reads and is said on
+// every read it is there, as before CON-214; the core's other notices - a
+// dashboard not served over TCP, Jev's and the observer's configuration -
+// only when the opening status line did not say them already.
 func coreNotices(client *coreclient.Client, opened []string) func(context.Context) []string {
 	return func(ctx context.Context) []string {
 		st, err := client.Core(ctx)
@@ -192,10 +200,34 @@ func coreNotices(client *coreclient.Client, opened []string) func(context.Contex
 		}
 		var out []string
 		for _, n := range st.Notices {
-			if !slices.Contains(opened, n) {
+			if strings.HasPrefix(n, notificationsWord) || !slices.Contains(opened, n) {
 				out = append(out, n)
 			}
 		}
 		return out
+	}
+}
+
+// notificationsWord starts every line the core's notification loop says.
+const notificationsWord = "notifications: "
+
+// consoleReadWait bounds one read of the console's LoadFunc: the snapshot
+// and the core's status over the socket. coreclient sets no deadline of its
+// own, and a core that hangs with its socket still accepting would leave
+// the read in flight for ever: no tick would read again, the header would
+// never say stale, and the core would stop counting the console as open.
+// Longer than the 2 s tick, so a slow snapshot is not called a failure.
+const consoleReadWait = 5 * time.Second
+
+// boundedLoad is load with each read ended after wait.
+func boundedLoad(load coreapi.LoadFunc, wait time.Duration) coreapi.LoadFunc {
+	return func(ctx context.Context) (query.Snapshot, error) {
+		ctx, cancel := context.WithTimeout(ctx, wait)
+		defer cancel()
+		snap, err := load(ctx)
+		if err != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("mate core did not answer within %s", durationWord(wait))
+		}
+		return snap, err
 	}
 }
