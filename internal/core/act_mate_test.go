@@ -27,7 +27,6 @@ var ownActions = []coreapi.ActionRequest{
 	{Action: coreapi.ActionMode, Target: "shop", TargetKind: "project"},
 	{Action: coreapi.ActionRestartMate, Target: "shop", TargetKind: "project"},
 	{Action: coreapi.ActionClearComposer, Target: "shop", TargetKind: "mate"},
-	{Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project"},
 	{Action: coreapi.ActionOpenNews, Target: "shop", TargetKind: "project", Input: "7"},
 	{Action: coreapi.ActionOpenWork, Target: "shop", TargetKind: "project"},
 	{Action: coreapi.ActionOkayWork, Target: "shop", TargetKind: "project", Input: "3"},
@@ -39,6 +38,8 @@ var ownActions = []coreapi.ActionRequest{
 	{Action: coreapi.ActionReply, Target: "shop", TargetKind: "project", Crew: "buy", Input: "A"},
 	{Action: coreapi.ActionPeek, Target: "shop", TargetKind: "project", Crew: "buy"},
 	{Action: coreapi.ActionNotice, Target: "shop", TargetKind: "crew", Crew: "buy"},
+	// Last: once it has run, shop is not there for the others.
+	{Action: coreapi.ActionRemoveProject, Target: "shop", TargetKind: "project"},
 }
 
 // The engine runs every action itself, with no Options.Act (CON-232): none

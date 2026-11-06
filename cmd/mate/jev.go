@@ -37,7 +37,7 @@ type jevMode int
 
 const (
 	jevOff jevMode = iota
-	// jevNotice is the console's Explain notice action alone, the panes
+	// jevNotice is the core's Explain notice action alone, the panes
 	// read by the fixture observer.
 	jevNotice
 	// jevObserver is that action and the observer chain.

@@ -227,8 +227,10 @@ func TestCoreWiresJevOnlyWhenItIsOn(t *testing.T) {
 	if !st.Jev {
 		t.Error("a core with Jev on says it has none")
 	}
-	if err != nil && strings.Contains(err.Error(), "not wired") {
-		t.Errorf("explain_notice with Jev on = %v, want the core's own action", err)
+	// The core's own action: it looks the crew up first, and buy is not
+	// recorded, so it stops there and Jev is never asked over the network.
+	if err == nil || !strings.Contains(err.Error(), "crew buy of shop is not running") {
+		t.Errorf("explain_notice with Jev on = %v, want the core's own action refusing a crew that is not running", err)
 	}
 }
 

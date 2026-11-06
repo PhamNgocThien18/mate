@@ -188,9 +188,11 @@ passes the engine `Workspace`, `Spawn` and `Notice`, no action function;
 and a tick the Mate's host takes.
 A restart held for the captain's second press (`restartHolds`) is the
 engine's, in memory only: any UI confirms it, and only a new engine
-forgets it. It holds one
-lock per target while an action runs: the Project, `project/crew` when the
-request names a crew, the workspace for adding a Project; the chat,
+forgets it.
+
+`Engine.Act` holds one lock per target while an action runs: the
+Project, `project/crew` when the request names a crew, the workspace for
+adding a Project; the chat,
 `peek`, `explain_notice`, `okay_work`, `open_news` and `open_work` take
 `<target>#<action>` instead, so they run beside a stop or a merge. A
 second action on a held target, from any UI, is refused with

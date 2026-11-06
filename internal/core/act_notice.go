@@ -31,6 +31,7 @@ type NoticeClassifier interface {
 func (e *Engine) explainNotice(ctx context.Context, req coreapi.ActionRequest) (string, error) {
 	ws, deps, classifier := e.o.Workspace, e.o.Spawn, e.o.Notice
 	if classifier == nil {
+		// A guard only: ownAction has no explain_notice without Jev.
 		return "", errors.New("Jev is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, notice.Timeout)
