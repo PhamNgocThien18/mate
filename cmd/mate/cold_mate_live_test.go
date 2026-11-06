@@ -47,6 +47,7 @@ import (
 // of sent.log lines docs/mvp.md section 7 names: one written by the action
 // after the composer cleared, and one written by the Mate's own
 // UserPromptSubmit hook when the model read it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAssignWorksOnAColdMate(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

@@ -12,6 +12,7 @@ import (
 // The Console's harness catalog is the registry's: every kind in its order,
 // each with a mark in every alphabet, and the registry's default for a Mate.
 func TestConsoleHarnessesAreTheCatalogs(t *testing.T) {
+	t.Parallel()
 	got := consoleHarnesses()
 	kinds := harnesses.Kinds()
 	if len(got.List) != len(kinds) {
@@ -34,6 +35,7 @@ func TestConsoleHarnessesAreTheCatalogs(t *testing.T) {
 // A new workspace records the registry's defaults, so its file says what it
 // runs; and a usage line lists the role's default first.
 func TestNewWorkspaceRecordsTheRegistryDefaults(t *testing.T) {
+	t.Parallel()
 	d := workspaceDefaults()
 	mate, _ := harnesses.Default(harness.RoleMate)
 	crew, _ := harnesses.Default(harness.RoleCrew)
@@ -50,6 +52,7 @@ func TestNewWorkspaceRecordsTheRegistryDefaults(t *testing.T) {
 // StartMate refuses by. Every harness is still in the catalog, because a
 // Crew runs on it either way.
 func TestOnlyAHarnessWithHooksIsOfferedForAMate(t *testing.T) {
+	t.Parallel()
 	mates := strings.Split(harnessChoices(harness.RoleMate, "|"), "|")
 	for _, h := range consoleHarnesses().List {
 		p, err := harnesses.Lookup(harness.Kind(h.Kind))
@@ -70,6 +73,7 @@ func TestOnlyAHarnessWithHooksIsOfferedForAMate(t *testing.T) {
 // capability, wired through dashboardDeps: no harness is named, and a kind
 // this binary does not have is unknown rather than supported.
 func TestDashboardAsksTheProfileWhetherAMateTakesPlugins(t *testing.T) {
+	t.Parallel()
 	ask := dashboardDeps(nil).PluginHarness
 	if ask == nil {
 		t.Fatal("dashboardDeps sets no PluginHarness; the dashboard would call no harness unsupported")

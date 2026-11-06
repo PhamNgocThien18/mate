@@ -55,7 +55,7 @@ func eventsWorkspace(t *testing.T) *store.Workspace {
 func runCLI(t *testing.T, args ...string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	if err := run(args, &stdout, &stderr); err != nil {
+	if err := testCLI().run(args, &stdout, &stderr); err != nil {
 		t.Fatalf("mate %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String()
@@ -64,6 +64,7 @@ func runCLI(t *testing.T, args ...string) string {
 // `mate reindex` builds the whole timeline from the files with no console
 // running, and says what it found.
 func TestReindexBuildsTheTimelineFromTheFilesAlone(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	out := runCLI(t, "reindex", w.Root())
 	if !strings.Contains(out, "shop: ") || !strings.Contains(out, "event(s)") {
@@ -80,6 +81,7 @@ func TestReindexBuildsTheTimelineFromTheFilesAlone(t *testing.T) {
 // `mate events <project>` prints one JSON object per line, in story order,
 // with the field order the timeline package fixes.
 func TestEventsPrintsOneJSONObjectPerLine(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -116,6 +118,7 @@ func TestEventsPrintsOneJSONObjectPerLine(t *testing.T) {
 
 // `--narrate` tells the same story in sentences, one per event.
 func TestEventsNarrateTellsTheStoryInSentences(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -139,6 +142,7 @@ func TestEventsNarrateTellsTheStoryInSentences(t *testing.T) {
 // `--since` takes either an event id or an RFC3339 time, because the first
 // is what `--follow` prints and the second is what a person has.
 func TestEventsSinceAcceptsAnIDAndATime(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -159,7 +163,7 @@ func TestEventsSinceAcceptsAnIDAndATime(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"events", "shop", "--since", "not-a-time", "--workspace", w.Root()}, &stdout, &stderr); err == nil {
+	if err := testCLI().run([]string{"events", "shop", "--since", "not-a-time", "--workspace", w.Root()}, &stdout, &stderr); err == nil {
 		t.Fatal("--since accepted a value that is neither an id nor a time")
 	}
 }
@@ -167,6 +171,7 @@ func TestEventsSinceAcceptsAnIDAndATime(t *testing.T) {
 // Reading the timeline takes no lock, so `mate events` works while a
 // console is writing. Writing takes one, so a second writer is refused.
 func TestEventsReadsWhileTheWriterHoldsTheLock(t *testing.T) {
+	t.Parallel()
 	w := eventsWorkspace(t)
 	runCLI(t, "reindex", w.Root())
 
@@ -180,7 +185,7 @@ func TestEventsReadsWhileTheWriterHoldsTheLock(t *testing.T) {
 		t.Fatal("events printed nothing while the writer held the lock")
 	}
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"reindex", w.Root()}, &stdout, &stderr); err == nil {
+	if err := testCLI().run([]string{"reindex", w.Root()}, &stdout, &stderr); err == nil {
 		t.Fatal("a second writer was allowed to reindex while the first held the lock")
 	}
 }

@@ -15,6 +15,7 @@ import (
 // what the core says about itself on the runtime line. What the console
 // adds goes on its copy and never into the snapshot it was handed.
 func TestConsoleLoadAddsItsKeysToTheSnapshot(t *testing.T) {
+	t.Parallel()
 	shared := query.Snapshot{
 		Projects: []query.ProjectNode{{ProjectID: "shop"}},
 		Runtime:  query.RuntimeStatus{Notice: "herdr is not running"},
@@ -56,6 +57,7 @@ func TestConsoleLoadAddsItsKeysToTheSnapshot(t *testing.T) {
 // the action changed (CON-208, CON-209). An action that does not go
 // through Act would be seen only once the two seconds are over.
 func TestConsoleReadsAFreshSnapshotAfterAnAction(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	engine := testEngine(t, core.Options{Workspace: w, Spawn: deps, Harnesses: consoleHarnesses()})
 	defer engine.Stop()

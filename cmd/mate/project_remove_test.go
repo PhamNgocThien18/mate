@@ -12,6 +12,7 @@ import (
 // `mate project remove` stops the Mate (stowing first for the captain)
 // before it unregisters, and says so line by line.
 func TestProjectRemoveStopsTheMateThenUnregisters(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	f.rt.SetReadOutput(f.mate, claudeEmptyScreen)
 	var out, errw bytes.Buffer

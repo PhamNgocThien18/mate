@@ -30,6 +30,7 @@ import (
 // holds it for its undo (CON-222), and where no host answers the engine
 // ticks the row itself (CON-231) and says what the console said.
 func TestAPagesChatAndTickRunInTheCore(t *testing.T) {
+	t.Parallel()
 	w := pageWorkspace(t)
 	host := fakeMateHost(t, w.MateDir("shop"))
 	hostGone := host.close
@@ -103,6 +104,7 @@ func TestAPagesChatAndTickRunInTheCore(t *testing.T) {
 // came first. The page gets it as a 409, the console as coreapi.ErrBusy,
 // whose text its message line shows verbatim (internal/ui/console's tests).
 func TestTheConsoleAndAPageActOnOneTargetOneAtATime(t *testing.T) {
+	t.Parallel()
 	w := pageWorkspace(t)
 	// The first action of each pair, the console's merge then the page's, runs until
 	// released; anything else that runs returns at once, so an action let
@@ -322,6 +324,7 @@ func pagePress(t *testing.T, base, body string) (int, string) {
 // with the LAN address when there is one; without a dashboard it says how
 // to start one (CON-150).
 func TestHeadlessHint(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ url, want string }{
 		{"http://127.0.0.1:7777", "Mates run headless here, open in a browser: Mate Office http://127.0.0.1:7777/office/ · Agent City http://127.0.0.1:7777/city/"},
 		{"http://127.0.0.1:7777/ http://192.168.1.5:7777", "Mates run headless here, open in a browser: Mate Office http://127.0.0.1:7777/office/ · Agent City http://127.0.0.1:7777/city/ · LAN http://192.168.1.5:7777"},

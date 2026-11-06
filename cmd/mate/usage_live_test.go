@@ -37,6 +37,7 @@ import (
 // smallest real exercise of both locator paths docs/timeline.md names -
 // `meta.transcript` for the Mate (the Stop hook's own path) and
 // `herdr.agent_session` for the Crew (Herdr's rollout uuid).
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveUsageMatchesTheHarness(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

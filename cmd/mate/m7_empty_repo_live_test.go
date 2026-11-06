@@ -46,6 +46,7 @@ const emptyRepoRequest = `Thêm nút "Mua ngay" lên landing page ESP32, bấm v
 // A failure here is a prompting bug: the fix belongs in
 // assets/mate/AGENTS.md.tmpl or assets/crew/brief.md.tmpl, never in an
 // assertion made weaker.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveM7EmptyRepoDoesNotGuess(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

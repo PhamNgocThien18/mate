@@ -18,7 +18,7 @@ import (
 // directory (internal/migrate), after repairing the links of a workspace
 // that was moved or copied. It is the captain's: it moves the captain's
 // directories, so a Mate or a Crew that runs it is refused.
-func cmdMigrate(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdMigrate(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -32,7 +32,7 @@ func cmdMigrate(args []string, stdout, stderr io.Writer) error {
 		fs.Usage()
 		return newUsageError("mate migrate: want at most 1 argument: <workspace-dir>")
 	}
-	if caller := spawn.CallerFromEnv(); caller != spawn.CallerUser {
+	if caller := c.caller(); caller != spawn.CallerUser {
 		return observability.NewError(observability.CodePermission,
 			fmt.Sprintf("the captain runs mate migrate; a %s cannot move the workspace's repos", caller))
 	}

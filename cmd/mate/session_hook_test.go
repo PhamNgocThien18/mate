@@ -16,11 +16,15 @@ import (
 // of the recall fixture, with a payload on stdin.
 func runMateSession(t *testing.T, w *store.Workspace, payload string, args ...string) (string, string) {
 	t.Helper()
-	t.Setenv("MATE_WORKSPACE", w.Root())
-	t.Setenv("MATE_PROJECT", "shop")
-	chdir(t, w.MateDir("shop"))
+	return runMateSessionWith(t, harnesses, w, payload, args...)
+}
+
+// runMateSessionWith is runMateSession over the harness registry reg.
+func runMateSessionWith(t *testing.T, reg harness.Registry, w *store.Workspace, payload string, args ...string) (string, string) {
+	t.Helper()
+	c := testCLI().withEnv("MATE_WORKSPACE", w.Root(), "MATE_PROJECT", "shop").inDir(w.MateDir("shop"))
 	var stdout, stderr bytes.Buffer
-	if err := cmdHook(append([]string{harness.SessionHookName}, args...), strings.NewReader(payload), &stdout, &stderr); err != nil {
+	if err := c.hookWith(reg, append([]string{harness.SessionHookName}, args...), strings.NewReader(payload), &stdout, &stderr); err != nil {
 		t.Fatalf("cmdHook %s: %v", harness.SessionHookName, err)
 	}
 	return stdout.String(), stderr.String()
@@ -30,6 +34,7 @@ func runMateSession(t *testing.T, w *store.Workspace, payload string, args ...st
 // clear, compact and anything unknown lost the digest (or never had it) and
 // get all of it; resume kept its conversation and gets the live state only.
 func TestSessionHookPrintsWhatEachSourceCallsFor(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	for _, tc := range []struct {
 		payload  string
@@ -64,6 +69,7 @@ func TestSessionHookPrintsWhatEachSourceCallsFor(t *testing.T) {
 // session id and transcript are in mate.meta as soon as the session starts,
 // not only after the first turn's Stop hook; every other key is kept.
 func TestSessionHookRecordsTheSessionID(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	if err := w.WriteMateMeta("shop", map[string]string{
 		spawn.MetaHarness: "claude", spawn.MetaAgent: "mate-shop", spawn.MetaSessionID: "old", spawn.MetaPane: "p1",
@@ -85,6 +91,7 @@ func TestSessionHookRecordsTheSessionID(t *testing.T) {
 // ClaudeSessionHookMaxBytes with part 1 whole and a line saying what to run;
 // Codex, with its limit raised, gets the same digest whole.
 func TestSessionHookFitsWhatEachHarnessReads(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	var big strings.Builder
 	big.WriteString("# Memory\n\n## Captain\n")
@@ -107,8 +114,9 @@ func TestSessionHookFitsWhatEachHarnessReads(t *testing.T) {
 }
 
 func TestSessionHookRefusesAnUnknownHarness(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	err := cmdHook([]string{harness.SessionHookName, "--harness", "pi-ish"}, strings.NewReader(""), &stdout, &stderr)
+	err := testCLI().cmdHook([]string{harness.SessionHookName, "--harness", "pi-ish"}, strings.NewReader(""), &stdout, &stderr)
 	if err == nil || stdout.Len() != 0 {
 		t.Fatalf("an unknown --harness = %v, stdout %q", err, stdout.String())
 	}
@@ -127,15 +135,13 @@ func (c codexWithoutHooks) Capabilities() harness.Capabilities {
 // declares no verified hooks prints no digest of a guessed size: it tells
 // the Mate to recall by hand and says why on stderr.
 func TestSessionHookAsksTheHarnessForItsDigestSize(t *testing.T) {
+	t.Parallel()
 	w, _, _ := recallFixture(t)
 	reg, err := harness.NewRegistry(nil, codexWithoutHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved := harnesses
-	harnesses = reg
-	t.Cleanup(func() { harnesses = saved })
-	stdout, stderr := runMateSession(t, w, `{"source":"startup"}`, "--harness", "codex")
+	stdout, stderr := runMateSessionWith(t, reg, w, `{"source":"startup"}`, "--harness", "codex")
 	if strings.Contains(stdout, "== 1. Live state ==") || !strings.Contains(stdout, "recall shop") {
 		t.Fatalf("stdout = %q, want only the line telling the Mate to run recall", stdout)
 	}

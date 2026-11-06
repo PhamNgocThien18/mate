@@ -14,6 +14,7 @@ import (
 )
 
 func TestReviewRejectsChangedCommitOrAcceptanceContract(t *testing.T) {
+	t.Parallel()
 	for _, change := range []string{"commit", "brief", "handback", "base", "dirty", "verdict"} {
 		t.Run(change, func(t *testing.T) {
 			f := newDiffFixture(t)
@@ -77,6 +78,7 @@ func TestReviewRejectsChangedCommitOrAcceptanceContract(t *testing.T) {
 }
 
 func TestReviewVerdictDoesNotInferApprovalFromProse(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{"tests pass", "## Verdict\npass with reservations", "## Verdict\nchanges-requested"} {
 		if store.ReviewVerdict(text) == "pass" {
 			t.Fatal(text)
@@ -187,6 +189,7 @@ changes-requested
 `
 
 func TestReviewSinceBriefCoversOnlyTheChangeAndListsTheFindings(t *testing.T) {
+	t.Parallel()
 	f := newSinceFixture(t, priorReportWithFindings)
 	fp, err := reviewFingerprint(context.Background(), f.w, gitx.New(), "shop", "k3")
 	if err != nil {
@@ -229,6 +232,7 @@ func TestReviewSinceBriefCoversOnlyTheChangeAndListsTheFindings(t *testing.T) {
 }
 
 func TestReviewCheckAcceptsAScopedReviewOnlyWhenEveryFindingIsClosed(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		report string
 		want   string // "" for accepted, else a substring of the error
@@ -292,6 +296,7 @@ func TestReviewCheckAcceptsAScopedReviewOnlyWhenEveryFindingIsClosed(t *testing.
 }
 
 func TestReviewSinceRefusesWhatItCannotScope(t *testing.T) {
+	t.Parallel()
 	t.Run("no record", func(t *testing.T) {
 		f := newSinceFixture(t, priorReportWithFindings)
 		fp, _ := reviewFingerprint(context.Background(), f.w, gitx.New(), "shop", "k3")
@@ -354,6 +359,7 @@ func TestReviewSinceRefusesWhatItCannotScope(t *testing.T) {
 // Go file is not, and neither is one over the threshold; a --since review
 // measures only the change since the commit the prior review saw.
 func TestReviewDiffStatSizesTheChange(t *testing.T) {
+	t.Parallel()
 	f := newDiffFixture(t)
 	commitInWorktree(t, f.worktree, "README.md", "shop\nmore\n", "add a line")
 	dir := filepath.Dir(f.w.CrewBrief("shop", "k3"))
@@ -412,6 +418,7 @@ func TestReviewDiffStatSizesTheChange(t *testing.T) {
 // never pulled. The base the review records is the commit the branch grew
 // from, the diff the brief asks for is one file, and the brief says so.
 func TestReviewBaseIsTheMergeBaseWhenTheCrewRebasedOntoOrigin(t *testing.T) {
+	t.Parallel()
 	f := newDiffFixture(t)
 	ctx := context.Background()
 	localMain, err := gitx.New().HeadCommit(ctx, f.repo, "main")
@@ -474,6 +481,7 @@ func TestReviewBaseIsTheMergeBaseWhenTheCrewRebasedOntoOrigin(t *testing.T) {
 // is not an ancestor of its head (one written from a default branch the
 // crew never grew from) is refused by --check, whatever the verdict says.
 func TestReviewCheckRefusesABaseTheHeadDoesNotDescendFrom(t *testing.T) {
+	t.Parallel()
 	f := newDiffFixture(t)
 	commitInWorktree(t, f.worktree, "README.md", "review this\n", "change")
 	dir := filepath.Dir(f.w.CrewBrief("shop", "k3"))

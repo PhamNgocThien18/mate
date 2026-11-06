@@ -16,19 +16,19 @@ import (
 )
 
 // cmdCrew dispatches `mate crew <spawn|list|stop|relaunch|dispatch|budget>`.
-func cmdCrew(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func (c cli) cmdCrew(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate crew <spawn|list|stop|relaunch|dispatch|budget> ...")
 	}
 	switch args[0] {
 	case "spawn":
-		return cmdCrewSpawn(args[1:], stdin, stdout, stderr)
+		return c.cmdCrewSpawn(args[1:], stdin, stdout, stderr)
 	case "dispatch":
-		return cmdCrewDispatch(args[1:], stdout, stderr)
+		return c.cmdCrewDispatch(args[1:], stdout, stderr)
 	case "list":
 		return cmdCrewList(args[1:], stdout, stderr)
 	case "stop":
-		return cmdCrewStop(args[1:], stdout, stderr)
+		return c.cmdCrewStop(args[1:], stdout, stderr)
 	case "relaunch", "restart":
 		return cmdCrewRelaunch(args[1:], stdout, stderr)
 	case "budget":
@@ -40,7 +40,7 @@ func cmdCrew(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 
 // cmdCrewSpawn implements
 // `mate crew spawn <project> <id> --brief <file> [--repo <name>] [--scout] [--deliver local|pr] [--size small|medium|large] [--harness codex|claude] [--model <name>] [--effort <level>] [--budget <tokens>] [--skip <harness>]... [--task "<one line>"]`.
-func cmdCrewSpawn(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func (c cli) cmdCrewSpawn(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("crew spawn", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -121,7 +121,7 @@ func cmdCrewSpawn(args []string, stdin io.Reader, stdout, stderr io.Writer) erro
 	if rotationNote != "" {
 		fmt.Fprintf(stderr, "note: %s\n", rotationNote)
 	}
-	if warn := quotaWarning(req.Harness); warn != "" {
+	if warn := c.quotaWarning(req.Harness); warn != "" {
 		fmt.Fprintf(stderr, "warning: %s\n", warn)
 	}
 	if err := laneGuard(w, req); err != nil {
@@ -256,7 +256,7 @@ func dashIfEmpty(s string) string {
 // not given, and otherwise stops the agent, closes the tab, tears down the
 // worktree and branch, and records the crew as finished or failed
 // (task 16, mvp.md section 4b).
-func cmdCrewStop(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdCrewStop(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("crew stop", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -282,7 +282,7 @@ func cmdCrewStop(args []string, stdout, stderr io.Writer) error {
 		// nothing: there is no outcome to report, only the reason.
 		return err
 	}
-	writeCrewStopReport(stdout, project, crew, res, spawn.CallerFromEnv())
+	writeCrewStopReport(stdout, project, crew, res, c.caller())
 	if !res.AlreadyClosed {
 		writeLearningUsageLine(stdout, context.Background(), w, project, crew, "crew stop")
 	}

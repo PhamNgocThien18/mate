@@ -11,6 +11,7 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/query"
 )
 
+// Not parallel: it sets PATH in the process environment.
 func TestExternalTasksAreUntouchedByRecall(t *testing.T) {
 	w, _ := consoleFixture(t, "shop")
 	files := map[string]string{
@@ -35,7 +36,7 @@ func TestExternalTasksAreUntouchedByRecall(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var out, stderr bytes.Buffer
-	if err := run([]string{"recall", "shop", "--live", "--workspace", w.Root()}, &out, &stderr); err != nil {
+	if err := testCLI().run([]string{"recall", "shop", "--live", "--workspace", w.Root()}, &out, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "== Tool:") || strings.Contains(out.String(), "Beads") {
@@ -59,9 +60,10 @@ func TestExternalTasksAreUntouchedByRecall(t *testing.T) {
 }
 
 func TestTaskToolCommandsAreRemoved(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"tool", "beads", "tasks", "task-triage", "epic", "task"} {
 		var out, stderr bytes.Buffer
-		if err := run([]string{name, "shop"}, &out, &stderr); err == nil || !strings.Contains(err.Error(), "unknown command") {
+		if err := testCLI().run([]string{name, "shop"}, &out, &stderr); err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("%s still has a built-in task command: %v", name, err)
 		}
 	}

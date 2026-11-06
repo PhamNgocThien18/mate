@@ -28,7 +28,7 @@ import (
 // spawn injects MATE_CALLER=mate into a Mate's pane and
 // MATE_CALLER=crew into a Crew's, so a Mate cannot claim to be the
 // captain by passing a different word on the command line.
-func cmdMerge(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdMerge(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("merge", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -49,7 +49,7 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	project, crew := fs.Arg(0), fs.Arg(1)
-	res, followups, err := mergeReviewed(context.Background(), w, project, crew, *reviewFlag, *followupsFlag)
+	res, followups, err := mergeReviewed(context.Background(), w, project, crew, c.caller(), *reviewFlag, *followupsFlag)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 	}
 	// A landed task is the moment the Mate decides what runs next (CON-120):
 	// the setting rides on the Mate's merge so it is in front of it then.
-	if spawn.NormaliseCaller(spawn.CallerFromEnv()) != spawn.CallerMate {
+	if c.caller() != spawn.CallerMate {
 		return nil
 	}
 	// CON-200: the merge may have grown a repo's friction log.
@@ -78,10 +78,10 @@ func cmdMerge(args []string, stdout, stderr io.Writer) error {
 
 // mergeReviewed is the merge `mate merge` and `mate land` share: the
 // `--followups` reference resolved, the review checked and pinned when one
-// is named, then MergeCrew with the caller the pane environment names.
+// is named, then MergeCrew as caller, the one the pane environment names.
 // Every refusal happens before anything is touched, and the resolved
 // followups come back for the caller to record on the closed crew.
-func mergeReviewed(ctx context.Context, w *store.Workspace, project, crew, review, followupsRef string) (spawn.MergeResult, string, error) {
+func mergeReviewed(ctx context.Context, w *store.Workspace, project, crew, caller, review, followupsRef string) (spawn.MergeResult, string, error) {
 	followups, err := checkFollowups(w, project, followupsRef)
 	if err != nil {
 		return spawn.MergeResult{}, "", err
@@ -97,7 +97,7 @@ func mergeReviewed(ctx context.Context, w *store.Workspace, project, crew, revie
 		}
 		reviewed = append(reviewed, spawn.ReviewedCommit{Head: fp["head"], Base: fp["base"]})
 	}
-	res, err := spawn.MergeCrew(ctx, w, baseDeps(), project, crew, spawn.CallerFromEnv(), reviewed...)
+	res, err := spawn.MergeCrew(ctx, w, baseDeps(), project, crew, caller, reviewed...)
 	if err != nil {
 		// Including the one failure that is not a refusal: a teardown that
 		// failed after the fast-forward landed. MergeCrew's error already

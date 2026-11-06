@@ -59,11 +59,11 @@ func mergeCLIWorkspace(t *testing.T) (*store.Workspace, string) {
 }
 
 func TestCmdMergePrintsOneLineAndFinishesTheCrew(t *testing.T) {
+	t.Parallel()
 	w, root := mergeCLIWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 
 	var out, errw bytes.Buffer
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("merge: %v\nstderr: %s", err, errw.String())
 	}
 	line := strings.TrimSpace(out.String())
@@ -98,11 +98,10 @@ func TestCmdMergePrintsOneLineAndFinishesTheCrew(t *testing.T) {
 // into the Mate's pane, and which no flag can override. A Mate merges only
 // reviewed work (docs/mvp.md M19); the captain is never gated.
 func TestCmdMergeReadsTheCallerFromThePaneEnvironment(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
-	t.Setenv("MATE_CALLER", "mate")
-
 	var out, errw bytes.Buffer
-	err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
+	err := testCLI().withEnv("MATE_CALLER", "mate").cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
 	if err == nil {
 		t.Fatal("a Mate must be refused without --review")
 	}
@@ -113,14 +112,12 @@ func TestCmdMergeReadsTheCallerFromThePaneEnvironment(t *testing.T) {
 		t.Fatalf("a refused merge printed %q", out.String())
 	}
 
-	t.Setenv("MATE_CALLER", "crew")
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err == nil || !strings.Contains(err.Error(), "a crew cannot merge its own branch") {
+	if err := testCLI().withEnv("MATE_CALLER", "crew").cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err == nil || !strings.Contains(err.Error(), "a crew cannot merge its own branch") {
 		t.Fatalf("a crew's merge: err = %v, want the crew refusal", err)
 	}
 
-	t.Setenv("MATE_CALLER", "")
 	out.Reset()
-	if err := cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdMerge([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("the captain's merge: %v", err)
 	}
 	if !strings.Contains(out.String(), "crew finished") {
@@ -129,9 +126,10 @@ func TestCmdMergeReadsTheCallerFromThePaneEnvironment(t *testing.T) {
 }
 
 func TestCmdMergeWantsTwoArguments(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	var out, errw bytes.Buffer
-	err := cmdMerge([]string{"--workspace", root, "shop"}, &out, &errw)
+	err := testCLI().cmdMerge([]string{"--workspace", root, "shop"}, &out, &errw)
 	var ue *usageError
 	if err == nil || !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want a usage error", err)
@@ -139,10 +137,10 @@ func TestCmdMergeWantsTwoArguments(t *testing.T) {
 }
 
 func TestRunDispatchesMerge(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"merge", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"merge", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
 		t.Fatalf("run merge: %v\nstderr: %s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "shop/k3: merged") {
@@ -153,10 +151,11 @@ func TestRunDispatchesMerge(t *testing.T) {
 // `project yolo` and `project mode` were removed by docs/mvp.md M19; a Mate
 // quoting an old manual is told what replaced them.
 func TestCmdProjectYoloAndModeAreGone(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
 	for _, sub := range []string{"yolo", "mode"} {
 		var out, errw bytes.Buffer
-		err := cmdProject([]string{sub, "--workspace", root, "shop", "on"}, &out, &errw)
+		err := testCLI().cmdProject([]string{sub, "--workspace", root, "shop", "on"}, &out, &errw)
 		var ue *usageError
 		if err == nil || !errors.As(err, &ue) || !strings.Contains(err.Error(), "--deliver local|pr") || !strings.Contains(err.Error(), "--review") {
 			t.Fatalf("project %s: err = %v, want a usage error naming --deliver and --review", sub, err)
@@ -207,11 +206,11 @@ const passWithFindings = "## Summary\nFine, two things to tidy.\n## Findings\n- 
 // refusal prints them; a backlog line under ## Queued or a tracker id is
 // accepted, checked, and recorded in the crew's meta.
 func TestCmdMergeWantsFollowupsForAPassingReviewsFindings(t *testing.T) {
-	t.Setenv("MATE_CALLER", "")
+	t.Parallel()
 	refuse := func(t *testing.T, w *store.Workspace, root string, args []string, want ...string) {
 		t.Helper()
 		var out, errw bytes.Buffer
-		err := cmdMerge(append([]string{"--workspace", root, "shop", "k3"}, args...), &out, &errw)
+		err := testCLI().cmdMerge(append([]string{"--workspace", root, "shop", "k3"}, args...), &out, &errw)
 		if err == nil {
 			t.Fatalf("merge went through:\n%s", out.String())
 		}
@@ -249,7 +248,7 @@ func TestCmdMergeWantsFollowupsForAPassingReviewsFindings(t *testing.T) {
 				t.Fatal(err)
 			}
 			var out, errw bytes.Buffer
-			if err := cmdMerge([]string{"--workspace", root, "shop", "k3", "--review", "rev", "--followups", ref}, &out, &errw); err != nil {
+			if err := testCLI().cmdMerge([]string{"--workspace", root, "shop", "k3", "--review", "rev", "--followups", ref}, &out, &errw); err != nil {
 				t.Fatalf("merge: %v\n%s", err, errw.String())
 			}
 			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -269,7 +268,7 @@ func TestCmdMergeWantsFollowupsForAPassingReviewsFindings(t *testing.T) {
 		w, root := mergeCLIWorkspace(t)
 		recordPassingReview(t, w, "rev", "## Summary\nClean.\n## Findings\nnone\n## Verdict\npass\n")
 		var out, errw bytes.Buffer
-		if err := cmdMerge([]string{"--workspace", root, "shop", "k3", "--review", "rev"}, &out, &errw); err != nil {
+		if err := testCLI().cmdMerge([]string{"--workspace", root, "shop", "k3", "--review", "rev"}, &out, &errw); err != nil {
 			t.Fatalf("merge: %v\n%s", err, errw.String())
 		}
 		if meta, _ := w.ReadCrewMeta("shop", "k3"); meta[store.MetaFollowups] != "" || meta[spawn.MetaState] != "finished" {

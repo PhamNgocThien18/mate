@@ -182,6 +182,7 @@ func (f *fakeCores) statusOut(t *testing.T, ws *store.Workspace) (string, error)
 // and leaves no socket; then status says not running, and stop says so
 // with exit 0.
 func TestCoreStartStatusStop(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "serve")
 
@@ -262,13 +263,14 @@ func TestCoreStartStatusStop(t *testing.T) {
 // Through the command as typed: status exits 1 with no core, 0 with one;
 // stop exits 0 with none. Nothing here starts a process.
 func TestCoreStatusExitCodes(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "mate core: not running") {
+	if code := testCLI().mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "mate core: not running") {
 		t.Fatalf("status with no core: exit %d, stderr %q", code, stderr.String())
 	}
 	stdout.Reset()
-	if code := mainRun([]string{"core", "stop", "--workspace", w.Root()}, &stdout, &stderr); code != 0 || stdout.String() != "mate core: not running\n" {
+	if code := testCLI().mainRun([]string{"core", "stop", "--workspace", w.Root()}, &stdout, &stderr); code != 0 || stdout.String() != "mate core: not running\n" {
 		t.Fatalf("stop with no core: exit %d, stdout %q", code, stdout.String())
 	}
 	l, err := w.LockCore(store.CoreHolder{PID: 4242, Owner: store.CoreOwnerCore, URL: fakeCoreURL})
@@ -277,7 +279,7 @@ func TestCoreStatusExitCodes(t *testing.T) {
 	}
 	defer l.Unlock()
 	stdout.Reset()
-	if code := mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "mate core · pid 4242") {
+	if code := testCLI().mainRun([]string{"core", "status", w.Root()}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "mate core · pid 4242") {
 		t.Fatalf("status with a core: exit %d, stdout %q", code, stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "(not answering: ") {
@@ -290,6 +292,7 @@ func TestCoreStatusExitCodes(t *testing.T) {
 // stop signals nobody, and start runs a new core and writes its own
 // record over the old one.
 func TestCoreLockOfADeadCoreIsNotRunning(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	old, _ := json.Marshal(store.CoreHolder{PID: os.Getpid(), Owner: store.CoreOwnerCore, Started: time.Now().Add(-time.Hour)})
 	if err := os.WriteFile(w.CoreLockFile(), old, 0o644); err != nil {
@@ -322,6 +325,7 @@ func TestCoreLockOfADeadCoreIsNotRunning(t *testing.T) {
 // A core that does not stop on SIGTERM is killed when the wait is over,
 // and the socket it left is removed.
 func TestCoreStopKillsACoreThatIgnoresSIGTERM(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "ignore-term")
 	f.stopWait = 500 * time.Millisecond
@@ -345,6 +349,7 @@ func TestCoreStopKillsACoreThatIgnoresSIGTERM(t *testing.T) {
 // A new binary installed over the one a core started from makes status
 // say stale; restart runs the new one and the line is gone.
 func TestCoreStaleAfterInstallUntilRestart(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "serve")
 	f.binary = w.StateDir() + "/fake-mate"
@@ -377,6 +382,7 @@ func TestCoreStaleAfterInstallUntilRestart(t *testing.T) {
 // A core.log past 10 MB becomes core.log.1 at start, replacing the one
 // there, and the new core writes a fresh core.log.
 func TestCoreStartRotatesABigLog(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	big, err := os.Create(w.CoreLogFile())
 	if err != nil {
@@ -419,6 +425,7 @@ func TestCoreStartRotatesABigLog(t *testing.T) {
 // A core that never answers is given up on after the wait, and one that
 // ends at once is said at once; both point at core.log, and exit 1.
 func TestCoreStartSaysWhenTheCoreDoesNotComeUp(t *testing.T) {
+	t.Parallel()
 	t.Run("no answer", func(t *testing.T) {
 		w := coreWorkspace(t)
 		f := newFakeCores(t, "mute")
@@ -446,6 +453,7 @@ func TestCoreStartSaysWhenTheCoreDoesNotComeUp(t *testing.T) {
 // An engine inside a console: start refuses (exit 1), stop refuses and
 // signals nothing, status shows it; neither starts a process.
 func TestCoreCommandsBesideAConsoleEngine(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	l, err := w.LockCore(store.CoreHolder{PID: 4343, Owner: store.CoreOwnerConsole})
 	if err != nil {
@@ -476,13 +484,14 @@ func TestCoreCommandsBesideAConsoleEngine(t *testing.T) {
 // the URLs and exits 0, starting nothing; with the engine in a console it
 // refuses with exit 1; with none it runs the core.
 func TestBareMateBesideARunningEngine(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	l, err := w.LockCore(store.CoreHolder{PID: 4242, Owner: store.CoreOwnerCore, URL: fakeCoreURL, Started: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := mainRun([]string{w.Root()}, &stdout, &stderr); code != 0 {
+	if code := testCLI().mainRun([]string{w.Root()}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 	for _, want := range []string{"mate core: already running\n", "mate core · pid 4242 · ", "Office  http://127.0.0.1:7777/office/\n", "City    http://127.0.0.1:7777/city/\n",
@@ -499,7 +508,7 @@ func TestBareMateBesideARunningEngine(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := mainRun([]string{w.Root()}, &stdout, &stderr); code != 1 || stderr.String() != "mate: the engine runs inside mate console (pid 4343); quit that console first\n" {
+	if code := testCLI().mainRun([]string{w.Root()}, &stdout, &stderr); code != 1 || stderr.String() != "mate: the engine runs inside mate console (pid 4343); quit that console first\n" {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 	l.Unlock()
@@ -513,6 +522,7 @@ func TestBareMateBesideARunningEngine(t *testing.T) {
 // The foreground block says the busy address instead of the two URLs
 // when the dashboard's port is taken, and the core runs on its socket.
 func TestCoreRunSaysABusyPort(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -551,6 +561,7 @@ func TestCoreRunSaysABusyPort(t *testing.T) {
 }
 
 func TestOfficeCityLines(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ url, lan, tcpErr, want string }{
 		{"http://127.0.0.1:7777/", "", "", "Office  http://127.0.0.1:7777/office/\nCity    http://127.0.0.1:7777/city/\n"},
 		{"http://127.0.0.1:7777/", "http://192.168.1.5:7777/", "", "Office  http://127.0.0.1:7777/office/\nCity    http://127.0.0.1:7777/city/\nLAN     http://192.168.1.5:7777/office/\n"},
@@ -572,6 +583,7 @@ func TestOfficeCityLines(t *testing.T) {
 // already is core.log, adds nothing, nor does a `mate core run` beside a
 // running engine, whose log is not rotated under it.
 func TestForegroundCoreAlsoWritesCoreLog(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	if w.Session() == "" {
 		t.Fatal("the workspace names no Herdr session")
@@ -632,6 +644,7 @@ func TestForegroundCoreAlsoWritesCoreLog(t *testing.T) {
 // between two looks of stop's: stop sees the holder change and sends no
 // SIGKILL to the old pid, which may be some other process's by then.
 func TestCoreStopNeverKillsAPidThatNoLongerHoldsTheLock(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	old, err := w.LockCore(store.CoreHolder{PID: 5151, Owner: store.CoreOwnerCore})
 	if err != nil {
@@ -671,6 +684,7 @@ func TestCoreStopNeverKillsAPidThatNoLongerHoldsTheLock(t *testing.T) {
 // Two starts at once: the one whose core lost the lock says the other's
 // runs, exit 0, rather than that its own ended.
 func TestCoreStartBesideAStartThatWon(t *testing.T) {
+	t.Parallel()
 	w := coreWorkspace(t)
 	f := newFakeCores(t, "fail")
 	command := f.command

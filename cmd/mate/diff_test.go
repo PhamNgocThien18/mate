@@ -75,11 +75,12 @@ func commitInWorktree(t *testing.T, worktree, name, body, subject string) {
 // workspace flag after the positional arguments is the case reorderArgs
 // exists for, and --stat is a boolean that must not swallow the next token.
 func TestDiffCommandParsesItsFlagsInAnyPosition(t *testing.T) {
+	t.Parallel()
 	f := newDiffFixture(t)
 	commitInWorktree(t, f.worktree, "README.md", "shop\nfirst\n", "add first line")
 
 	var stdout, stderr bytes.Buffer
-	if err := run([]string{"diff", "shop", "k3", "--stat", "--workspace", f.w.Root()}, &stdout, &stderr); err != nil {
+	if err := testCLI().run([]string{"diff", "shop", "k3", "--stat", "--workspace", f.w.Root()}, &stdout, &stderr); err != nil {
 		t.Fatalf("mate diff: %v\n%s", err, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "1 file changed") {
@@ -88,7 +89,7 @@ func TestDiffCommandParsesItsFlagsInAnyPosition(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	err := run([]string{"diff", "shop", "--workspace", f.w.Root()}, &stdout, &stderr)
+	err := testCLI().run([]string{"diff", "shop", "--workspace", f.w.Root()}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("diff with one argument must be a usage error")
 	}

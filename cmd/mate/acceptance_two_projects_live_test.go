@@ -78,6 +78,7 @@ const (
 // A failure of this test is a manual bug, not a test bug: the fix belongs in
 // assets/mate/AGENTS.md.tmpl or assets/crew/brief.md.tmpl, never in an
 // assertion made weaker.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
@@ -117,7 +118,7 @@ func TestLiveAcceptanceTwoProjects(t *testing.T) {
 	}
 	// shop's captain merges shop's work themselves: a standing word in the
 	// Mate's memory, which recall hands it before its first turn.
-	if err := run([]string{"remember", "shop", "--captain", "--source", "captain", "I merge shop's work myself from the console; report it ready and leave it unmerged.", "--workspace", root}, os.Stdout, os.Stderr); err != nil {
+	if err := newCLI().run([]string{"remember", "shop", "--captain", "--source", "captain", "I merge shop's work myself from the console; report it ready and leave it unmerged.", "--workspace", root}, os.Stdout, os.Stderr); err != nil {
 		t.Fatalf("remember shop --captain: %v", err)
 	}
 	if w, err = store.Open(root); err != nil {

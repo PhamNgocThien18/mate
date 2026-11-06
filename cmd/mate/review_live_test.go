@@ -15,6 +15,7 @@ import (
 
 // Exercise the actual CLI, independent reviewer and a deliberately broken
 // implementation whose hand-back claims success. A summary must not launder it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveIndependentReviewRejectsFalseHandback(t *testing.T) {
 	requireConsoleLive(t)
 	session, home := consoleLiveLab(t)

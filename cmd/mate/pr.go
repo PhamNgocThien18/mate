@@ -18,22 +18,18 @@ import (
 	"github.com/nguyenngocanh94/mate/internal/store"
 )
 
-// prStarter is how `mate pr watch` starts the detached watcher; tests swap it
-// for one that starts nothing.
-var prStarter prwatch.Starter = prwatch.ExecStarter{}
-
 // pullURL is a GitHub pull request URL, the one thing `mate pr watch`
 // accepts: gh prints it when `gh pr create` succeeds.
 var pullURL = regexp.MustCompile(`^https://[^/\s]+/[^/\s]+/[^/\s]+/pull/[0-9]+$`)
 
 // cmdPR dispatches `mate pr <watch>`.
-func cmdPR(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdPR(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return newUsageError("usage: mate pr watch <project> <crew> <pull-request-url>")
 	}
 	switch args[0] {
 	case "watch":
-		return cmdPRWatch(args[1:], stdout, stderr)
+		return c.cmdPRWatch(args[1:], stdout, stderr)
 	default:
 		return newUsageErrorf("unknown pr subcommand %q", args[0])
 	}
@@ -45,7 +41,7 @@ func cmdPR(args []string, stdout, stderr io.Writer) error {
 // minute and, when the pull request is merged or closed, updates the primary
 // checkout and the crew's meta and status and wakes the Mate
 // (internal/prwatch). The hidden `--run` flag is the detached child itself.
-func cmdPRWatch(args []string, stdout, stderr io.Writer) error {
+func (c cli) cmdPRWatch(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("pr watch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -83,7 +79,7 @@ func cmdPRWatch(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if *runFlag {
-		return runPRWatch(w, project, crew, url, stdout, stderr)
+		return c.runPRWatch(w, project, crew, url, stdout, stderr)
 	}
 
 	// A merged pull request is over for good. A closed one is watched
@@ -100,7 +96,7 @@ func cmdPRWatch(args []string, stdout, stderr io.Writer) error {
 	}); err != nil {
 		return err
 	}
-	started, err := prwatch.Ensure(w, prStarter, project, crew, url)
+	started, err := prwatch.Ensure(w, c.prStarter, project, crew, url)
 	if err != nil {
 		return err
 	}
@@ -117,7 +113,7 @@ func cmdPRWatch(args []string, stdout, stderr io.Writer) error {
 // the pull request ends or it is signalled, and removes its pid file. A Jev
 // configuration problem goes to stderr, which the detached child appends to
 // its log as it does stdout.
-func runPRWatch(w *store.Workspace, project, crew, url string, stdout, stderr io.Writer) error {
+func (c cli) runPRWatch(w *store.Workspace, project, crew, url string, stdout, stderr io.Writer) error {
 	pid := os.Getpid()
 	if err := prwatch.WritePID(w, project, crew, pid); err != nil {
 		return err
@@ -127,7 +123,7 @@ func runPRWatch(w *store.Workspace, project, crew, url string, stdout, stderr io
 	defer stop()
 	deps := prwatch.Deps{
 		WS:     w,
-		GH:     ghClient,
+		GH:     c.gh,
 		Git:    gitx.New(),
 		Outbox: spawn.MateOutbox(w, liveDeps(w, stderr)),
 		Log:    stdout,

@@ -24,9 +24,10 @@ func writeTemp(t *testing.T, text string) string {
 }
 
 func TestBriefCheckAcceptsAGoodBrief(t *testing.T) {
+	t.Parallel()
 	path := writeTemp(t, brieftest.Ship("work"))
 	var out, errw bytes.Buffer
-	if code := mainRun([]string{"brief", "check", path}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"brief", "check", path}, &out, &errw); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, errw.String())
 	}
 	if !strings.HasPrefix(out.String(), "brief ok: "+path+" has every section of a ship brief") {
@@ -37,8 +38,9 @@ func TestBriefCheckAcceptsAGoodBrief(t *testing.T) {
 // TestBriefCheckRefusesTheOldBuyesp32Brief runs the CLI on the brief the
 // Mate actually wrote, and on the report's rewrite of it.
 func TestBriefCheckRefusesTheOldBuyesp32Brief(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	code := mainRun([]string{"brief", "check", "../../internal/brief/testdata/buyesp32-old-task.md"}, &out, &errw)
+	code := testCLI().mainRun([]string{"brief", "check", "../../internal/brief/testdata/buyesp32-old-task.md"}, &out, &errw)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1", code)
 	}
@@ -58,15 +60,16 @@ func TestBriefCheckRefusesTheOldBuyesp32Brief(t *testing.T) {
 
 	out.Reset()
 	errw.Reset()
-	if code := mainRun([]string{"brief", "check", "../../internal/brief/testdata/buyesp32-rewrite-task.md"}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"brief", "check", "../../internal/brief/testdata/buyesp32-rewrite-task.md"}, &out, &errw); code != 0 {
 		t.Fatalf("the report's rewrite: exit %d\n%s", code, errw.String())
 	}
 }
 
 func TestBriefCheckScoutFlag(t *testing.T) {
+	t.Parallel()
 	path := writeTemp(t, brieftest.Ship("work"))
 	var out, errw bytes.Buffer
-	if code := mainRun([]string{"brief", "check", "--scout", path}, &out, &errw); code != 1 {
+	if code := testCLI().mainRun([]string{"brief", "check", "--scout", path}, &out, &errw); code != 1 {
 		t.Fatalf("a ship brief checked as a scout: exit %d", code)
 	}
 	if !strings.Contains(errw.String(), "## Deliverable: missing") {
@@ -75,14 +78,15 @@ func TestBriefCheckScoutFlag(t *testing.T) {
 	scout := writeTemp(t, brieftest.Scout("work", "what?"))
 	out.Reset()
 	errw.Reset()
-	if code := mainRun([]string{"brief", "check", scout, "--scout"}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"brief", "check", scout, "--scout"}, &out, &errw); code != 0 {
 		t.Fatalf("scout brief: exit %d\n%s", code, errw.String())
 	}
 }
 
 func TestBriefCheckUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	if code := mainRun([]string{"brief", "check"}, &out, &errw); code != 2 {
+	if code := testCLI().mainRun([]string{"brief", "check"}, &out, &errw); code != 2 {
 		t.Fatalf("no file: exit %d, want 2", code)
 	}
 }
@@ -91,6 +95,7 @@ func TestBriefCheckUsage(t *testing.T) {
 // ## Captain's words in the app's own copy of the brief, and the crew gets
 // one verified line naming that file.
 func TestBriefAppendAppendsAndTellsTheCrew(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -134,6 +139,7 @@ func TestBriefAppendAppendsAndTellsTheCrew(t *testing.T) {
 // TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief: there is
 // nobody to tell, so the brief must not start disagreeing with the work.
 func TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -159,6 +165,7 @@ func TestBriefAppendRefusesAStoppedCrewWithoutChangingTheBrief(t *testing.T) {
 // line; the words stay appended and the result carries the exact line to
 // send by hand, so a retry never appends twice.
 func TestBriefAppendKeepsTheWordsWhenTheSendIsRefused(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -175,15 +182,17 @@ func TestBriefAppendKeepsTheWordsWhenTheSendIsRefused(t *testing.T) {
 }
 
 func TestBriefAppendUsage(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	for _, args := range [][]string{{"brief", "append", "shop"}, {"brief", "append", "shop", "k3", "words"}} {
-		if code := mainRun(args, &out, &errw); code != 2 {
+		if code := testCLI().mainRun(args, &out, &errw); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
 	}
 }
 
 func TestProjectFactsCLI(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	empty := filepath.Join(ws, "shop", "shop")
 	full := filepath.Join(ws, "blog", "blog")
@@ -202,23 +211,23 @@ func TestProjectFactsCLI(t *testing.T) {
 	runGitOrFatal(t, full, "commit", "-m", "mod")
 
 	var out, errw bytes.Buffer
-	if code := mainRun([]string{"init", ws}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"init", ws}, &out, &errw); code != 0 {
 		t.Fatalf("init: %s", errw.String())
 	}
 	for _, name := range []string{"shop", "blog"} {
-		if code := mainRun([]string{"project", "add", "--workspace", ws, name, filepath.Join(ws, name, name)}, &out, &errw); code != 0 {
+		if code := testCLI().mainRun([]string{"project", "add", "--workspace", ws, name, filepath.Join(ws, name, name)}, &out, &errw); code != 0 {
 			t.Fatalf("add %s: %s", name, errw.String())
 		}
 	}
 	out.Reset()
-	if code := mainRun([]string{"project", "facts", "shop", "--workspace", ws}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"project", "facts", "shop", "--workspace", ws}, &out, &errw); code != 0 {
 		t.Fatalf("facts shop: %s", errw.String())
 	}
 	if !strings.Contains(out.String(), "commits: 0 (main has no commit yet)\nhead: none (anchor shop:main@none)\ntree: empty\n") {
 		t.Fatalf("empty repo facts:\n%s", out.String())
 	}
 	out.Reset()
-	if code := mainRun([]string{"project", "facts", "blog", "--workspace", ws}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"project", "facts", "blog", "--workspace", ws}, &out, &errw); code != 0 {
 		t.Fatalf("facts blog: %s", errw.String())
 	}
 	got := out.String()
@@ -235,6 +244,7 @@ func TestProjectFactsCLI(t *testing.T) {
 // session (CON-73): the brief is appended, the pane is not typed into, and
 // the session input's third part is the words.
 func TestBriefAppendOnARestingCrewOpensAFreshSession(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)
@@ -278,6 +288,7 @@ func TestBriefAppendOnARestingCrewOpensAFreshSession(t *testing.T) {
 // --fresh forces a fresh session on a crew still working; without it the
 // working crew gets the plain line.
 func TestBriefAppendFreshOnAWorkingCrew(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	rt := runtime.NewFake()
 	deps := fakeSpawnDeps(t, rt)

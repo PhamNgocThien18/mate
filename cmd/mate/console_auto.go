@@ -170,7 +170,7 @@ func consoleAutoPilot(ws *store.Workspace, deps spawn.Deps) *autopilot.Pilot {
 			return mateRefresher(ws, deps).Run(ctx, project, true)
 		},
 		Sweep: func(ctx context.Context) {
-			prwatch.Sweep(ws, prStarter)
+			prwatch.Sweep(ws, prwatch.ExecStarter{})
 			gc.Tick(ctx)
 		},
 		Budget: consoleBudgetActions(ws, deps),

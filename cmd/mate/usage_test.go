@@ -56,6 +56,7 @@ func usageWorkspace(t *testing.T) *store.Workspace {
 // Each form of the command reaches its own page: the first line names it,
 // and --top reaches the ledger as a cut (a second task makes one).
 func TestUsageHandsEachFormToItsPage(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	handle, err := db.Open(w)
 	if err != nil {
@@ -85,9 +86,10 @@ func TestUsageHandsEachFormToItsPage(t *testing.T) {
 // A workspace whose console never ran has no mate.db: the command says so
 // and prints nothing.
 func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	var stdout, stderr strings.Builder
-	err := run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
+	err := testCLI().run([]string{"usage", "shop", "--workspace", w.Root()}, &stdout, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "no timeline at") || !strings.Contains(err.Error(), "mate reindex") {
 		t.Fatalf("want the no-timeline error, got %v", err)
 	}
@@ -97,15 +99,17 @@ func TestUsageWithoutATimelineSaysHowToMakeOne(t *testing.T) {
 }
 
 func TestUsageUnknownProjectIsAUsageError(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	var stdout, stderr strings.Builder
-	err := run([]string{"usage", "nope", "--workspace", w.Root()}, &stdout, &stderr)
+	err := testCLI().run([]string{"usage", "nope", "--workspace", w.Root()}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("usage on an unregistered project must fail")
 	}
 }
 
 func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	for name, args := range map[string][]string{
 		"why without a crew":      {"usage", "shop", "--why", "--workspace", w.Root()},
@@ -116,7 +120,7 @@ func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr strings.Builder
-			err := run(args, &stdout, &stderr)
+			err := testCLI().run(args, &stdout, &stderr)
 			var ue *usageError
 			if !errors.As(err, &ue) {
 				t.Fatalf("want a usage error, got %v", err)
@@ -132,6 +136,7 @@ func TestUsageWhyAndTopRefuseTheWrongShape(t *testing.T) {
 // known. internal/usage's TestUsageKeepsAbsoluteContextWithoutAModelWindow
 // is the ledger's half of what was one test before CON-168.
 func TestConsoleKeepsAbsoluteContextWithoutAModelWindow(t *testing.T) {
+	t.Parallel()
 	w := usageWorkspace(t)
 	handle, err := db.Open(w)
 	if err != nil {

@@ -34,6 +34,7 @@ func spawnedHandle(res spawn.CrewResult) runtime.AgentHandle {
 // Console gets carries what was observed.
 
 func TestConsoleWatcherObservesASpawnedCrew(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	res := spawnFakeCrew(t, w, deps, "shop", "k3")
 	rt := deps.Runtime.(*runtime.Fake)
@@ -80,6 +81,7 @@ func TestConsoleWatcherObservesASpawnedCrew(t *testing.T) {
 }
 
 func TestConsoleWatcherOpensRuntimeLostForAKilledAgent(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	res := spawnFakeCrew(t, w, deps, "shop", "k3")
 	rt := deps.Runtime.(*runtime.Fake)
@@ -125,6 +127,7 @@ func TestConsoleWatcherOpensRuntimeLostForAKilledAgent(t *testing.T) {
 // *store.Workspace caches that file. Sharing one handle would be a data race
 // on the cache, so the wiring opens a second one over the same directory.
 func TestConsoleWatcherOpensItsOwnWorkspaceHandle(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	watcher, err := consoleWatcher(w.Root(), deps)
 	if err != nil {

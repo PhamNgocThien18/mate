@@ -46,6 +46,7 @@ import (
 // Everything runs through the seams cmdConsole wires (spawn.MateOutbox over
 // the real Herdr adapter). The Bubble Tea Program is not run - it needs a
 // terminal - but no part of the path being proved lives inside it.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAutoDigestReachesTheMate(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

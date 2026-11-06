@@ -11,6 +11,7 @@ import (
 // `mate learnings open` lists the records' open predictions with the close
 // command; `close` rewrites one and says so. Both read only the records.
 func TestLearningsOpenAndClose(t *testing.T) {
+	t.Parallel()
 	w := liveCrewWorkspace(t, "shop")
 	dir := w.LearningsDir("shop")
 	out := runCLI(t, "learnings", "open", "shop", "--workspace", w.Root())
@@ -44,7 +45,7 @@ func TestLearningsOpenAndClose(t *testing.T) {
 		{"learnings", "list", "shop", "--workspace", w.Root()},
 	} {
 		var ue *usageError
-		if err := run(args, &strings.Builder{}, &strings.Builder{}); !errors.As(err, &ue) {
+		if err := testCLI().run(args, &strings.Builder{}, &strings.Builder{}); !errors.As(err, &ue) {
 			t.Errorf("%v: err = %v, want a usage error", args, err)
 		}
 	}

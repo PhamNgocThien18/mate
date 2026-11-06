@@ -67,6 +67,7 @@ func consoleFixture(t *testing.T, project string) (*store.Workspace, spawn.Deps)
 // stop through the same seam must drop them again while keeping the
 // session id a later resume needs.
 func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	action := engineAction(t, w, deps)
 	ctx := context.Background()
@@ -116,6 +117,7 @@ func TestConsoleActionStartAndStopMoveTheMateMeta(t *testing.T) {
 // refused by StartMate because the first one is still live, and the
 // Console must show that refusal, not a reworded or swallowed one.
 func TestConsoleActionStartPropagatesTheSpawnErrorVerbatim(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	action := engineAction(t, w, deps)
 	ctx := context.Background()
@@ -135,6 +137,7 @@ func TestConsoleActionStartPropagatesTheSpawnErrorVerbatim(t *testing.T) {
 // TestConsoleActionRepairReportsWhatHerdrSays: 'repair' is `mate status` -
 // it re-asks Herdr about the agent mate.meta names and reports the answer.
 func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	action := engineAction(t, w, deps)
 	ctx := context.Background()
@@ -165,6 +168,7 @@ func TestConsoleActionRepairReportsWhatHerdrSays(t *testing.T) {
 // outcome line names the window rather than only the word - "auto" alone
 // does not tell a reader when the first line might land in the Mate's pane.
 func TestConsoleActionModeTogglesTheAutoFlagAndTheLabel(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	action := engineAction(t, w, deps)
 	ctx := context.Background()
@@ -310,6 +314,7 @@ func (r *recordingColumns) of(role string) []panerun.Command {
 // Enter on a Mate row attaches the Mate in the stage. The report tab is
 // `e`, so Enter neither opens nor closes it.
 func TestConsoleStageResolvesMateMeta(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	action := engineAction(t, w, deps)
 	if _, err := action(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
@@ -341,6 +346,7 @@ func TestConsoleStageResolvesMateMeta(t *testing.T) {
 // instead, and no column is touched (measured 2026-09-30, after a Herdr
 // server was lost to a machine restart).
 func TestConsoleStageRefusesAnAgentWhoseHerdrIsGone(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
@@ -362,6 +368,7 @@ func TestConsoleStageRefusesAnAgentWhoseHerdrIsGone(t *testing.T) {
 // instead, without asking Herdr: a Herdr session that is down does not
 // refuse it. A headless Mate that is stopped is refused as before.
 func TestConsoleStageRunsAHeadlessMatesREPL(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if err := w.WriteMateMeta("shop", map[string]string{
 		spawn.MetaHarness: "claude", spawn.MetaMode: spawn.ModeHeadless, spawn.MetaAgent: "mate-shop",
@@ -399,6 +406,7 @@ func TestConsoleStageRunsAHeadlessMatesREPL(t *testing.T) {
 }
 
 func TestConsoleStageNilHostIsNil(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if consoleStage(w, deps, nil) != nil {
 		t.Fatal("consoleStage(nil) must be nil")
@@ -410,6 +418,7 @@ func TestConsoleStageNilHostIsNil(t *testing.T) {
 // `mate.meta` names no agent has nothing to show. The refusal names the
 // stopped state and the key that starts it, and the host is never asked.
 func TestConsoleStageRefusesAStoppedMateWithTheStoppedState(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	rec := newRecordingColumns(t)
 	fn := consoleStage(w, deps, rec.consoleColumns)
@@ -443,6 +452,7 @@ func TestConsoleStageRefusesAStoppedMateWithTheStoppedState(t *testing.T) {
 // Mate, out of `crews/<id>.meta`, into the Herdr agent it names; once torn
 // down it is refused as stopped without reaching the host.
 func TestConsoleStageShowsACrewFromItsMeta(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	res := spawnFakeCrew(t, w, deps, "shop", "k3")
 	rec := newRecordingColumns(t)
@@ -477,6 +487,7 @@ func TestConsoleStageShowsACrewFromItsMeta(t *testing.T) {
 
 // A column the captain closed is laid out again, once, and asked again.
 func TestConsoleStageRemakesAClosedColumn(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
@@ -506,6 +517,7 @@ func (layoutFunc) Close(context.Context, ...string) error        { return nil }
 // A column whose runner died under a pane the host keeps is made afresh:
 // the layout alone sees the pane and makes nothing.
 func TestConsoleStageRemakesAColumnWhoseRunnerDied(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	if _, err := engineAction(t, w, deps)(context.Background(), coreapi.ActionRequest{Action: coreapi.ActionStart, Target: "shop", TargetKind: "mate"}); err != nil {
 		t.Fatal(err)
@@ -515,9 +527,7 @@ func TestConsoleStageRemakesAColumnWhoseRunnerDied(t *testing.T) {
 	live := rec.stage
 	rec.stage = dead
 	closed := 0
-	prev := columnStartWait
-	columnStartWait = 100 * time.Millisecond
-	t.Cleanup(func() { columnStartWait = prev })
+	rec.startWait = 100 * time.Millisecond
 	rec.h = closeAware{layout: func() { rec.layouts++ }, close: func() { closed++; _ = os.Symlink(live, dead) }}
 	fn := consoleStage(w, deps, rec.consoleColumns)
 	if err := fn(context.Background(), console.StageTarget{Kind: console.StageMate, ProjectID: "shop"}); err != nil {
@@ -543,6 +553,7 @@ func (c closeAware) Close(_ context.Context, roles ...string) error {
 // `e` opens the report tab the first time. That is a tab, not a column, so
 // the stage layout is never asked.
 func TestConsoleReviewMakesTheTabForACrew(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	spawnFakeCrew(t, w, deps, "shop", "k3")
 	rec := newRecordingColumns(t)
@@ -572,15 +583,14 @@ func TestConsoleReviewMakesTheTabForACrew(t *testing.T) {
 // A report tab whose runner died under a pane the host keeps is closed
 // and opened again. The stage column is left where it is.
 func TestConsoleReviewRemakesATabWhoseRunnerDied(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	spawnFakeCrew(t, w, deps, "shop", "k3")
 	rec := newRecordingColumns(t)
 	dead := filepath.Join(rec.dir, "dead-review.sock")
 	live := rec.tabs[roleReview].socket
 	rec.tabs[roleReview] = commandTab{col: host.Column{Role: roleReview, Argv: []string{"/bin/mate", "pane", "serve", "--role", roleReview}}, socket: dead}
-	prev := columnStartWait
-	columnStartWait = 100 * time.Millisecond
-	t.Cleanup(func() { columnStartWait = prev })
+	rec.startWait = 100 * time.Millisecond
 	opened := 0
 	var closed []string
 	rec.h = reviewHost{

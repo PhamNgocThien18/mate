@@ -9,6 +9,7 @@ import (
 // An option's key is a to d: the REPL's Topic page takes the other
 // letters as its own keys.
 func TestNewsOpenOptionKeys(t *testing.T) {
+	t.Parallel()
 	for _, opts := range [][]string{
 		{"--option", "f=mở session"},
 		{"--option", "1=một"},
@@ -25,6 +26,7 @@ func TestNewsOpenOptionKeys(t *testing.T) {
 
 // A session proposes one answer to one news (CON-104).
 func TestNewsProposeArgs(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"p", "3"}, {"p", "x", "chọn a"}, {"p", "3", "a", "b"}} {
 		if err := cmdNewsPropose(args, io.Discard, io.Discard); err == nil {
 			t.Errorf("%q: proposed", args)

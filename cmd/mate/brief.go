@@ -108,7 +108,7 @@ func cmdBriefAppend(args []string, stdin io.Reader, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
-	source, err := resolveSendSource("")
+	source, err := resolveSendSource("", os.Getenv)
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func cmdBriefRevise(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	source, err := resolveSendSource("")
+	source, err := resolveSendSource("", os.Getenv)
 	if err != nil {
 		return err
 	}

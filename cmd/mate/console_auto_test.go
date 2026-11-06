@@ -26,6 +26,7 @@ import (
 // Console gets says so.
 
 func TestConsolePilotDigestsToAStartedMate(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	res, err := spawn.StartMate(context.Background(), w, deps, spawn.StartRequest{Project: "shop"})
 	if err != nil {
@@ -123,6 +124,7 @@ func startEngine(t *testing.T, w *store.Workspace, deps spawn.Deps) (*core.Engin
 // CON-207. Run over the fake Herdr, the observer reads the crew, recovery
 // finishes, and Stop closes the timeline: the next writer can open it.
 func TestEngineOptionsRunsTheConsoleLoops(t *testing.T) {
+	t.Parallel()
 	w, deps, ref := engineFixture(t)
 	engine, opts := startEngine(t, w, deps)
 	if opts.Workspace != w || opts.Watcher == nil || opts.Timeline == nil || opts.Ingest == nil ||
@@ -157,6 +159,7 @@ func TestEngineOptionsRunsTheConsoleLoops(t *testing.T) {
 // (internal/db.ErrLocked); quitting leaves the other writer's database and
 // lock alone.
 func TestEngineObservesWithoutTheTimelineWhileAnotherProcessWritesIt(t *testing.T) {
+	t.Parallel()
 	w, deps, ref := engineFixture(t)
 	other, err := db.Open(w)
 	if err != nil {
@@ -196,6 +199,7 @@ func TestEngineObservesWithoutTheTimelineWhileAnotherProcessWritesIt(t *testing.
 // configured: runConsole puts the reason on the status line, and the engine
 // runs on with the fixture observer reading the panes.
 func TestEngineObservesWithTheFixtureWhenJevIsMisconfigured(t *testing.T) {
+	t.Parallel()
 	w, deps, ref := engineFixture(t)
 	writeEnv(t, w, "MATE_JEV=on\n")
 	observer, err := configuredObserver(w)

@@ -14,6 +14,7 @@ import (
 // The Project row's Remove entry is `mate project remove`: the crew is
 // stopped before the Project leaves workspace.yaml, and its files stay.
 func TestConsoleRemoveProjectStopsAgentsThenUnregisters(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 
@@ -42,6 +43,7 @@ func TestConsoleRemoveProjectStopsAgentsThenUnregisters(t *testing.T) {
 }
 
 func TestConsoleRemoveProjectKeepsTheProjectWhenACrewRefuses(t *testing.T) {
+	t.Parallel()
 	w, deps := consoleFixture(t, "shop")
 	crew := spawnFakeCrew(t, w, deps, "shop", "k3")
 	if err := os.WriteFile(filepath.Join(crew.Worktree, "work.txt"), []byte("unlanded\n"), 0o644); err != nil {

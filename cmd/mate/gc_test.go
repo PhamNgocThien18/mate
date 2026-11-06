@@ -18,6 +18,7 @@ import (
 // worktree that exists or a crew still open; without --apply it only lists
 // (CON-114).
 func TestGCTargetsOnlyWorktreesThatAreGone(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	live := filepath.Join(w.WorktreesDir(), "shop-live")
 	if err := os.MkdirAll(live, 0o755); err != nil {
@@ -64,6 +65,7 @@ func TestGCTargetsOnlyWorktreesThatAreGone(t *testing.T) {
 }
 
 func TestGCScheduleRunsAtFirstTickThenEveryPeriodOneAtATime(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	var runs atomic.Int32
 	release := make(chan struct{})

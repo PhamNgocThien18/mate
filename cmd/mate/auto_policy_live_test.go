@@ -42,6 +42,7 @@ import (
 //
 // Everything runs through the seams cmdConsole wires (consolePilot's daemon
 // over the real Herdr adapter), the same way task 19's live test does.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAutoPolicyMateAnswersADigest(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

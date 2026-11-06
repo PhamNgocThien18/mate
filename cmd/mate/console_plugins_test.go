@@ -61,6 +61,7 @@ func pluginFixture(t *testing.T, instances map[string]map[string]string) *store.
 }
 
 func TestPluginLinksBindAndOpen(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, map[string]map[string]string{"board": {"shop": "b"}})
 	links, _, err := loadPluginLinks(w, consolecmd.Config{})
 	if err != nil {
@@ -115,6 +116,7 @@ func TestPluginLinksBindAndOpen(t *testing.T) {
 }
 
 func TestPluginLinksSharedKeyOneLinePerInstance(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, map[string]map[string]string{"board": {"shop": "b", "blog": "b"}})
 	links, _, err := loadPluginLinks(w, consolecmd.Config{})
 	if err != nil {
@@ -134,6 +136,7 @@ func TestPluginLinksSharedKeyOneLinePerInstance(t *testing.T) {
 }
 
 func TestPluginLinkCollisions(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, key string
 		cfg       consolecmd.Config
@@ -164,6 +167,7 @@ func TestPluginLinkCollisions(t *testing.T) {
 }
 
 func TestNoPluginsYAMLChangesNothing(t *testing.T) {
+	t.Parallel()
 	w := pluginFixture(t, nil)
 	links, _, err := loadPluginLinks(w, consolecmd.Config{})
 	if err != nil || len(links) != 0 || len(links.bindings()) != 0 {
@@ -178,6 +182,7 @@ func TestNoPluginsYAMLChangesNothing(t *testing.T) {
 // runs without any plugin link, and says why in one status-line notice that
 // names the file.
 func TestPluginLinkConfigErrorDegradesToNotice(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, yaml, want string }{
 		{"unparsable file", "bogus: [\n", "yaml"},
 		// An instance bound only to blog has no package; shop's board
@@ -215,6 +220,7 @@ func TestPluginLinkConfigErrorDegradesToNotice(t *testing.T) {
 // The console's plugin links and `mate dashboard --open` open a URL with
 // the program internal/platform names for this system (platform.URLOpenerFor
 // has the table), and each says when it is missing.
+// Not parallel: it sets PATH in the process environment.
 func TestURLOpenersAreThePlatforms(t *testing.T) {
 	name, args := platform.URLOpenerFor(runtime.GOOS)
 	if got := hostOpener(); got.name != name || !slices.Equal(got.args, args) {

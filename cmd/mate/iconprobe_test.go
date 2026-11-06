@@ -34,6 +34,7 @@ func fakeBinary(t *testing.T, name string) string {
 }
 
 func TestNerdIconsFollowGhosttysOwnFontReport(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Dir(fakeBinary(t, "ghostty"))
 	env := envOf(map[string]string{"TERM_PROGRAM": "ghostty", "GHOSTTY_BIN_DIR": dir})
 
@@ -53,6 +54,7 @@ func TestNerdIconsFollowGhosttysOwnFontReport(t *testing.T) {
 }
 
 func TestNerdIconsFollowWeztermsOwnFontReport(t *testing.T) {
+	t.Parallel()
 	env := envOf(map[string]string{"WEZTERM_PANE": "3", "WEZTERM_EXECUTABLE_DIR": filepath.Dir(fakeBinary(t, "wezterm"))})
 	have := " 0     \\u{ec82}     x_adv=8  cells=1  glyph=cod-claude,1  wezterm.font(\"Symbols Nerd Font Mono\")"
 	if run, _ := fakeHost(t, have, nil); !probeNerdIcons(env, run) {
@@ -66,6 +68,7 @@ func TestNerdIconsFollowWeztermsOwnFontReport(t *testing.T) {
 }
 
 func TestNerdIconsStayOffElsewhereAndOnFailure(t *testing.T) {
+	t.Parallel()
 	run, calls := fakeHost(t, "found in face", nil)
 	if probeNerdIcons(envOf(map[string]string{"TERM_PROGRAM": "Apple_Terminal"}), run) || len(*calls) != 0 {
 		t.Fatalf("a terminal with no font report turned the icons on (calls %q)", *calls)
@@ -78,6 +81,7 @@ func TestNerdIconsStayOffElsewhereAndOnFailure(t *testing.T) {
 }
 
 func TestMateIconsOverridesTheProbe(t *testing.T) {
+	t.Parallel()
 	run, calls := fakeHost(t, "", errors.New("must not run"))
 	if !probeNerdIcons(envOf(map[string]string{"MATE_ICONS": "nerd"}), run) {
 		t.Fatal("MATE_ICONS=nerd did not turn the icons on")

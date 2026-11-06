@@ -26,7 +26,7 @@ type stubDispatcher struct {
 
 func newStubDispatcher() *stubDispatcher {
 	s := &stubDispatcher{gotRow: -1}
-	cmds := commands()
+	cmds := testCLI().commands()
 	for i := range cmds {
 		row := i
 		cmds[i].run = func(args []string, _, _ io.Writer) error {
@@ -58,7 +58,7 @@ func (s *stubDispatcher) gotName() string {
 func TestCommandTableRowsAreComplete(t *testing.T) {
 	t.Parallel()
 	seen := map[string]bool{}
-	for i, c := range commands() {
+	for i, c := range testCLI().commands() {
 		if len(c.names) == 0 || c.run == nil || c.summary == "" {
 			t.Errorf("row %d (%v): want names, a summary and a handler", i, c.names)
 		}
@@ -76,7 +76,7 @@ func TestCommandTableRowsAreComplete(t *testing.T) {
 
 func TestEveryCommandNameReachesItsRow(t *testing.T) {
 	t.Parallel()
-	for i, c := range commands() {
+	for i, c := range testCLI().commands() {
 		for _, name := range c.names {
 			s := newStubDispatcher()
 			s.isDir = func(string) bool { return true } // a same-named directory must not matter
@@ -101,29 +101,30 @@ func TestEveryCommandNameReachesItsRow(t *testing.T) {
 // them only the name is checked. A new command adds itself here too.
 func TestTableKeepsEveryCommandAndItsHandler(t *testing.T) {
 	t.Parallel()
+	cl := testCLI()
 	want := map[string]any{
 		"--version": cmdVersion, "-V": cmdVersion,
-		"init": cmdInit, "project": cmdProject, "mate": cmdMate,
+		"init": cmdInit, "project": cl.cmdProject, "mate": cl.cmdMate,
 		"crew": nil, "brief": nil, "hook": nil,
 		"remember": cmdRemember, "memory": cmdMemory, "checkpoint": cmdCheckpoint,
 		"recall": cmdRecall, "learnings": cmdLearnings, "wake": cmdWake,
 		"send": cmdSend, "notifications": cmdNotifications, "news": cmdNews,
 		"work": cmdWork, "peek": cmdPeek, "state": cmdState, "review": cmdReview,
-		"report": cmdReport, "diff": cmdDiff, "gc": cmdGC, "merge": cmdMerge,
-		"land": cmdLand, "backlog": cmdBacklog, "pr": cmdPR, "events": cmdEvents,
+		"report": cmdReport, "diff": cmdDiff, "gc": cmdGC, "merge": cl.cmdMerge,
+		"land": cl.cmdLand, "backlog": cmdBacklog, "pr": cl.cmdPR, "events": cmdEvents,
 		"reindex": cmdReindex, "usage": cmdUsage, "dashboard": cmdDashboard,
-		"console": cmdConsoleLaunch, "core": cmdCore, "pane": cmdPane, "migrate": cmdMigrate,
-		"plugin": cmdPlugin,
+		"console": cmdConsoleLaunch, "core": cmdCore, "pane": cmdPane, "migrate": cl.cmdMigrate,
+		"plugin": cl.cmdPlugin,
 	}
 	var names []string
-	for _, c := range commands() {
+	for _, c := range cl.commands() {
 		names = append(names, c.names...)
 	}
 	if len(names) != len(want) {
 		t.Errorf("table has %d names %v, want %d", len(names), names, len(want))
 	}
 	for name, fn := range want {
-		c, ok := lookupCommand(commands(), name)
+		c, ok := lookupCommand(cl.commands(), name)
 		if !ok {
 			t.Errorf("%q is not in the table", name)
 			continue
@@ -137,7 +138,7 @@ func TestTableKeepsEveryCommandAndItsHandler(t *testing.T) {
 func TestVersionIsOneCommandWithTwoNames(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"--version", "-V"} {
-		c, ok := lookupCommand(commands(), name)
+		c, ok := lookupCommand(testCLI().commands(), name)
 		if !ok || !slices.Equal(c.names, []string{"--version", "-V"}) {
 			t.Fatalf("%s: row %v, ok=%v", name, c.names, ok)
 		}
@@ -147,7 +148,7 @@ func TestVersionIsOneCommandWithTwoNames(t *testing.T) {
 func TestUsageListsEveryCommand(t *testing.T) {
 	t.Parallel()
 	const prefix, suffix = "usage: mate [<workspace-dir>] | mate <", "> ..."
-	usage := usageText(commands())
+	usage := usageText(testCLI().commands())
 	lines := strings.Split(usage, "\n")
 	if len(lines) < 2 || !strings.HasPrefix(lines[0], prefix) || !strings.HasSuffix(lines[0], suffix) {
 		t.Fatalf("usage = %q", usage)
@@ -157,7 +158,7 @@ func TestUsageListsEveryCommand(t *testing.T) {
 	}
 	listed := strings.Split(strings.TrimSuffix(strings.TrimPrefix(lines[0], prefix), suffix), "|")
 	var internal []string
-	for _, c := range commands() {
+	for _, c := range testCLI().commands() {
 		for _, name := range c.names {
 			if c.internal == slices.Contains(listed, name) {
 				t.Errorf("%q: internal=%v but on the main line=%v", name, c.internal, !c.internal)
@@ -272,12 +273,13 @@ func TestDotRunsCoreAndConsoleOpensConsole(t *testing.T) {
 	if s.gotName() != "console" || s.cores != 1 {
 		t.Fatalf("handler = %q, cores = %d; want the console command", s.gotName(), s.cores)
 	}
-	if c, _ := lookupCommand(commands(), "console"); reflect.ValueOf(c.run).Pointer() != reflect.ValueOf(cmdConsoleLaunch).Pointer() {
+	if c, _ := lookupCommand(testCLI().commands(), "console"); reflect.ValueOf(c.run).Pointer() != reflect.ValueOf(cmdConsoleLaunch).Pointer() {
 		t.Fatal("`mate console` does not open the console")
 	}
 }
 
 func TestCmdVersionPrintsVersion(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
 	if err := cmdVersion(nil, &out, &errw); err != nil {
 		t.Fatalf("cmdVersion: %v", err)
@@ -288,8 +290,9 @@ func TestCmdVersionPrintsVersion(t *testing.T) {
 }
 
 func TestRunTopLevelVersionFlag(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	if err := run([]string{"--version"}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"--version"}, &out, &errw); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if !strings.HasPrefix(out.String(), "mate ") {
@@ -298,6 +301,7 @@ func TestRunTopLevelVersionFlag(t *testing.T) {
 }
 
 func TestRunConsoleSubcommandNeedsATerminal(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -305,7 +309,7 @@ func TestRunConsoleSubcommandNeedsATerminal(t *testing.T) {
 	}
 	out.Reset()
 	errw.Reset()
-	err := run([]string{"console", ws}, &out, &errw)
+	err := testCLI().run([]string{"console", ws}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError (console needs a TTY)", err)
@@ -316,8 +320,9 @@ func TestRunConsoleSubcommandNeedsATerminal(t *testing.T) {
 }
 
 func TestRunConsoleSubcommandRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	err := run([]string{"console", "a", "b"}, &out, &errw)
+	err := testCLI().run([]string{"console", "a", "b"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -325,8 +330,9 @@ func TestRunConsoleSubcommandRejectsExtraArgs(t *testing.T) {
 }
 
 func TestRunUnknownCommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	err := run([]string{"bogus"}, &out, &errw)
+	err := testCLI().run([]string{"bogus"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -334,8 +340,9 @@ func TestRunUnknownCommandIsUsageError(t *testing.T) {
 }
 
 func TestRunUnknownProjectSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	err := run([]string{"project", "bogus"}, &out, &errw)
+	err := testCLI().run([]string{"project", "bogus"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -343,14 +350,15 @@ func TestRunUnknownProjectSubcommandIsUsageError(t *testing.T) {
 }
 
 func TestMainRunExitCodes(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	if code := mainRun([]string{"--version"}, &out, &errw); code != 0 {
+	if code := testCLI().mainRun([]string{"--version"}, &out, &errw); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 
 	out.Reset()
 	errw.Reset()
-	if code := mainRun([]string{"bogus"}, &out, &errw); code != 2 {
+	if code := testCLI().mainRun([]string{"bogus"}, &out, &errw); code != 2 {
 		t.Fatalf("code = %d, want 2", code)
 	}
 	if !strings.HasPrefix(errw.String(), "mate: ") {
@@ -361,12 +369,16 @@ func TestMainRunExitCodes(t *testing.T) {
 	errw.Reset()
 	ws := t.TempDir()
 	missing := filepath.Join(ws, "nope")
-	if code := mainRun([]string{"project", "list", "--workspace", missing}, &out, &errw); code != 1 {
+	if code := testCLI().mainRun([]string{"project", "list", "--workspace", missing}, &out, &errw); code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
 }
 
+// noEnv is an environment with nothing set.
+func noEnv(string) string { return "" }
+
 func TestFindWorkspaceDirWalksUp(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
@@ -377,16 +389,7 @@ func TestFindWorkspaceDirWalksUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldwd)
-	if err := os.Chdir(nested); err != nil {
-		t.Fatal(err)
-	}
-
-	dir, err := findWorkspaceDir("")
+	dir, err := findWorkspaceDirIn("", noEnv, func() (string, error) { return nested, nil })
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}
@@ -404,30 +407,23 @@ func TestFindWorkspaceDirWalksUp(t *testing.T) {
 }
 
 func TestFindWorkspaceDirNoneFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldwd)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := findWorkspaceDir(""); err == nil {
+	if _, err := findWorkspaceDirIn("", noEnv, func() (string, error) { return dir, nil }); err == nil {
 		t.Fatal("want error when no workspace is found")
 	}
 }
 
 func TestFindWorkspaceDirEnvVar(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	t.Setenv("MATE_WORKSPACE", ws)
-
-	dir, err := findWorkspaceDir("")
+	env := testCLI().withEnv("MATE_WORKSPACE", ws).getenv
+	noCwd := func() (string, error) { return "", errors.New("the environment names the workspace; no cwd is read") }
+	dir, err := findWorkspaceDirIn("", env, noCwd)
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}
@@ -445,14 +441,14 @@ func TestFindWorkspaceDirEnvVar(t *testing.T) {
 }
 
 func TestFindWorkspaceDirFlagWinsOverEnv(t *testing.T) {
+	t.Parallel()
 	ws := t.TempDir()
 	var out, errw bytes.Buffer
 	if err := cmdInit([]string{ws}, &out, &errw); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	t.Setenv("MATE_WORKSPACE", t.TempDir())
-
-	dir, err := findWorkspaceDir(ws)
+	env := testCLI().withEnv("MATE_WORKSPACE", t.TempDir()).getenv
+	dir, err := findWorkspaceDirIn(ws, env, os.Getwd)
 	if err != nil {
 		t.Fatalf("findWorkspaceDir: %v", err)
 	}

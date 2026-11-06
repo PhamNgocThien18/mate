@@ -47,6 +47,7 @@ const acceptanceLine = "Built with mate"
 //
 // A failure here is a manual bug, not a test bug: the fix is to make the
 // rendered AGENTS.md clearer, never to make this test accept less.
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveAcceptanceMateRunsATask(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)

@@ -16,8 +16,9 @@ import (
 )
 
 func TestRunUnknownCrewSubcommandIsUsageError(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	err := run([]string{"crew", "bogus"}, &out, &errw)
+	err := testCLI().run([]string{"crew", "bogus"}, &out, &errw)
 	var ue *usageError
 	if !errors.As(err, &ue) {
 		t.Fatalf("err = %v, want *usageError", err)
@@ -25,6 +26,7 @@ func TestRunUnknownCrewSubcommandIsUsageError(t *testing.T) {
 }
 
 func TestCrewSpawnRequiresProjectIDAndBrief(t *testing.T) {
+	t.Parallel()
 	cases := [][]string{
 		{"crew", "spawn"},
 		{"crew", "spawn", "shop"},
@@ -33,7 +35,7 @@ func TestCrewSpawnRequiresProjectIDAndBrief(t *testing.T) {
 	}
 	for _, args := range cases {
 		var out, errw bytes.Buffer
-		err := run(args, &out, &errw)
+		err := testCLI().run(args, &out, &errw)
 		var ue *usageError
 		if !errors.As(err, &ue) {
 			t.Fatalf("%v: err = %v, want *usageError", args, err)
@@ -42,6 +44,7 @@ func TestCrewSpawnRequiresProjectIDAndBrief(t *testing.T) {
 }
 
 func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -57,7 +60,7 @@ func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
 	}
 
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew list: %v", err)
 	}
 	if !strings.Contains(out.String(), "no crews recorded") {
@@ -78,14 +81,14 @@ func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew list: %v", err)
 	}
 	// STATE is the app's word, NOTE the crew's own. A legacy `done:` line
 	// reads as `wait-mate` and its text lands in NOTE (mvp.md section 4b).
 	// HARNESS carries the launch profile the crew was spawned with.
 	out.Reset()
-	if err := run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"k3", "codex gpt-5.5/high", "mate/k3", "wait-mate", "ready in branch mate/k3", "w1:p2"} {
@@ -96,6 +99,7 @@ func TestCrewListPrintsTheRecordedCrews(t *testing.T) {
 }
 
 func TestCrewListStateColumnShowsTheDeclaredState(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w, err := store.Init(root, workspaceDefaults())
 	if err != nil {
@@ -130,14 +134,14 @@ func TestCrewListStateColumnShowsTheDeclaredState(t *testing.T) {
 	// Every crew here is closed, so the default listing is the hint alone
 	// and --all is what shows the rows.
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew list: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "no open crews") || !strings.Contains(got, "4 closed") || !strings.Contains(got, "--all") {
 		t.Fatalf("default crew list over closed crews = %q, want the count and the --all hint", got)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew list --all: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -161,6 +165,7 @@ func TestCrewListStateColumnShowsTheDeclaredState(t *testing.T) {
 }
 
 func TestCrewStopReportLineDescribesEachOutcome(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		res  spawn.StopResult
@@ -228,13 +233,14 @@ func TestCrewStopReportLineDescribesEachOutcome(t *testing.T) {
 }
 
 func TestCrewStopRequiresProjectAndID(t *testing.T) {
+	t.Parallel()
 	cases := [][]string{
 		{"crew", "stop"},
 		{"crew", "stop", "shop"},
 	}
 	for _, args := range cases {
 		var out, errw bytes.Buffer
-		err := run(args, &out, &errw)
+		err := testCLI().run(args, &out, &errw)
 		var ue *usageError
 		if !errors.As(err, &ue) {
 			t.Fatalf("%v: err = %v, want *usageError", args, err)
@@ -245,6 +251,7 @@ func TestCrewStopRequiresProjectAndID(t *testing.T) {
 // Handed-back crews leave the default list without being closed; --all
 // still lists them, and a new working status brings them back.
 func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
+	t.Parallel()
 	w, err := store.Init(t.TempDir(), workspaceDefaults())
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +275,7 @@ func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
 	}
 
 	var out, errw bytes.Buffer
-	if err := run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatalf("crew list: %v", err)
 	}
 	got := out.String()
@@ -279,7 +286,7 @@ func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
 		t.Fatalf("crew list = %q, want both hidden counts and the --all hint", got)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--all", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "k1") || !strings.Contains(got, "wait-mate") || !strings.Contains(got, "k2") {
@@ -293,7 +300,7 @@ func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"crew", "list", "shop", "--workspace", w.Root()}, &out, &errw); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "k1") || !strings.Contains(got, "working") {
@@ -302,6 +309,7 @@ func TestCrewListHidesWaitMateUntilItWorksAgain(t *testing.T) {
 }
 
 func TestCrewRelaunchReportNamesTheLaunchProfileAndEndsTheTurn(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	writeCrewRelaunchReport(&out, spawn.RelaunchResult{
 		Project: "shop", Crew: "k3", Agent: "crew-k3", Pane: "p9", Harness: claude.KindClaude,

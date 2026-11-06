@@ -47,17 +47,16 @@ func landWorkspace(t *testing.T) (*store.Workspace, string, string) {
 }
 
 func TestCmdLandMergesAndRecordsEverythingInOrder(t *testing.T) {
+	t.Parallel()
 	w, root, shot := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	fake := &process.FakeRunner{}
 	fake.Responses = map[string]process.Result{"land-sh SH-12": {ExitCode: 0, Stdout: []byte("SH-12 → Done, 1 comment, 1 attachment\n")}}
-	oldRunner := trackerRunner
-	trackerRunner = fake
-	t.Cleanup(func() { trackerRunner = oldRunner })
+	c := testCLI()
+	c.tracker = fake
 	writePlugins(t, w, "linear", "tracker:\n      land: [land-sh, \"{id}\"]\n")
 
 	var out, errw bytes.Buffer
-	if err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := c.cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("land: %v\nstderr: %s\nstdout: %s", err, errw.String(), out.String())
 	}
 	text := out.String()
@@ -124,10 +123,10 @@ func TestCmdLandMergesAndRecordsEverythingInOrder(t *testing.T) {
 }
 
 func TestCmdLandRefusesLikeMergeAndRecordsNothing(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "crew")
 	var out, errw bytes.Buffer
-	err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
+	err := testCLI().withEnv("MATE_CALLER", "crew").cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw)
 	if err == nil || !strings.Contains(err.Error(), "merge refused:") {
 		t.Fatalf("land by a crew: err %v, want a merge refusal", err)
 	}
@@ -145,11 +144,11 @@ func TestCmdLandRefusesLikeMergeAndRecordsNothing(t *testing.T) {
 }
 
 func TestCmdLandLeavesTheTrackerToTheMateWithoutALandCommand(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	writePlugins(t, w, "linear", "tracker:\n      read: [read-sh]\n")
 	var out, errw bytes.Buffer
-	if err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("land: %v\nstderr: %s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "tracker: SH-12 not updated ("+plugin.ConfigFile+" has no tracker.land command for linear); mark it done yourself") {
@@ -158,14 +157,14 @@ func TestCmdLandLeavesTheTrackerToTheMateWithoutALandCommand(t *testing.T) {
 }
 
 func TestCmdLandKeepsARecordTheMateWrote(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	own := "# k3 learning\nSource: the Mate wrote this.\nLearning: follow-up\n- a real finding\n\n## Predictions\n1. a claim; baseline x; next check y — outcome: open\n\n" + usage.LearningHeading + "\ntokens: 1 total\n"
 	if err := os.WriteFile(w.CrewLearning("shop", "k3"), []byte(own), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out, errw bytes.Buffer
-	if err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("land: %v\nstderr: %s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "learning: record kept as you wrote it") {
@@ -178,8 +177,8 @@ func TestCmdLandKeepsARecordTheMateWrote(t *testing.T) {
 }
 
 func TestCmdLandClosesAPullRequestCrewTheWatcherSawMerged(t *testing.T) {
+	t.Parallel()
 	w, root, _ := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	// Land the branch the way GitHub would, then record the watcher's facts:
 	// the crew is then a `crew stop`, not a merge.
 	repo := filepath.Join(w.ProjectHome("shop"), "shop")
@@ -188,7 +187,7 @@ func TestCmdLandClosesAPullRequestCrewTheWatcherSawMerged(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errw bytes.Buffer
-	if err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("land: %v\nstderr: %s\nstdout: %s", err, errw.String(), out.String())
 	}
 	if strings.Contains(out.String(), "merged 1 commit(s)") {
@@ -203,18 +202,19 @@ func TestCmdLandClosesAPullRequestCrewTheWatcherSawMerged(t *testing.T) {
 }
 
 func TestCmdLandWantsTwoArguments(t *testing.T) {
+	t.Parallel()
 	var out, errw bytes.Buffer
-	err := cmdLand([]string{"shop"}, &out, &errw)
+	err := testCLI().cmdLand([]string{"shop"}, &out, &errw)
 	if err == nil || !strings.Contains(err.Error(), "want exactly 2 arguments") {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestRunDispatchesLand(t *testing.T) {
+	t.Parallel()
 	_, root := mergeCLIWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	var out, errw bytes.Buffer
-	if err := run([]string{"land", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
+	if err := testCLI().run([]string{"land", "shop", "k3", "--workspace", root}, &out, &errw); err != nil {
 		t.Fatalf("run land: %v\nstderr: %s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "shop/k3: merged") || !strings.Contains(out.String(), "next: ") {
@@ -241,10 +241,10 @@ func writePlugins(t *testing.T, w *store.Workspace, id, extra string) {
 }
 
 func TestCmdLandNamesTheTrackerIdEvenWithoutATrackerPlugin(t *testing.T) {
+	t.Parallel()
 	_, root, _ := landWorkspace(t)
-	t.Setenv("MATE_CALLER", "")
 	var out, errw bytes.Buffer
-	if err := cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
+	if err := testCLI().cmdLand([]string{"--workspace", root, "shop", "k3"}, &out, &errw); err != nil {
 		t.Fatalf("land: %v\nstderr: %s", err, errw.String())
 	}
 	if !strings.Contains(out.String(), "tracker: SH-12 not updated (no `tracker:` block in "+plugin.ConfigFile+"); mark it done yourself") {

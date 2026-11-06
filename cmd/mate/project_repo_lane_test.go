@@ -9,6 +9,7 @@ import (
 // crews hold (CON-118), and refuses an unknown repo or a lane that is not
 // one word.
 func TestProjectRepoLaneRecordsTheLane(t *testing.T) {
+	t.Parallel()
 	w := wakeFixture(t)
 	cfg, err := w.LoadProject("shop")
 	if err != nil {

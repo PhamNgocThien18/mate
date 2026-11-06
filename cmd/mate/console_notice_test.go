@@ -25,6 +25,7 @@ func (f noticeFunc) Classify(ctx context.Context, screen string) (notice.Result,
 }
 
 func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
+	t.Parallel()
 	for _, target := range []string{"mate", "crew"} {
 		t.Run(target, func(t *testing.T) {
 			f := newBoxFixture(t)
@@ -67,6 +68,7 @@ func TestConsoleNoticeReadsOnlySelectedAgent(t *testing.T) {
 }
 
 func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
+	t.Parallel()
 	f := newBoxFixture(t)
 	count := 0
 	c := noticeFunc(func(context.Context, string) (notice.Result, error) {
@@ -84,6 +86,7 @@ func TestConsoleNoticeFailureAndInvalidTarget(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets MATE_JEV_API_KEY_FILE in the process environment.
 func TestConsoleNoticeConfig(t *testing.T) {
 	ws := noticeWorkspace(t)
 	key := filepath.Join(t.TempDir(), "key")
@@ -130,6 +133,7 @@ func TestConsoleNoticeConfig(t *testing.T) {
 	}
 }
 
+// Not parallel: it sets HOME in the process environment.
 func TestConsoleNoticeKeyPathResolvesHomeAndWorkspace(t *testing.T) {
 	ws := noticeWorkspace(t)
 	home := t.TempDir()
@@ -168,6 +172,7 @@ func writeEnv(t *testing.T, ws *store.Workspace, text string) {
 
 // A headless Mate has no screen: the notice explanation reads its host's
 // last turns instead, and asks Herdr nothing (CON-225).
+// Not parallel: it sets HOME, CLAUDE_CONFIG_DIR in the process environment through headlessFixture.
 func TestConsoleNoticeReadsAHeadlessMatesHost(t *testing.T) {
 	w, deps, rt := headlessFixture(t)
 	history := matehost.HistoryPath(w.MateDir("shop"))

@@ -7,6 +7,7 @@ import (
 )
 
 func TestParseCursorColumn(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]int{
 		"\x1b[12;3R":          3,
 		"junk\x1b[1;5R":       5,
@@ -27,6 +28,7 @@ func TestParseCursorColumn(t *testing.T) {
 // A terminal that does not answer keeps the emoji. One measurement only,
 // so the window in which a startup key can be lost stays one round trip.
 func TestChooseKindGlyphs(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		cells map[string]int
@@ -54,6 +56,7 @@ func TestChooseKindGlyphs(t *testing.T) {
 }
 
 func TestMateKindsOverridesTheProbe(t *testing.T) {
+	t.Parallel()
 	for v, want := range map[string]console.KindGlyphs{
 		"emoji": console.KindEmoji, "symbol": console.KindSymbol, "ASCII": console.KindASCII,
 	} {

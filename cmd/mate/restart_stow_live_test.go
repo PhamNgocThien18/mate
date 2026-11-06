@@ -24,6 +24,7 @@ import (
 // console's Actions menu, and the fact is in the Mate's files afterwards
 // because the restart asked the Mate to stow before it stopped it. The
 // outcome line says "stowed".
+// Not parallel: a live test drives this machine's Herdr and harness CLIs.
 func TestLiveRestartMateStowsFirst(t *testing.T) {
 	requireConsoleLive(t)
 	session, configHome := consoleLiveLab(t)
