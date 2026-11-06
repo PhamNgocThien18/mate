@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nguyenngocanh94/mate/internal/coreapi"
 	"github.com/nguyenngocanh94/mate/internal/db"
 	"github.com/nguyenngocanh94/mate/internal/store"
 	"github.com/nguyenngocanh94/mate/internal/timeline"
@@ -40,6 +41,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/actions", s.handleAct)
 	s.mux.HandleFunc("GET /api/projects/{project}/chat", s.respond(s.handleChat, false))
 	s.mux.HandleFunc("GET /api/projects/{project}/forks/{news}", s.respond(s.handleFork, false))
+	// The core's client routes are its socket's alone (clientRoutes).
+	s.mux.HandleFunc("GET "+coreapi.PathCore, s.socketOnly)
+	s.mux.HandleFunc("GET "+coreapi.PathSnapshot, s.socketOnly)
+	s.mux.HandleFunc("POST "+coreapi.PathAct, s.socketOnly)
 	s.mux.Handle("GET /office/fonts/licenses/", http.StripPrefix("/office/fonts/licenses/", etagFileServer(fontLicensesFS())))
 	s.mux.Handle("GET /", etagFileServer(uiFS()))
 }

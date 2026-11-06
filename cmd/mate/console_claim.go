@@ -50,8 +50,10 @@ func liveConsoleClaim(in io.Reader, out io.Writer) consoleClaim {
 }
 
 // take returns what releases the console lock once this console holds it.
+// The record says core_lock: this console's engine takes core.lock, so
+// `mate core run` can tell it from a console built before CON-211.
 func (c consoleClaim) take(ws *store.Workspace) (unlock func(), err error) {
-	self := store.ConsoleHolder{PID: os.Getpid(), Started: c.now()}
+	self := store.ConsoleHolder{PID: os.Getpid(), Started: c.now(), CoreLock: true}
 	unlock, err = ws.LockConsole(self)
 	if !errors.Is(err, store.ErrConsoleRunning) {
 		return unlock, err

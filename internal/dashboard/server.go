@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nguyenngocanh94/mate/internal/coreapi"
@@ -72,6 +75,13 @@ type Deps struct {
 	// Notice is whether the console has Jev to explain a crew's screen
 	// (`explain_notice`); false greys the button out with the reason.
 	Notice bool
+	// Core is the core's own state, GET coreapi.PathCore on its socket
+	// (CON-212): the engine's Status. Nil answers that route 503.
+	Core func() coreapi.CoreStatus
+	// ClientSeen is told the coreapi.ClientHeader of every request on the
+	// socket that names one, as the request arrives: how the engine knows a
+	// console is open. Nil is told nothing.
+	ClientSeen func(client string)
 }
 
 func (d Deps) now() time.Time {
@@ -105,6 +115,8 @@ type Server struct {
 	cache  *cache
 	agents *agentIndex
 	mux    *http.ServeMux
+	// socket is the core socket's site: the client routes, then mux.
+	socket http.Handler
 	// mateMemo holds one project's Mate exchanges for one event id, so
 	// every task page's journey does not rebuild them (journey.go).
 	mateMemo mateExchangesMemo
@@ -128,6 +140,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{ws: opts.Workspace, db: opts.DB, deps: opts.Deps, cache: newCache(), agents: &agentIndex{}, mux: http.NewServeMux()}
 	s.routes()
+	s.socket = s.clientRoutes()
 	return s, nil
 }
 
@@ -149,6 +162,34 @@ func Listen(opts Options) (net.Listener, error) {
 		}
 	}
 	return net.Listen("tcp", addr)
+}
+
+// maxSocketPath is the longest path a unix socket binds: 103 bytes on
+// macOS, 107 on Linux (matehost's and panerun's rule).
+var maxSocketPath = len(syscall.RawSockaddrUnix{}.Path) - 1
+
+// ListenUnix binds a unix socket at path that only this user can connect
+// to (0600), for Serve to answer the same routes on as over TCP: `mate
+// core`'s socket (CON-211). Whatever is at path is removed first, so the
+// caller must hold what makes path its own (core.lock): a socket left by a
+// process that died would otherwise refuse the bind. Closing the listener
+// removes the socket file.
+func ListenUnix(path string) (net.Listener, error) {
+	if len(path) > maxSocketPath {
+		return nil, fmt.Errorf("dashboard: socket path %s is %d bytes; a unix socket path holds at most %d", path, len(path), maxSocketPath)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("dashboard: removing the old socket %s: %w", path, err)
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard: cannot create the socket %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("dashboard: socket %s: %w", path, err)
+	}
+	return ln, nil
 }
 
 // requireLoopback is the refusal of docs/mvp.md M6's "chỉ đọc, local": a
@@ -179,8 +220,18 @@ func requireLoopback(addr string) error {
 
 // Serve runs the site on ln until ctx is cancelled, then shuts down.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+	return s.serve(ctx, ln, s.Handler())
+}
+
+// ServeSocket runs the site on ln, the core's unix socket (ListenUnix),
+// with the client routes on top (SocketHandler), until ctx is cancelled.
+func (s *Server) ServeSocket(ctx context.Context, ln net.Listener) error {
+	return s.serve(ctx, ln, s.SocketHandler())
+}
+
+func (s *Server) serve(ctx context.Context, ln net.Listener, handler http.Handler) error {
 	srv := &http.Server{
-		Handler: s.Handler(),
+		Handler: handler,
 		// No read or write timeout: /api/events is a long poll and a
 		// deadline here would cut it off mid-wait. The wait itself is
 		// bounded (maxWaitSeconds), which is the bound that belongs to the

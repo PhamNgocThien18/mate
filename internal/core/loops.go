@@ -10,7 +10,7 @@ import (
 
 // The loops cmd/mate builds start without a word: each Start spawns its
 // goroutine and returns. These adapt them to Loop, whose Start may fail
-// (core.lock will, CON-211).
+// (the dashboard's does when the socket of `mate core` cannot be served).
 
 // WatchLoop is the observer as the engine's Watcher.
 func WatchLoop(w *watch.Watcher) Watcher { return watchLoop{w} }

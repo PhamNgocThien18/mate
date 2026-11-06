@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -23,6 +22,10 @@ var ErrConsoleRunning = errors.New("store: another console is running on this wo
 type ConsoleHolder struct {
 	PID     int       `json:"pid"`
 	Started time.Time `json:"started"`
+	// CoreLock says the console takes core.lock when it runs the engine
+	// (CON-211). A console built before that writes no such field, and runs
+	// an engine `mate core` cannot see: `mate core run` refuses beside it.
+	CoreLock bool `json:"core_lock,omitempty"`
 }
 
 // ConsoleLockFile is `.mate/console.lock`.
@@ -41,7 +44,7 @@ func (w *Workspace) LockConsole(holder ConsoleHolder) (unlock func(), err error)
 	if err != nil {
 		return nil, err
 	}
-	ok, err := tryLockFile(f, true)
+	ok, err := tryHolderLock(f)
 	if err != nil {
 		f.Close()
 		return nil, err
@@ -54,14 +57,7 @@ func (w *Workspace) LockConsole(holder ConsoleHolder) (unlock func(), err error)
 		_ = unlockFile(f)
 		_ = f.Close()
 	}
-	data, err := json.Marshal(holder)
-	if err == nil {
-		err = f.Truncate(0)
-	}
-	if err == nil {
-		_, err = f.WriteAt(append(data, '\n'), 0)
-	}
-	if err != nil {
+	if err := writeHolder(f, holder); err != nil {
 		unlock()
 		return nil, err
 	}
@@ -69,13 +65,9 @@ func (w *Workspace) LockConsole(holder ConsoleHolder) (unlock func(), err error)
 }
 
 // ConsoleHolder reads who wrote the console lock last. It says nothing
-// about whether that console still runs; LockConsole is the one that knows.
+// about whether that console still runs; ConsoleRunning is the one that knows.
 func (w *Workspace) ConsoleHolder() (ConsoleHolder, error) {
 	var h ConsoleHolder
-	data, err := os.ReadFile(w.ConsoleLockFile())
-	if err != nil {
-		return h, err
-	}
-	err = json.Unmarshal(data, &h)
+	err := readHolder(w.ConsoleLockFile(), &h)
 	return h, err
 }

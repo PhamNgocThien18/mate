@@ -256,7 +256,8 @@ func TestEngineStopWaitsForRecoveryAtMostItsBound(t *testing.T) {
 // What recovery has said so far is readable while it runs, and what it did
 // once it returns: the console's status line is drawn from it.
 func TestEngineRecoveryReportsProgressThenItsResult(t *testing.T) {
-	ws := &store.Workspace{}
+	// A real workspace: Start takes its core.lock.
+	ws := shopWorkspace(t)
 	step, release := make(chan struct{}), make(chan struct{})
 	var ranOver *store.Workspace
 	e := New(Options{

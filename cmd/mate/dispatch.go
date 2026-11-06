@@ -77,6 +77,7 @@ func commands() []command {
 		{names: []string{"gc"}, summary: "list processes left in closed tasks' worktrees, or end them", run: cmdGC},
 		{names: []string{"dashboard"}, summary: "the workspace timeline in a browser", run: cmdDashboard},
 		{names: []string{"console"}, summary: "open the console and lay out its columns", run: cmdConsoleLaunch},
+		{names: []string{"core"}, summary: "run the workspace's engine without a console", run: cmdCore},
 		{names: []string{"migrate"}, summary: "move a workspace onto layout 2", run: cmdMigrate},
 		{names: []string{"plugin"}, summary: "add, check and list plugins", run: cmdPlugin},
 		{names: []string{"--version", "-V"}, summary: "print the version", run: cmdVersion},

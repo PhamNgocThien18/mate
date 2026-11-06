@@ -107,7 +107,7 @@ func engineFixture(t *testing.T) (*store.Workspace, spawn.Deps, watch.CrewRef) {
 // does, until the test ends.
 func startEngine(t *testing.T, w *store.Workspace, deps spawn.Deps) (*core.Engine, core.Options) {
 	t.Helper()
-	opts, err := engineOptions(w, deps)
+	opts, err := engineOptions(w, deps, func() bool { return true })
 	if err != nil {
 		t.Fatalf("engineOptions: %v", err)
 	}
