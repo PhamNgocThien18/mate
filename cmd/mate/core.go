@@ -69,10 +69,14 @@ func cmdCoreRun(args []string, stdout, stderr io.Writer) error {
 	// The live dependencies the console builds (runConsole): the `herdr`
 	// findTool resolves, and the observer `.mate/.env` asks for.
 	deps := baseDeps(spawn.WithHerdrBinary(findTool(os.Getenv, "herdr")))
-	var observerErr error
+	var (
+		observerErr error
+		notices     []string
+	)
 	deps.Observer, observerErr = configuredObserver(ws)
 	if observerErr != nil {
 		fmt.Fprintf(stderr, "mate core: %v; the fixture observer reads the panes\n", observerErr)
+		notices = append(notices, observerErr.Error())
 	}
 
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -84,19 +88,21 @@ func cmdCoreRun(args []string, stdout, stderr io.Writer) error {
 		<-ctx.Done()
 		stopSignals()
 	}()
-	return runCore(ctx, ws, deps, core.NativeNotifier(), stdout, stderr)
+	return runCore(ctx, ws, deps, core.NativeNotifier(), notices, stdout, stderr)
 }
 
 // runCore runs the engine of ws over deps until ctx ends, then stops it
 // within its bound (core.StopWait) and returns. It serves Office/City on
 // `.mate/core.sock` and on console.yaml's dashboard address; a busy or
 // refused TCP address is said and the core runs on the socket alone.
+// notices are what the caller found wrong already (the observer's
+// configuration), which GET /api/core reports after the core's own.
 //
-// No console is open beside it (CON-214 has not made one a client yet), so
-// the outbox loop types nothing into a Manual project's Mate; an Auto
-// project gets its digests, refreshes and queued lines (CON-203, decided
-// 2026-11-05).
-func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier notifications.Sender, stdout, stderr io.Writer) error {
+// A console is open while one reaches the socket (core.ConsoleSeen,
+// CON-212): with none in the last ten seconds the outbox loop types nothing
+// into a Manual project's Mate; an Auto project gets its digests, refreshes
+// and queued lines either way (CON-203, decided 2026-11-05).
+func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier notifications.Sender, notices []string, stdout, stderr io.Writer) error {
 	// A console built before CON-211 runs an engine of its own without
 	// core.lock: the lock alone would let a second engine start beside it.
 	if h, held, err := ws.ConsoleRunning(); err != nil {
@@ -112,6 +118,7 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	if noticeErr != nil {
 		fmt.Fprintf(stderr, "mate core: %v\n", noticeErr)
 	}
+	notices = jevNoticeFirst(noticeErr, notices)
 
 	// core.lock before the parts: the observer opens mate.db as it is
 	// built, and an engine built while another one still held mate.db
@@ -120,12 +127,15 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	if err != nil {
 		return coreEngineRefusal(err)
 	}
-	opts, err := engineOptions(ws, deps, func() bool { return false })
+	seen := &core.ConsoleSeen{}
+	opts, err := engineOptions(ws, deps, seen.Present)
 	if err != nil {
 		claim.Release()
 		return err
 	}
 	opts.Claim = claim
+	opts.ConsoleSeen = seen
+	opts.Notices = notices
 	opts.Act = engineActions(ws, deps, noticeClient)
 	opts.Dashboard = consoleDashboard(ws, commands.Dashboard.Addr, commands.Dashboard.AllowRemote, noticeClient != nil)
 	opts.Dashboard.Socket = ws.CoreSocket()
@@ -159,6 +169,23 @@ func runCore(ctx context.Context, ws *store.Workspace, deps spawn.Deps, notifier
 	engine.Stop()
 	fmt.Fprintln(stdout, "mate core: stopped")
 	return nil
+}
+
+// jevNoticeFirst puts Jev's configuration error before the notices the
+// caller had (the observer's), as the console's status line says them; an
+// error both report is said once.
+func jevNoticeFirst(jevErr error, notices []string) []string {
+	if jevErr == nil {
+		return notices
+	}
+	line := jevErr.Error()
+	out := []string{line}
+	for _, n := range notices {
+		if n != line {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // coreEngineRefusal words Start's refusal for `mate core run`.

@@ -117,6 +117,7 @@ var layers = map[string]layer{
 	"internal/teardown":        integration,
 	"internal/notifications":   integration,
 	"internal/matehost":        integration,
+	"internal/coreclient":      integration,
 	"internal/spawn":           service,
 	"internal/outbox":          service,
 	"internal/autopilot":       service,

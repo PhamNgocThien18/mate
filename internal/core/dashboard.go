@@ -133,12 +133,18 @@ func (d *dashboardPart) start(ctx context.Context) Serving {
 		_ = handle.Close()
 		return Serving{Err: err}
 	}
+	// listener is one bind and how it is served: the socket with the
+	// client routes too (CON-212), TCP without them.
+	type listener struct {
+		ln    net.Listener
+		serve func(context.Context, net.Listener) error
+	}
 	var (
 		serving Serving
-		lns     []net.Listener
+		lns     []listener
 	)
 	if socket != nil {
-		lns = append(lns, socket)
+		lns = append(lns, listener{socket, server.ServeSocket})
 		serving.Socket = d.o.Socket
 	}
 	if ln, err := dashboard.Listen(opts); err != nil {
@@ -148,19 +154,24 @@ func (d *dashboardPart) start(ctx context.Context) Serving {
 			return serving
 		}
 	} else {
-		lns = append(lns, ln)
+		lns = append(lns, listener{ln, server.Serve})
 		serving.URL = dashboard.URL(ln)
 		serving.LANURL = dashboard.LANURL(ln)
 	}
+	// Where it serves is known before the first request: GET
+	// coreapi.PathCore says it (Engine.Status).
+	d.mu.Lock()
+	d.serving = serving
+	d.mu.Unlock()
 	serveCtx, cancel := context.WithCancel(ctx)
 	// The goroutines close channels made here, never d.done (the CON-207
 	// race); done closes once every listener has stopped serving.
 	var wg sync.WaitGroup
-	for _, ln := range lns {
+	for _, l := range lns {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = server.Serve(serveCtx, ln)
+			_ = l.serve(serveCtx, l.ln)
 		}()
 	}
 	done := make(chan struct{})
@@ -214,6 +225,8 @@ func (e *Engine) dashboardDeps() dashboard.Deps {
 		// has none and the page says nothing about staleness.
 		deps.TimelineStale = ingest.Stale
 	}
+	deps.Core = e.Status
+	deps.ClientSeen = e.clientSeen
 	if e.o.Act != nil {
 		deps.Snapshot = e.Snapshot
 		deps.FreshSnapshot = e.FreshSnapshot

@@ -163,7 +163,7 @@ const (
 // snapshot established.
 //
 // The JSON names are snake_case: the form a request takes on the core's
-// socket, once there is one (CON-212).
+// socket (PathAct, CON-212).
 type ActionRequest struct {
 	Action     Action `json:"action"`
 	Target     string `json:"target,omitempty"`

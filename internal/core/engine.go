@@ -130,8 +130,17 @@ type Options struct {
 	// deliveries either way. The caller hands the same function to the
 	// outbox sender it builds (cmd/mate's engineOptions); the engine reports
 	// it (Engine.ConsolePresent). A console's engine says true; `mate core
-	// run` says false until clients can connect (CON-212). Nil is true.
+	// run` hands in ConsoleSeen's Present. Nil is true.
 	ConsolePresent func() bool
+	// ConsoleSeen is where the engine records each request a console makes
+	// on its socket (coreapi.ClientHeader, CON-212). It only records:
+	// `mate core run` hands its Present to ConsolePresent and to the outbox
+	// alike. Nil records nothing.
+	ConsoleSeen *ConsoleSeen
+	// Notices are what the caller knows is wrong and a console's status
+	// line says - Jev's and the observer's configuration errors. The engine
+	// only reports them (Status), after its own.
+	Notices []string
 }
 
 // StopWait is how long Stop waits for everything it has cancelled: the
@@ -172,6 +181,9 @@ type Engine struct {
 	// takes it first (or the one Options.Claim handed in) and Stop
 	// releases it last.
 	claim *Claim
+	// holder is what core.lock recorded of this engine when Start took
+	// it, before any part could read it; zero without one.
+	holder store.CoreHolder
 
 	// ctx is the engine's own: the shared snapshot computations run under
 	// it. cancel ends it when the engine stops, and so does the end of the
